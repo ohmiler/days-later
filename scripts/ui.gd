@@ -15,7 +15,6 @@ const TUTORIAL := [
 	["equip", "กดเลข [1]–[8] เพื่อถืออาวุธที่เจอ"],
 ]
 const SETTINGS := "user://settings.cfg"
-const GAME_HOUR := 10.0  # real seconds per in-game hour (DAY_LENGTH / 24)
 
 var menu: Control
 var name_edit: LineEdit
@@ -116,13 +115,21 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	vitals.pname = me.pname if me.pname != "" else player_name()
 	vitals.hp = me.hp
 	vitals.ghost = move_toward(vitals.ghost, me.hp, delta * 18.0) if vitals.ghost > me.hp else me.hp
-	vitals.alive_t = me.life_t
 	vitals.hunger = me.hunger
 	vitals.thirst = me.thirst
 	vitals.infection = me.infection
 	vitals.bleeding = me.bleeding
 	vitals.stamina = me.stamina
 	vitals.exhausted = me.exhausted
+	# How loud you are right now: 0 silent, 1 walking, 2 running, 3 just fought.
+	var noise := 0
+	if me.alive():
+		if me.anim != Look.NONE and me.anim_t < 0.6:
+			noise = 3
+		elif me.moving and not me.sneak:
+			noise = 2 if me.sprint and not me.exhausted else 1
+	vitals.noise = noise
+	vitals.sneak = me.sneak
 	vitals.hint = _hint(me) if me.alive() else ""
 	vitals.offset_top = vitals.offset_bottom - (150 if vitals.hint != "" else 126)
 	vitals.queue_redraw()
@@ -406,7 +413,6 @@ class Vitals extends Control:
 	var pname := ""
 	var hp := 100.0
 	var ghost := 100.0
-	var alive_t := 0.0
 	var hint := ""
 	var t := 0.0
 	var hunger := 80.0
@@ -415,22 +421,41 @@ class Vitals extends Control:
 	var bleeding := false
 	var stamina := 100.0
 	var exhausted := false
+	var noise := 0
+	var sneak := false
 
-	func _survived() -> String:
-		var hours := int(alive_t / GameUI.GAME_HOUR)
-		if hours >= 24:
-			return "รอดมา %d วัน %d ชม." % [hours / 24, hours % 24]
-		return "รอดมา %d ชม. %d นาที" % [hours, int(fmod(alive_t, GameUI.GAME_HOUR) / GameUI.GAME_HOUR * 60)]
+	## Speaker with 0-3 bars and a word, right-aligned at `right`.
+	func _draw_noise(right: Vector2) -> void:
+		var words := ["เงียบ", "เบา", "ดัง", "ดังมาก"]
+		var cols := [Color(UiTheme.PAPER, 0.4), Color(UiTheme.PAPER, 0.8), UiTheme.WARN, Color("ff5a4a")]
+		var col: Color = cols[noise]
+		var word: String = ("ย่อง · " if sneak else "") + words[noise]
+		var f := UiTheme.body_bold()
+		var tw := f.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+		draw_string(f, right - Vector2(tw, 0), word, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
+		var x := right.x - tw - 8
+		for i in 3:
+			var h := 4.0 + i * 3.0
+			var bx := x - (2 - i) * 4.0 - 3.0
+			draw_rect(Rect2(bx, right.y - 1 - h, 2.5, h), col if i < noise else Color(UiTheme.PAPER, 0.15))
+		var sp := x - 12 - 11.0
+		draw_rect(Rect2(sp, right.y - 8, 3, 5), col)
+		draw_colored_polygon(PackedVector2Array([Vector2(sp + 3, right.y - 8), Vector2(sp + 7, right.y - 11),
+				Vector2(sp + 7, right.y), Vector2(sp + 3, right.y - 3)]), col)
 
 	func _draw() -> void:
 		var low := hp > 0 and hp < 30
 		var pulse := 0.5 + 0.5 * sin(t * 7.0)
 		draw_style_box(UiTheme.box(UiTheme.CARD, 8, UiTheme.BLOOD if low else UiTheme.LINE, 2 if low else 1), Rect2(Vector2.ZERO, size))
 		draw_string(UiTheme.heading(), Vector2(16, 32), pname, HORIZONTAL_ALIGNMENT_LEFT, size.x - 150, 20, UiTheme.PAPER)
-		var sub := "ใกล้ตาย!" if low else ("เลือดออก!" if bleeding else _survived())
+		# Next to the name: an urgent warning, if any.
+		var alert := "ใกล้ตาย!" if low else ("เลือดออก!" if bleeding else "")
 		low = low or bleeding
-		var sub_col := Color(1, 0.42, 0.35, 0.55 + 0.45 * pulse) if low else Color(UiTheme.PAPER, 0.6)
-		draw_string(UiTheme.body_bold() if low else UiTheme.body(), Vector2(0, 31), sub, HORIZONTAL_ALIGNMENT_RIGHT, size.x - 16, 14, sub_col)
+		if alert != "":
+			var nw := UiTheme.heading().get_string_size(pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
+			draw_string(UiTheme.body_bold(), Vector2(16 + nw + 10, 31), alert, HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
+					Color(1, 0.42, 0.35, 0.55 + 0.45 * pulse))
+		_draw_noise(Vector2(size.x - 16, 31))
 		var hc := Color("ff3a2a") if low else UiTheme.BLOOD
 		UiTheme.heart(self, Vector2(27, 60), 12.0 + (1.8 * pulse if low else 0.0), hc)
 		var bar := Rect2(48, 54, size.x - 104, 12)

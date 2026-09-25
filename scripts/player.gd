@@ -46,7 +46,6 @@ var step_t := 0.0  # server: time to the next footstep noise
 var bitten := false  # server: set by a zombie bite, handled by main
 var turned := false  # died of the infection and got back up as a zombie
 var warned := {}  # server: which low-need warnings were already sent
-var life_t := 0.0  # seconds alive since the last respawn
 var fall_dir := 1.0
 var last_death_pos := Vector2.ZERO
 var shoot_cd := 0.0
@@ -161,7 +160,6 @@ func _process(delta: float) -> void:
 	flashlight.rotation = aim.angle()
 	view = Look.pick_view(aim.angle(), view)
 	anim_t += delta
-	life_t = life_t + delta if alive() else 0.0
 	if alive():
 		if death_t > 0.0:
 			# Respawned: leave the old body where it fell.

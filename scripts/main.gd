@@ -47,8 +47,6 @@ const NOISE_SWING := 90.0
 const NOISE_HIT := 130.0
 const NOISE_SEARCH := 60.0
 const NOISE_BREAK := 170.0
-var rings: Array = []  # [pos, radius, age, colour] visual noise rings
-var local_step_t := 0.0
 var sneak_toggle := false
 var players := {}  # peer_id -> Player
 var zombies := {}  # zid -> Zombie
@@ -384,7 +382,7 @@ func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 	p.shoot_cd = stats[2]
 	p.search_id = -1  # swinging interrupts a search
 	fx_melee.rpc(p.peer_id, kind)
-	_make_noise(p.position, NOISE_SWING * (0.6 if p.sneak else 1.0), false)
+	_make_noise(p.position, NOISE_SWING * (0.6 if p.sneak else 1.0))
 	p.pending_kind = kind
 	p.pending_stats = stats
 	if windup < 0:
@@ -434,7 +432,7 @@ func _tick_needs(p: Player, delta: float) -> void:
 	p.step_t -= delta
 	if p.move.length() > 0.1 and not p.sneak and p.step_t <= 0.0:
 		p.step_t = 0.5
-		_make_noise(p.position, NOISE_RUN if running else NOISE_WALK, false)
+		_make_noise(p.position, NOISE_RUN if running else NOISE_WALK)
 	p.hunger = maxf(0.0, p.hunger - HUNGER_RATE * delta * (1.6 if running else 1.0))
 	p.thirst = maxf(0.0, p.thirst - THIRST_RATE * delta * (1.8 if running else 1.0))
 	if running:
@@ -475,18 +473,11 @@ func _tick_needs(p: Player, delta: float) -> void:
 			_turn(p)
 
 
-## Every zombie within `radius` goes to look. `show` also draws a ring for everyone.
-func _make_noise(pos: Vector2, radius: float, show := true) -> void:
+## Every zombie within `radius` goes to look.
+func _make_noise(pos: Vector2, radius: float) -> void:
 	for z: Zombie in zombies.values():
 		if z.position.distance_to(pos) < radius:
 			z.hear(pos)
-	if show:
-		fx_noise.rpc(pos, radius)
-
-
-@rpc("authority", "call_local", "unreliable")
-func fx_noise(pos: Vector2, radius: float) -> void:
-	rings.append([pos, radius, 0.0, UiTheme.WARN])
 
 
 ## Send a warning once when a condition becomes true; re-arm when it clears.
@@ -946,11 +937,6 @@ func _process(delta: float) -> void:
 		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
 		me.sneak = sneak_toggle or Input.is_key_pressed(KEY_CTRL)
 		me.sprint = Input.is_key_pressed(KEY_SHIFT) and not me.sneak
-		# Your own footsteps as faint rings, so you can see how loud you are.
-		local_step_t -= delta
-		if me.alive() and move.length() > 0.1 and not me.sneak and local_step_t <= 0.0:
-			local_step_t = 0.5
-			rings.append([me.position, NOISE_RUN if me.sprint and not me.exhausted else NOISE_WALK, 0.0, UiTheme.PAPER])
 		me.aim = aim
 		if multiplayer.is_server():
 			me.move = move
@@ -1002,9 +988,6 @@ func _process(delta: float) -> void:
 				blood.append([p.position + Vector2(randf_range(-3, 3), randf_range(-1, 2)), randf_range(0.6, 1.4),
 						Color(0.4, 0.03, 0.03, 0.8)])
 				decals.queue_redraw()
-	for r in rings:
-		r[2] += delta
-	rings = rings.filter(func(r): return r[2] < 0.7)
 	for dn in dmg_numbers:
 		dn[3] += delta
 	dmg_numbers = dmg_numbers.filter(func(dn): return dn[3] < 0.9)
@@ -1095,12 +1078,6 @@ func _fade_trees_near(pos: Vector2) -> void:
 
 func _draw_fx() -> void:
 	var font := UiTheme.world("Kanit-Medium")
-	for r in rings:
-		var k: float = r[2] / 0.7
-		var col: Color = r[3]
-		fx.draw_set_transform(r[0], 0, Vector2(1, 0.55))
-		fx.draw_arc(Vector2.ZERO, r[1] * (0.35 + 0.65 * ease(k, 0.5)), 0, TAU, 48, Color(col, 0.55 * (1.0 - k)), 1.6)
-	fx.draw_set_transform(Vector2.ZERO)
 	for p: Player in players.values():
 		if p.alive() and p.pname != "":
 			var w := font.get_string_size(p.pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 5).x + 6
