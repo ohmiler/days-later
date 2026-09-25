@@ -5,8 +5,10 @@ class_name Items
 ## Weapon fields: range, dmg, cd (cooldown), stun, knock, dur (swing time),
 ## hp (durability), cleave (hits everything in front), draw (see Look._draw_weapon).
 
-const INV_SIZE := 8
-const STACK := 5
+const INV_SIZE := 8  # the hotbar; a bag adds slots after these, reached from the bag screen (Tab)
+## How many of a thing fit in one slot. Weapons and clothes never stack.
+const STACKS := {bandage = 10, painkiller = 10, firstaid = 3, antibiotic = 5, water = 6, mama = 6, snack = 8,
+		energy = 6, wire = 5, spikes = 5, wood = 10, gold = 10}
 
 ## Places on the body something can be worn, and what they're called.
 const SLOTS := ["head", "body", "legs", "feet", "back"]
@@ -68,9 +70,9 @@ const DEFS := {
 			draw = {shape = "boots", col = Color("3a2a1c")}},
 	"sneakers": {name = "รองเท้าผ้าใบ", type = "wear", slot = "feet", armor = 0.0, hp = 25, speed = 1.05,
 			draw = {shape = "shoes", col = Color("d8d8d0")}},
-	"schoolbag": {name = "กระเป๋านักเรียน", type = "wear", slot = "back", bag = 1, hp = 30,
+	"schoolbag": {name = "กระเป๋านักเรียน", type = "wear", slot = "back", bag = 2, hp = 30,
 			draw = {shape = "pack", col = Color("2a3a6a"), big = false}},
-	"backpack": {name = "เป้เดินป่า", type = "wear", slot = "back", bag = 2, hp = 40, speed = 0.97,
+	"backpack": {name = "เป้เดินป่า", type = "wear", slot = "back", bag = 4, hp = 40, speed = 0.97,
 			draw = {shape = "pack", col = Color("4a5a3a"), big = true}},
 	# Valuables, for trading later
 	"gold": {name = "สร้อยทอง", type = "junk"},
@@ -189,6 +191,10 @@ static func wear_draw(ids: Dictionary) -> Dictionary:
 		if d.has("draw"):
 			out[slot] = d.draw
 	return out
+
+
+static func stack(id: String) -> int:
+	return STACKS.get(id, 1)
 
 
 static func is_weapon(id: String) -> bool:

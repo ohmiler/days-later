@@ -68,9 +68,9 @@ static func _candidates(main: Node, p: Player) -> Array:
 		out.append({kind = "window" if win else "door", id = door, pos = w.to_pos(d.cell), title = title})
 	var here: BuildingProp = w.building_at.get(w.to_cell(p.position))
 	for f: FurnitureProp in w.container_nodes:
-		# Unsearched furniture in the same building as you: no searching through walls.
-		if not f.searched and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here:
-			out.append({kind = "container", id = f.data.id, pos = f.position, title = _container_title(f.data.kind)})
+		# Furniture in the same building as you: no reaching through walls.
+		if p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here:
+			out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
 	return out
 
 
@@ -116,7 +116,10 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 			else:
 				out.append(_board(p, d))
 		"container":
-			out.append(_act("search", "ค้นหา"))
+			if w.container_nodes[t.id].searched:
+				out.append(_act("look", "เปิดดู"))
+			else:
+				out.append(_act("search", "ค้นหา"))
 		"zombie":
 			out.append(_act("stomp", "เหยียบหัวให้ตาย"))
 	return out
@@ -151,7 +154,7 @@ static func has_wood(p: Player) -> bool:
 	return p.inv.any(func(it): return it != null and it.id == "wood")
 
 
-static func _container_title(kind: String) -> String:
+static func container_title(kind: String) -> String:
 	return {shelf = "ชั้นวางของ", fridge = "ตู้เย็น", counter = "เคาน์เตอร์", cabinet = "ตู้",
 			table = "โต๊ะ", crate = "ลัง", bed = "เตียง"}.get(kind, "ของ")
 

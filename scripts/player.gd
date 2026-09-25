@@ -63,6 +63,7 @@ var look := {}  # colours and shapes to draw with, from app_code
 # the ids (slot -> id, from snapshots), which is all drawing and speed need.
 var worn := {}
 var wear_ids := {}
+var open_box := -1  # server: the container this player has open in the bag screen
 var torn := ""  # server: name of something a bite just tore apart, for main to report
 var phase := 0.0
 var view := [Look.FRONT, false]

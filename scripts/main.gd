@@ -34,6 +34,7 @@ var dmg_numbers: Array = []  # [pos, text, crit, age]
 const MAX_GIBS := 40  # loose heads and arms; the oldest fade out first
 const SEVER_CHANCE := 0.2  # a blade hit that does not kill takes an arm this often
 var gibs: Array = []
+var bar_click := false  # a mouse button went down on the hotbar: do not punch until it is let go
 var outfits := {}  # zid -> [shirt, pants, hair] for zombies that were players
 const AUTOSAVE_EVERY := 60.0
 var autosave_t := AUTOSAVE_EVERY
@@ -117,7 +118,11 @@ func _ready() -> void:
 	ui.host_requested.connect(func(n: String, resume: bool):
 		player_name = n
 		_host(false, resume))
-	ui.unequip_requested.connect(func(slot: String): _request(&"req_unequip", [slot]))
+	ui.gear.move_requested.connect(func(a: Array, b: Array): _request(&"req_move", [a, b]))
+	ui.gear.use_requested.connect(func(ref: Array): _request(&"req_use_ref", [ref]))
+	ui.gear.split_requested.connect(func(ref: Array): _request(&"req_split", [ref]))
+	ui.gear.drop_requested.connect(func(ref: Array): _request(&"req_move", [ref, ["ground", -1]]))
+	ui.gear.box_closed.connect(func(): _request(&"req_close_box", []))
 	ui.join_requested.connect(func(addr: String, n: String):
 		player_name = n
 		_join(addr))
@@ -395,6 +400,9 @@ func _server_tick(delta: float) -> void:
 					_melee(p, Look.SWING, [w.range, w.dmg, w.cd, w.stun, w.knock], w.dur * 0.45)
 		_tick_search(p, delta)
 		_tick_needs(p, delta)
+		if p.open_box >= 0 and (not p.alive() or p.position.distance_to(world.container_nodes[p.open_box].position) > Interact.CONTAINER_REACH + 8.0):
+			p.open_box = -1
+			_notify(p.peer_id, &"box_open", [-1, []])
 		if not p.alive() and not p.dropped:
 			p.dropped = true
 			_drop_everything(p)
@@ -865,7 +873,12 @@ func _wear_weapon(p: Player) -> void:
 # --- Inventory, searching and pickups (server) ------------------------------
 
 ## Sender of the current RPC; for the host calling its own handler directly, itself.
+var _acting: Player = null  # set while one handler runs another on a player's behalf
+
+
 func _sender() -> Player:
+	if _acting:
+		return _acting
 	var id := multiplayer.get_remote_sender_id()
 	return players.get(id if id != 0 else multiplayer.get_unique_id())
 
@@ -881,6 +894,215 @@ func _notify(peer_id: int, method: StringName, args: Array) -> void:
 func _send_inv(p: Player) -> void:
 	p.weapon_id = p.held_weapon()
 	_notify(p.peer_id, &"inv_sync", [p.inv, p.sel, p.worn])
+
+
+# --- The bag screen: moving things between slots ----------------------------
+# A ref names a slot: ["inv", index] (-1 = wherever it fits), ["worn", slot],
+# ["ground", pickup id] (-1 = drop at your feet). Later: ["box", container, index].
+
+const GROUND_REACH := 30.0
+
+
+func _ref_ok(p: Player, ref: Array) -> bool:
+	if ref.size() == 3 and ref[0] == "box":
+		var cid = ref[1]
+		return cid is int and cid == p.open_box and cid >= 0 and cid < world.container_nodes.size() \
+				and ref[2] is int and ref[2] >= -1 and ref[2] < FurnitureProp.SIZE
+	if ref.size() != 2:
+		return false
+	match ref[0]:
+		"inv":
+			return ref[1] is int and ref[1] >= -1 and ref[1] < p.inv.size()
+		"worn":
+			return ref[1] in Items.SLOTS
+		"ground":
+			return ref[1] == -1 or (pickups.has(ref[1]) and p.position.distance_to(pickups[ref[1]].pos) < GROUND_REACH)
+	return false
+
+
+func _ref_get(p: Player, ref: Array) -> Variant:
+	match ref[0]:
+		"inv":
+			return p.inv[ref[1]] if ref[1] >= 0 else null
+		"worn":
+			return p.worn.get(ref[1])
+		"ground":
+			return pickups[ref[1]].item if ref[1] >= 0 else null
+		"box":
+			return world.container_nodes[ref[1]].items[ref[2]] if ref[2] >= 0 else null
+	return null
+
+
+func _ref_set(p: Player, ref: Array, it: Variant) -> void:
+	match ref[0]:
+		"inv":
+			p.inv[ref[1]] = it
+		"worn":
+			if it == null:
+				p.worn.erase(ref[1])
+			else:
+				p.worn[ref[1]] = it
+		"ground":
+			if ref[1] >= 0:
+				pickup_del.rpc(ref[1])
+			if it != null:
+				_spawn_pickup(p.position + Vector2(randf_range(-6, 6), randf_range(2, 7)), it)
+		"box":
+			world.container_nodes[ref[1]].items[ref[2]] = it
+
+
+## Where `it` goes when sent to the bag with no particular slot: onto a stack
+## of the same thing with room, else the first empty slot, else -1.
+func _inv_slot_for(p: Player, it: Dictionary) -> int:
+	return _slot_for(p.inv, it)
+
+
+func _slot_for(slots: Array, it: Dictionary) -> int:
+	if Items.stack(it.id) > 1:
+		for i in slots.size():
+			var o = slots[i]
+			if o != null and o.id == it.id and o.n < Items.stack(it.id):
+				return i
+	return slots.find(null)
+
+
+## Show a container's contents in `p`'s bag screen.
+func _open_box(p: Player, cid: int) -> void:
+	var f: FurnitureProp = world.container_nodes[cid]
+	if f.items.size() != FurnitureProp.SIZE:
+		f.items.resize(FurnitureProp.SIZE)
+	p.open_box = cid
+	_notify(p.peer_id, &"box_open", [cid, f.items])
+
+
+## Everyone looking into this container sees the change.
+func _sync_box(cid: int) -> void:
+	var f: FurnitureProp = world.container_nodes[cid]
+	for q: Player in players.values():
+		if q.open_box == cid:
+			_notify(q.peer_id, &"box_open", [cid, f.items])
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_close_box() -> void:
+	var p := _sender()
+	if p:
+		p.open_box = -1
+
+
+## Client: a container opened (or closed, with cid -1) in the bag screen.
+@rpc("authority", "call_remote", "reliable")
+func box_open(cid: int, items: Array) -> void:
+	if cid < 0:
+		ui.close_box()
+		return
+	ui.open_box(cid, items, Interact.container_title(world.container_nodes[cid].data.kind))
+
+
+## Drag and drop, shift-click and "take" all come through here: the server
+## checks the move makes sense, then stacks or swaps.
+@rpc("any_peer", "call_remote", "reliable")
+func req_move(a: Array, b: Array) -> void:
+	var p := _sender()
+	if p == null or not p.alive() or not _ref_ok(p, a) or not _ref_ok(p, b) or a == b:
+		return
+	var x = _ref_get(p, a)
+	if x == null:
+		return
+	if b[0] == "inv" and b[1] == -1:
+		b = ["inv", _inv_slot_for(p, x)]
+		if b[1] < 0:
+			_toast(p, "กระเป๋าเต็ม")
+			return
+	if b[0] == "box" and b[2] == -1:
+		b = ["box", b[1], _slot_for(world.container_nodes[b[1]].items, x)]
+		if b[2] < 0:
+			_toast(p, "ตู้เต็ม")
+			return
+	if b[0] == "ground" and p.on_roof:
+		_toast(p, "วางของบนหลังคาไม่ได้")
+		return
+	var y = _ref_get(p, b)
+	# Only clothes go on the body, and only in their own place.
+	if b[0] == "worn" and (not Items.is_wear(x.id) or Items.def(x.id).slot != b[1]):
+		_toast(p, "ใส่ตรงนั้นไม่ได้")
+		return
+	if a[0] == "worn" and y != null and b[0] != "ground" and (not Items.is_wear(y.id) or Items.def(y.id).slot != a[1]):
+		b = ["inv", p.inv.find(null)]  # taking clothes off onto a full slot: find an empty one instead
+		if b[1] < 0:
+			_toast(p, "กระเป๋าเต็ม")
+			return
+		y = null
+	if b[0] == "ground":
+		_ref_set(p, a, null)
+		_ref_set(p, ["ground", -1], x)
+	elif y != null and y.id == x.id and Items.stack(x.id) > 1:
+		var room: int = Items.stack(x.id) - y.n
+		var n := mini(room, x.n)
+		y.n += n
+		x.n -= n
+		if x.n <= 0:
+			_ref_set(p, a, null)
+		elif a[0] == "ground":
+			pickup_del.rpc(a[1])  # the rest stays on the ground as a fresh pile
+			_spawn_pickup(p.position + Vector2(randf_range(-6, 6), 4), x)
+	else:
+		_ref_set(p, a, y if a[0] != "ground" else null)
+		if a[0] == "ground" and y != null:
+			_ref_set(p, ["ground", -1], y)
+		_ref_set(p, b, x)
+	if a[0] == "worn" or b[0] == "worn":
+		p.refresh_wear()
+		_fit_bag(p)
+	fx_sound.rpc("pickup" if a[0] in ["ground", "box"] else "rustle", p.position)
+	_send_inv(p)
+	if a[0] == "box" or b[0] == "box":
+		_sync_box(a[1] if a[0] == "box" else b[1])
+
+
+## Right-click "use" in the bag screen: eat, heal, put on, or take off.
+@rpc("any_peer", "call_remote", "reliable")
+func req_use_ref(ref: Array) -> void:
+	var p := _sender()
+	if p == null or not p.alive() or not _ref_ok(p, ref):
+		return
+	match ref[0]:
+		"worn":
+			_move_as(p, ref, ["inv", -1])
+		"ground":
+			_move_as(p, ref, ["inv", -1])
+		"inv":
+			if ref[1] < 0 or p.inv[ref[1]] == null:
+				return
+			var keep := p.sel
+			p.sel = ref[1]
+			_use_selected(p)
+			p.sel = keep if keep < Items.INV_SIZE else 0
+			_send_inv(p)
+
+
+## Run a move for `p` from inside another handler (the sender is already known).
+func _move_as(p: Player, a: Array, b: Array) -> void:
+	var saved := _acting
+	_acting = p
+	req_move(a, b)
+	_acting = saved
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_split(ref: Array) -> void:
+	var p := _sender()
+	if p == null or not _ref_ok(p, ref) or ref[0] != "inv" or ref[1] < 0:
+		return
+	var it = p.inv[ref[1]]
+	var free := p.inv.find(null)
+	if it == null or it.n < 2 or free < 0:
+		_toast(p, "ไม่มีช่องว่างให้แบ่ง" if it != null and it.n >= 2 else "")
+		return
+	var half: int = it.n / 2
+	it.n -= half
+	p.inv[free] = {id = it.id, n = half, hp = it.get("hp", 0)}
+	_send_inv(p)
 
 
 ## Put on the clothing in hotbar slot `idx`; whatever was worn there goes into
@@ -944,7 +1166,7 @@ func _fit_bag(p: Player) -> void:
 			_spawn_pickup(p.position + Vector2(randf_range(-6, 6), 5), it)
 			_toast(p, "%s ตกพื้น · กระเป๋าไม่พอ" % Items.display_name(it.id))
 	p.inv.resize(n)
-	p.sel = mini(p.sel, n - 1)
+	p.sel = mini(p.sel, Items.INV_SIZE - 1)
 
 
 func _toast(p: Player, text: String) -> void:
@@ -956,7 +1178,7 @@ func _give(p: Player, id: String) -> bool:
 	var d := Items.def(id)
 	if d.get("type") != "weapon":
 		for it in p.inv:
-			if it != null and it.id == id and it.n < Items.STACK:
+			if it != null and it.id == id and it.n < Items.stack(id):
 				it.n += 1
 				return true
 	for i in p.inv.size():
@@ -990,7 +1212,7 @@ func _drop_everything(p: Player, turned := false) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func req_select(slot: int) -> void:
 	var p := _sender()
-	if p and slot >= 0 and slot < p.inv.size():
+	if p and slot >= 0 and slot < mini(p.inv.size(), Items.INV_SIZE):
 		p.sel = slot
 		_send_inv(p)
 
@@ -998,8 +1220,62 @@ func req_select(slot: int) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func req_use() -> void:
 	var p := _sender()
+	if p and p.alive():
+		_use_selected(p)
+
+
+## Right-click on a hotbar slot: select it and use it in one go.
+@rpc("any_peer", "call_remote", "reliable")
+func req_use_slot(idx: int) -> void:
+	var p := _sender()
+	if p and p.alive() and idx >= 0 and idx < p.inv.size() and p.inv[idx] != null:
+		p.sel = idx
+		_use_selected(p)
+		_send_inv(p)
+
+
+## Q: patch yourself up with whatever suits best, wherever it is in the bag.
+## Bleeding comes first (the smallest thing that stops it), then the smallest
+## heal that covers what you have lost, so the big kits are kept for real trouble.
+@rpc("any_peer", "call_remote", "reliable")
+func req_quick_heal() -> void:
+	var p := _sender()
 	if p == null or not p.alive():
 		return
+	var missing := Player.MAX_HP - p.hp
+	var best := -1
+	var best_score := INF
+	for i in p.inv.size():
+		var it = p.inv[i]
+		if it == null:
+			continue
+		var d := Items.def(it.id)
+		var heal: float = d.get("heal", 0.0)
+		if heal <= 0.0:
+			continue
+		var score: float
+		if p.bleeding:
+			if not d.get("stop_bleed", false):
+				continue
+			score = heal
+		elif missing < 1.0:
+			continue
+		else:
+			score = heal - missing if heal >= missing else 1000.0 - heal
+		if score < best_score:
+			best_score = score
+			best = i
+	if best < 0:
+		_toast(p, "ไม่มีของห้ามเลือด" if p.bleeding else ("เลือดเต็มแล้ว" if missing < 1.0 else "ไม่มีของรักษาในกระเป๋า"))
+		return
+	var keep := p.sel
+	p.sel = best
+	_use_selected(p)
+	p.sel = keep
+	_send_inv(p)
+
+
+func _use_selected(p: Player) -> void:
 	var it = p.inv[p.sel]
 	if it != null and Items.is_wear(it.id):
 		_equip(p, p.sel)
@@ -1132,6 +1408,9 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			fx_hit.rpc(z.zid, z.position, Vector2.DOWN, true, p.peer_id, "", z.hp)
 			_kill_zombie(z, 1.0 if z.position.x >= p.position.x else -1.0, "stomp")
 			p.kills += 1
+		"look":
+			fx_sound.rpc("rustle", world.container_nodes[t.id].position)
+			_open_box(p, t.id)
 		"search":
 			var f: FurnitureProp = world.container_nodes[t.id]
 			p.search_id = t.id
@@ -1154,16 +1433,23 @@ func _tick_search(p: Player, delta: float) -> void:
 		return
 	p.search_id = -1
 	container_searched.rpc(f.data.id)
+	# What turned up stays in the furniture: the bag screen opens on it and you
+	# take what you want. Anything left behind is still there later.
 	var found := Items.roll(f.data.table, _loot_rng)
-	var names := []
+	f.items.resize(FurnitureProp.SIZE)
 	for id in found:
-		if not _give(p, id):
-			_spawn_pickup(p.position + Vector2(randf_range(-6, 6), 4), {id = id, n = 1, hp = Items.def(id).get("hp", 0)})
-		names.append(Items.display_name(id))
-	_toast(p, "เจอ: " + ", ".join(names) if not names.is_empty() else "ไม่มีอะไรเหลือแล้ว")
-	if not names.is_empty():
+		var it := {id = id, n = 1, hp = Items.def(id).get("hp", 0)}
+		var slot := _slot_for(f.items, it)
+		if slot >= 0:
+			if f.items[slot] == null:
+				f.items[slot] = it
+			else:
+				f.items[slot].n += 1
+	if found.is_empty():
+		_toast(p, "ไม่มีอะไรเหลือแล้ว · ใช้เก็บของได้")
+	else:
 		fx_sound.rpc("pickup", p.position)
-	_send_inv(p)
+	_open_box(p, f.data.id)
 
 
 var _loot_rng := RandomNumberGenerator.new()
@@ -1490,9 +1776,20 @@ func _process(delta: float) -> void:
 			ui.wheel.open(last_target.title, last_actions, centre)
 		if ui.wheel.visible:
 			ui.wheel.point(get_viewport().get_mouse_position())
-		var over_gear := ui.gear.visible and ui.gear.get_global_rect().has_point(ui.gear.get_global_mouse_position())
-		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.wheel.visible and not over_gear
-		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+		var over_gear := ui.gear.visible and (ui.gear.get_global_rect().has_point(ui.gear.get_global_mouse_position()) 				or not ui.gear.drag.is_empty())
+		if ui.gear.visible:
+			# What lies on the ground within reach, for the bag screen's "nearby" column.
+			var near := []
+			for pid in pickups:
+				if me.position.distance_to(pickups[pid].pos) < GROUND_REACH - 4.0:
+					near.append([pid, pickups[pid].item])
+			ui.gear.ground = near
+		# Clicks on the hotbar are for the hotbar, not for punching.
+		var over_bar := ui.hotbar.hover >= 0 or bar_click
+		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+			bar_click = false
+		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.wheel.visible and not over_gear and not over_bar
+		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not over_bar and not over_gear
 		me.sneak = sneak_toggle or Input.is_key_pressed(KEY_CTRL)
 		me.sprint = Input.is_key_pressed(KEY_SHIFT) and not me.sneak
 		me.aim = aim
@@ -1798,16 +2095,29 @@ func _unhandled_input(event: InputEvent) -> void:
 			_request(&"req_use", [])
 		elif k == KEY_G:
 			_request(&"req_drop", [])
-		elif k >= KEY_1 and k <= KEY_9:
+		elif k >= KEY_1 and k <= KEY_8:
 			_request(&"req_select", [k - KEY_1])
-		elif k == KEY_0:
-			_request(&"req_select", [9])
+		elif k == KEY_ESCAPE and ui.gear.visible:
+			ui.toggle_gear()
 		elif k == KEY_TAB:
 			ui.toggle_gear()
+		elif k == KEY_Q:
+			_request(&"req_quick_heal", [])
 	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			play_zoom = (play_zoom * 1.1).clamp(Vector2(1, 1), Vector2(6, 6))
-			camera.zoom = play_zoom
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			play_zoom = (play_zoom / 1.1).clamp(Vector2(1, 1), Vector2(6, 6))
-			camera.zoom = play_zoom
+		var slot := ui.hotbar.hover
+		var me: Player = players.get(multiplayer.get_unique_id())
+		if slot >= 0 and event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+			bar_click = true
+			if me and slot < me.inv.size():
+				if event.button_index == MOUSE_BUTTON_LEFT:
+					_request(&"req_select", [slot])
+				else:
+					_request(&"req_use_slot", [slot])
+		elif event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+			var up: bool = event.button_index == MOUSE_BUTTON_WHEEL_UP
+			if event.ctrl_pressed:
+				# Ctrl + wheel zooms; the wheel on its own flicks through the hotbar.
+				play_zoom = (play_zoom * (1.1 if up else 1 / 1.1)).clamp(Vector2(1, 1), Vector2(6, 6))
+				camera.zoom = play_zoom
+			elif me and not me.inv.is_empty():
+				_request(&"req_select", [posmod(me.sel + (-1 if up else 1), Items.INV_SIZE)])

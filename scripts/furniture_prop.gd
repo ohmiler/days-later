@@ -3,8 +3,11 @@ extends Node2D
 ## A searchable piece of furniture inside a building. Origin is the bottom of
 ## its cell so it y-sorts with characters. Looks emptier once searched.
 
+const SIZE := 8  # slots in every cupboard, fridge and shelf
+
 var data: Dictionary  # {id, kind, cell, table}
-var searched := false
+var searched := false  # its loot has been rolled; after that it just holds what people leave in it
+var items: Array = []  # server: SIZE entries of null or {id, n, hp}
 var highlight := false
 
 

@@ -5,7 +5,6 @@ extends CanvasLayer
 
 signal host_requested(player_name: String, resume: bool)
 signal join_requested(address: String, player_name: String)
-signal unequip_requested(slot: String)
 
 const TUTORIAL := [
 	["move", "เดินด้วย [W][A][S][D]"],
@@ -28,7 +27,7 @@ var tut: TutorialCard
 var feed: VBoxContainer
 var hotbar: InventoryBar
 var help: Control
-var gear: Gear
+var gear: BagScreen
 var wheel: ActionWheel
 var banner: Label
 var banner_t := 0.0
@@ -48,9 +47,8 @@ func _ready() -> void:
 		done_steps[id] = true
 	_build_hud()
 	_build_help()
-	gear = Gear.new()
+	gear = BagScreen.new()
 	gear.visible = false
-	gear.unequip.connect(func(slot): unequip_requested.emit(slot))
 	add_child(gear)
 	_build_death()
 	_build_menu()
@@ -78,6 +76,8 @@ func set_status(text: String) -> void:
 
 func set_inventory(inv: Array, sel: int) -> void:
 	hotbar.show_inventory(inv, sel)
+	gear.inv = inv
+	gear.queue_redraw()
 
 
 func set_worn(worn: Dictionary) -> void:
@@ -85,8 +85,25 @@ func set_worn(worn: Dictionary) -> void:
 	gear.queue_redraw()
 
 
+func open_box(cid: int, items: Array, title: String) -> void:
+	gear.box_id = cid
+	gear.box_items = items
+	gear.box_title = title
+	gear.visible = true
+	gear.queue_redraw()
+
+
+func close_box() -> void:
+	gear.box_id = -1
+	gear.box_items = []
+	gear.queue_redraw()
+
+
 func toggle_gear() -> void:
 	gear.visible = not gear.visible and not menu.visible
+	if not gear.visible and gear.box_id >= 0:
+		close_box()
+		gear.box_closed.emit()
 	if gear.visible:
 		tutorial("gear")
 
@@ -603,83 +620,6 @@ class Preview extends Node2D:
 		Look.draw(self, {view = view, angle = angle, phase = t * 9.0, moving = walking}, look)
 
 
-## What you are wearing: one row per body slot, with the preview of you in it.
-## Click a row to take that piece off.
-class Gear extends Control:
-	signal unequip(slot: String)
-	const ROW := 50.0
-	const W := 330.0
-	var worn := {}
-	var hover := -1
-
-	func _ready() -> void:
-		anchor_left = 1.0
-		anchor_right = 1.0
-		anchor_top = 0.5
-		anchor_bottom = 0.5
-		offset_left = -W - 24
-		offset_right = -24
-		offset_top = -190
-		offset_bottom = 190
-		mouse_filter = Control.MOUSE_FILTER_STOP
-
-	func _rows_top() -> float:
-		return 58.0
-
-	func _row_at(p: Vector2) -> int:
-		var i := int(floor((p.y - _rows_top()) / ROW))
-		return i if p.y >= _rows_top() and i >= 0 and i < Items.SLOTS.size() else -1
-
-	func _gui_input(e: InputEvent) -> void:
-		if e is InputEventMouseMotion:
-			var h := _row_at(e.position)
-			if h != hover:
-				hover = h
-				queue_redraw()
-		elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
-			var i := _row_at(e.position)
-			if i >= 0 and worn.get(Items.SLOTS[i]) != null:
-				unequip.emit(Items.SLOTS[i])
-			accept_event()
-
-	func _draw() -> void:
-		draw_style_box(UiTheme.box(Color(0.06, 0.055, 0.045, 0.92), 10, UiTheme.LINE, 1), Rect2(Vector2.ZERO, size))
-		draw_string(UiTheme.heading(), Vector2(18, 34), "เสื้อผ้าที่สวม", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UiTheme.PAPER)
-		var armor := 0.0
-		for slot in worn:
-			if worn[slot] != null:
-				armor += Items.def(worn[slot].id).get("armor", 0.0)
-		armor = minf(armor, Items.MAX_ARMOR)
-		draw_string(UiTheme.body_bold(), Vector2(0, 34), "กันกัด %d%%" % roundi(armor * 100), HORIZONTAL_ALIGNMENT_RIGHT, W - 18, 16,
-				UiTheme.WARN if armor > 0 else Color(UiTheme.PAPER, 0.5))
-		for i in Items.SLOTS.size():
-			var slot: String = Items.SLOTS[i]
-			var it = worn.get(slot)
-			var r := Rect2(12, _rows_top() + i * ROW, W - 24, ROW - 6)
-			var bg := Color(0.91, 0.88, 0.81, 0.1 if i == hover and it != null else 0.04)
-			draw_style_box(UiTheme.box(bg, 6), r)
-			draw_string(UiTheme.body(), r.position + Vector2(10, 28), Items.SLOT_NAMES[slot], HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
-					Color(UiTheme.PAPER, 0.55))
-			var icon := Rect2(r.position + Vector2(52, 4), Vector2(36, 36))
-			if it == null:
-				draw_string(UiTheme.body(), r.position + Vector2(100, 28), "ว่าง", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(UiTheme.PAPER, 0.3))
-				continue
-			var d := Items.def(it.id)
-			Items.draw_icon(self, icon, it.id)
-			draw_string(UiTheme.medium(), r.position + Vector2(100, 21), d.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, UiTheme.PAPER)
-			var sub := Items.wear_text(it.id).trim_prefix("สวมที่" + Items.SLOT_NAMES[slot]).trim_prefix(" · ")
-			if i == hover:
-				sub = "คลิกเพื่อถอด"
-			draw_string(UiTheme.body(), r.position + Vector2(100, 38), sub, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 150, 12,
-					Color(UiTheme.PAPER, 0.6))
-			var frac: float = float(it.hp) / d.hp
-			var bar := Rect2(r.end.x - 44, r.position.y + 18, 34, 5)
-			draw_rect(bar, Color(0, 0, 0, 0.4))
-			draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), Color("4f9a3a") if frac > 0.3 else Color("c8502a"))
-		draw_string(UiTheme.body(), Vector2(0, size.y - 18), "[Tab] ปิด · ของในช่องที่เลือก กด F เพื่อสวม", HORIZONTAL_ALIGNMENT_CENTER, W, 13,
-				Color(UiTheme.PAPER, 0.45))
-
-
 class Vitals extends Control:
 	var pname := ""
 	var hp := 100.0
@@ -847,13 +787,13 @@ class TutorialCard extends Control:
 class HelpSheet extends Control:
 	const ROWS := [
 		["[W][A][S][D]", "เดิน"], ["[E]", "ค้นของ / เก็บของ"],
-		["[คลิกซ้าย]", "ต่อย / ฟาดอาวุธ"], ["[1]–[0]", "เลือกช่องของ"],
+		["[คลิกซ้าย]", "ต่อย / ฟาดอาวุธ"], ["[1]–[0] / ลูกกลิ้ง", "เลือกช่องของ (คลิกได้)"],
 		["[คลิกขวา]", "เตะ ผลักซอมบี้ออก"], ["[F]", "ใช้ของ / สวมเสื้อผ้า"],
-		["[ลูกกลิ้ง]", "ซูมกล้อง"], ["[G]", "ทิ้งของ"],
+		["[Ctrl]+ลูกกลิ้ง", "ซูมกล้อง"], ["[G]", "ทิ้งของ"],
 		["[Shift]", "วิ่ง (เร็ว แต่เสียงดัง)"], ["[Ctrl]/[C]", "ย่อง (เงียบ ซอมบี้เห็นยาก)"],
 		["[R]", "ตอกไม้เสริม / ซ่อมประตู"], ["[E] ที่บันได", "ขึ้น / ลงดาดฟ้า"],
 		["[E] ค้าง", "เลือกสิ่งที่จะทำกับของตรงหน้า"], ["[H]", "เปิด / ปิดหน้านี้"],
-		["[Tab]", "ดูของที่สวม · คลิกเพื่อถอด"], ["เสื้อผ้า", "กันกัด ลดโอกาสติดเชื้อ แต่ขาดได้"],
+		["[Tab]", "ดูของที่สวม · คลิกเพื่อถอด"], ["[Q]", "รักษาด่วน (ห้ามเลือดก่อน)"], ["เสื้อผ้า", "กันกัด ลดโอกาสติดเชื้อ แต่ขาดได้"],
 	]
 
 	func _draw() -> void:

@@ -10,6 +10,7 @@ const LIFT := 10.0
 
 var slots: Array = []
 var selected := 0
+var hover := -1  # slot under the mouse: highlighted, and its details shown instead
 
 
 func _ready() -> void:
@@ -29,22 +30,40 @@ func _fit(n: int) -> void:
 	offset_bottom = -20
 
 
+## The slot at `p` (in this control's coordinates), or -1.
+func slot_at(p: Vector2) -> int:
+	var top := size.y - SLOT
+	for i in Items.INV_SIZE:
+		if Rect2(i * (SLOT + GAP), top - LIFT, SLOT, SLOT + LIFT).has_point(p):
+			return i
+	return -1
+
+
+func _process(_delta: float) -> void:
+	var h := slot_at(get_local_mouse_position()) if is_visible_in_tree() else -1
+	if h != hover:
+		hover = h
+		queue_redraw()
+
+
 func show_inventory(inv: Array, sel: int) -> void:
 	slots = inv
 	selected = sel
-	_fit(maxi(Items.INV_SIZE, inv.size()))
+	_fit(Items.INV_SIZE)
 	queue_redraw()
 
 
 func _draw() -> void:
 	var top := size.y - SLOT
-	for i in maxi(Items.INV_SIZE, slots.size()):
+	for i in Items.INV_SIZE:
 		var it = slots[i] if i < slots.size() else null
 		var sel := i == selected
 		var r := Rect2(i * (SLOT + GAP), top - (LIFT if sel else 0.0), SLOT, SLOT)
+		if i == hover and not sel:
+			r.position.y -= 3.0
 		if it == null:
 			draw_style_box(UiTheme.box(Color(0.11, 0.1, 0.08, 0.65), 6, UiTheme.WARN if sel else Color(0.23, 0.2, 0.17), 2), r)
-			draw_string(UiTheme.heading(), r.position + Vector2(6, 16), str((i + 1) % 10), HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+			draw_string(UiTheme.heading(), r.position + Vector2(6, 16), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
 					Color(UiTheme.PAPER, 0.35))
 			continue
 		# Cardboard slot with a drop shadow; a glow ring when selected.
@@ -55,7 +74,7 @@ func _draw() -> void:
 			card.shadow_size = 6
 		draw_style_box(card, r)
 		draw_rect(Rect2(r.position + Vector2(3, 3), Vector2(r.size.x - 6, 3)), Color(1, 1, 1, 0.1))
-		draw_string(UiTheme.heading(), r.position + Vector2(6, 16), str((i + 1) % 10), HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+		draw_string(UiTheme.heading(), r.position + Vector2(6, 16), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
 				Color(UiTheme.INK, 0.6))
 		Items.draw_icon(self, r.grow(-12), it.id)
 		if it.n > 1:
@@ -67,10 +86,11 @@ func _draw() -> void:
 			draw_rect(bar, Color(0, 0, 0, 0.35))
 			draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), Color("4f9a3a") if frac > 0.3 else Color("c8502a"))
 
-	# Name of the held item, with what it does.
-	var cur = slots[selected] if selected < slots.size() else null
-	var name := "มือเปล่า"
-	var info := "คลิกซ้ายต่อย · คลิกขวาเตะ"
+	# Name of the held item (or the one under the mouse), with what it does.
+	var shown := hover if hover >= 0 else selected
+	var cur = slots[shown] if shown < slots.size() else null
+	var name := "มือเปล่า" if hover < 0 else "ช่องว่าง"
+	var info := "คลิกซ้ายต่อย · คลิกขวาเตะ" if hover < 0 else "คลิกเพื่อเลือก"
 	if cur != null:
 		var d := Items.def(cur.id)
 		name = Items.display_name(cur.id)
@@ -78,9 +98,9 @@ func _draw() -> void:
 			"weapon":
 				info = "ทนทาน %d / %d · คลิกซ้ายฟาด" % [cur.hp, d.hp]
 			"use":
-				info = "กด F ใช้ · " + Items.effect_text(cur.id)
+				info = ("คลิกขวาใช้ · " if hover >= 0 else "กด F ใช้ · ") + Items.effect_text(cur.id)
 			"wear":
-				info = "กด F สวมใส่ · " + Items.wear_text(cur.id)
+				info = ("คลิกขวาสวม · " if hover >= 0 else "กด F สวมใส่ · ") + Items.wear_text(cur.id)
 			"trap":
 				info = "กด F วางลงพื้นข้างหน้า · ซอมบี้ที่เหยียบจะโดน"
 			"material":

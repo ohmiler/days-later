@@ -39,9 +39,12 @@ static func save_world(main: Node) -> void:
 	for d in world.doors:
 		doors.append([d.id, d.closed, d.hp, d.boards, d.broken, d.kind if world.is_built(d.id) else "", d.cell])
 	var searched := []
+	var boxes := {}  # container id -> slots, for any that hold something
 	for f: FurnitureProp in world.container_nodes:
 		if f.searched:
 			searched.append(f.data.id)
+		if f.items.any(func(x): return x != null):
+			boxes[f.data.id] = f.items
 	var items := []
 	for pid in main.pickups:
 		items.append([pid, main.pickups[pid].pos, main.pickups[pid].item])
@@ -51,7 +54,7 @@ static func save_world(main: Node) -> void:
 	_write(dir() + "/world.save", {
 		version = VERSION, seed = main.world_seed, day = main.day, time = main.time,
 		next_zid = main.next_zid, next_pickup = main.next_pickup,
-		doors = doors, searched = searched, pickups = items, zombies = zs,
+		doors = doors, searched = searched, boxes = boxes, pickups = items, zombies = zs,
 	})
 
 
@@ -70,6 +73,12 @@ static func load_world_into(main: Node, w: Dictionary) -> bool:
 			world.add_structure(e[0], e[6], e[5], e[2])
 		if e[0] < world.doors.size():
 			world.set_door(e[0], e[1], e[2], e[3], e[4])
+	var boxes: Dictionary = w.get("boxes", {})
+	for id in boxes:
+		if id < world.container_nodes.size():
+			var items: Array = boxes[id]
+			items.resize(FurnitureProp.SIZE)
+			world.container_nodes[id].items = items
 	for id in w.searched:
 		if id < world.container_nodes.size():
 			world.container_nodes[id].set_searched(true)
