@@ -111,3 +111,22 @@ func run() -> void:
 	check(_raw(ppath).version == SaveGame.VERSION + 1, "a newer player save is not written over")
 	await close_game()
 	SaveGame.wipe()
+
+	# --- A city from an older generator: the survivors move to a new one. ---
+	await host(9326)
+	main.inventory._give(me, "axe")
+	me.bed = 3
+	var old_seed: int = main.world_seed
+	main._save_all()
+	await close_game()
+	var ow := _raw(_path())
+	ow.gen = CityGen.GEN - 1
+	_store(_path(), ow)
+	check(SaveGame.world_info().get("oldcity", false), "the title screen sees an old city")
+	await host(9327, true, false)
+	check(main.in_game and main.world_seed != old_seed, "carrying on starts a new city")
+	check(count(me, "axe") == 1, "the survivor keeps what they carried")
+	check(me.bed == -1 and main.world.can_stand(me.position, 5), "and starts somewhere they can stand, with no bed yet")
+	check(FileAccess.file_exists(SaveGame.dir() + "/world.gen%d.save" % (CityGen.GEN - 1)), "the old city is kept aside, not deleted")
+	await close_game()
+	SaveGame.wipe()

@@ -65,6 +65,7 @@ var roads: Array = []  # {rect: Rect2i, horizontal: bool}
 var intersections: Array = []  # Rect2i
 var wires: Array = []  # [from, to] pole tops
 var checkpoint := Rect2i()  # the junction the army held
+var city_seed := 0  # the seed this city was built from
 var things: Array = []  # {id, kind, cell, state}: taps, radios, vending machines (see Things)
 var thing_nodes: Array = []
 var bts_row := -1
@@ -74,6 +75,7 @@ var chunks := {}
 
 
 func generate(seed_val: int) -> void:
+	city_seed = seed_val
 	tint.seed = seed_val + 1
 	tint.frequency = 0.04
 	tiles.resize(W * H)

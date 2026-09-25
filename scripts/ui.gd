@@ -648,6 +648,13 @@ func _build_menu() -> void:
 	var info := SaveGame.world_info()
 	if info.has("problem"):
 		form.add_child(_label(info.problem, UiTheme.body_bold(), 15, UiTheme.WARN))
+	elif info.get("oldcity", false):
+		form.add_child(_label("เมืองนี้สร้างด้วยเกมรุ่นเก่า · ไปเมืองใหม่ได้ ตัวละครและของยังอยู่ครบ", UiTheme.body(), 14, UiTheme.WARN))
+		var move := _button("ย้ายไปเมืองใหม่", true)
+		move.pressed.connect(func():
+			_remember_name()
+			host_requested.emit(player_name(), true))
+		form.add_child(move)
 	elif not info.is_empty():
 		var cont := _button("เล่นต่อ · วันที่ %d" % info.day, true)
 		cont.pressed.connect(func():

@@ -188,6 +188,10 @@ func _host(dedicated: bool, resume := false) -> void:
 		# Never start a fresh city over a save we could not read: it would be
 		# written over within the minute.
 		var r := SaveGame.load_world()
+		if r.state == "oldcity":
+			# Built by an older generator: the survivors move to a new city.
+			SaveGame.move_to_new_city()
+			r = {state = "none", data = {}}
 		if r.state in ["newer", "corrupt"]:
 			var msg: String = SaveGame.world_info().get("problem", "")
 			ui.set_status(msg)
