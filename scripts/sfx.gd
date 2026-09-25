@@ -22,6 +22,19 @@ static func setup_buses() -> void:
 			AudioServer.set_bus_send(i, "Master")
 
 
+## Hear the world through a helmet: effects and ambience dulled and quieter.
+static func set_muffled(on: bool) -> void:
+	for bus in ["SFX", "Ambience"]:
+		var i := AudioServer.get_bus_index(bus)
+		if i < 0:
+			continue
+		if AudioServer.get_bus_effect_count(i) == 0:
+			var lp := AudioEffectLowPassFilter.new()
+			lp.cutoff_hz = 900.0
+			AudioServer.add_bus_effect(i, lp)
+		AudioServer.set_bus_effect_enabled(i, 0, on)
+
+
 static func play(parent: Node, name: String, pos: Vector2, volume_db := 0.0, pitch := 1.0) -> void:
 	if DisplayServer.get_name() == "headless":
 		return

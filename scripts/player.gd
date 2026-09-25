@@ -69,6 +69,8 @@ var say := ""  # last thing said in chat, shown over their head for say_t second
 var say_t := 0.0
 var open_box := -1  # server: the container this player has open in the bag screen
 var torn := ""  # server: name of something a bite just tore apart, for main to report
+var bite_where := ""  # server: where the last bite landed, and how much of it was stopped
+var bite_guard := 0.0
 var phase := 0.0
 var sleeping := false  # lying on a bed: can't move, heals, the night goes faster
 var bed := -1  # the bed (container id) this survivor calls home: where they wake after dying
@@ -193,12 +195,41 @@ func load_speed() -> float:
 	return lerpf(1.0, Items.OVERLOAD_SPEED, clampf((over - 1.0) / (Items.OVERLOAD - 1.0), 0.0, 1.0))
 
 
-## Share of a bite stopped by what you're wearing.
-func armor() -> float:
-	var a := 0.0
+## Share of a bite stopped at `part` by what you're wearing (see Items.PARTS).
+func guard(part: String) -> float:
+	return Items.guard_at(wear_ids.values(), part)
+
+
+## How hot your clothes make you: 0 in a T-shirt, 1 and up in riot gear.
+func heat() -> float:
+	var h := 0.0
 	for slot in wear_ids:
-		a += Items.def(wear_ids[slot]).get("armor", 0.0)
-	return minf(a, Items.MAX_ARMOR)
+		h += float(Items.def(wear_ids[slot]).get("hot", 0.0))
+	return h
+
+
+## You hear the world through a full-face helmet.
+func muffled() -> bool:
+	return wear_ids.values().any(func(id): return Items.def(id).get("muffle", false))
+
+
+## Where a bite from a zombie at `from` lands: on the ground it gets your
+## legs; from behind, your neck and back; face to face, the arm you put up.
+func bite_part(from: Vector2, crawling: bool) -> String:
+	var table: Dictionary = Items.BITE_FRONT
+	if crawling:
+		table = Items.BITE_GROUND
+	elif aim.normalized().dot((from - position).normalized()) < -0.3:
+		table = Items.BITE_BEHIND
+	var total := 0
+	for k in table:
+		total += table[k]
+	var r := randi() % total
+	for k in table:
+		r -= table[k]
+		if r < 0:
+			return k
+	return "torso"
 
 
 func in_long_bed() -> bool:
@@ -298,20 +329,29 @@ func set_wear(ids: Dictionary) -> void:
 	queue_redraw()
 
 
-## Server: a zombie bite. Clothing soaks up part of it and wears down doing so.
-func bite(dmg: float) -> void:
-	var a := armor()
-	take_damage(dmg * (1.0 - a))
+## Server: a zombie bite landing on `part`. What guards that part soaks up
+## its share and wears down doing so: the most protective piece there first.
+func bite(dmg: float, part := "torso") -> void:
+	var g := guard(part)
+	take_damage(dmg * (1.0 - g))
 	bitten = true
-	var armored := worn.keys().filter(func(k): return worn[k] != null and Items.def(worn[k].id).get("armor", 0.0) > 0.0)
-	if armored.is_empty():
+	bite_where = part
+	bite_guard = g
+	var best := ""
+	var best_g := 0.0
+	for slot in worn:
+		if worn[slot] == null:
+			continue
+		var s := float(Items.def(worn[slot].id).get("guard", {}).get(part, 0.0))
+		if s > best_g:
+			best_g = s
+			best = slot
+	if best == "":
 		return
-	# The outer layer takes the teeth first; under it only once it is gone.
-	var slot: String = "over" if "over" in armored else armored.pick_random()
-	worn[slot].hp -= 1
-	if worn[slot].hp <= 0:
-		torn = Items.display_name(worn[slot].id)
-		worn.erase(slot)
+	worn[best].hp -= 1
+	if worn[best].hp <= 0:
+		torn = Items.display_name(worn[best].id)
+		worn.erase(best)
 		refresh_wear()
 
 

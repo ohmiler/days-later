@@ -240,13 +240,18 @@ func _draw() -> void:
 	var head := UiTheme.heading()
 	var body := UiTheme.body()
 	# Column titles.
-	var armor := 0.0
+	var ids := []
 	for k in worn:
 		if worn[k] != null:
-			armor += Items.def(worn[k].id).get("armor", 0.0)
+			ids.append(worn[k].id)
 	draw_string(head, Vector2(24, 40), "ที่สวมอยู่", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.PAPER)
-	draw_string(body, Vector2(24, 56), "กันกัด %d%%" % roundi(minf(armor, Items.MAX_ARMOR) * 100), HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
-			UiTheme.WARN if armor > 0 else Color(UiTheme.PAPER, 0.5))
+	var guards := []
+	for part in Items.PARTS:
+		var g := Items.guard_at(ids, part)
+		if g > 0.0:
+			guards.append("%s %d" % [Items.PART_NAMES[part], roundi(g * 100)])
+	draw_string(body, Vector2(24, 56), ("กันกัด: " + " · ".join(guards)) if not guards.is_empty() else "ยังไม่มีอะไรกันกัด",
+			HORIZONTAL_ALIGNMENT_LEFT, 170, 10, UiTheme.WARN if not guards.is_empty() else Color(UiTheme.PAPER, 0.5))
 	var used := inv.filter(func(x): return x != null).size()
 	draw_string(head, Vector2(200, 40), "กระเป๋า", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.PAPER)
 	var kg := 0.0

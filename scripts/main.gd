@@ -64,6 +64,7 @@ var tracers: Array = []  # [from, to, ttl]
 var decals: Node2D
 var blood: Array = []  # [pos, radius, colour] - stays on the ground
 var sparks: Array = []  # [pos, ttl, strong]
+var _muffled := false  # the local player's helmet dulls the sound
 var dust: Array = []  # [pos, age]: kicked up by bikes turning hard
 var shake := 0.0
 const INTERACT_RANGE := 20.0
@@ -637,6 +638,9 @@ func _process(delta: float) -> void:
 		shake = move_toward(shake, 0.0, delta * 14.0)
 		if not me.on_roof:
 			_fade_trees_near(me.position)
+		if me.muffled() != _muffled:
+			_muffled = me.muffled()
+			Sfx.set_muffled(_muffled)
 		_update_inside(me)
 		_update_prompt(me)
 		if me.moving:

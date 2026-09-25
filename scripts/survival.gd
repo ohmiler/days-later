@@ -152,11 +152,13 @@ func _tick_needs(p: Player, delta: float) -> void:
 		main._make_noise(p.position, main.NOISE_RUN if running else main.NOISE_WALK)
 	var slow := SLEEP_NEEDS if p.sleeping else 1.0
 	p.hunger = maxf(0.0, p.hunger - HUNGER_RATE * delta * slow * (1.6 if running else 1.0))
-	p.thirst = maxf(0.0, p.thirst - THIRST_RATE * delta * slow * (1.8 if running else 1.0))
+	# Heavy clothes in Bangkok's heat: sweat it out (less so at night).
+	var sweat := 1.0 + p.heat() * (0.4 if main.world.is_night else 1.0)
+	p.thirst = maxf(0.0, p.thirst - THIRST_RATE * delta * slow * sweat * (1.8 if running else 1.0))
 	if p.sleeping:
 		pass  # (rested in _tick_sleep)
 	elif running:
-		p.stamina = maxf(0.0, p.stamina - 22.0 * delta / p.load_speed())  # heavier tires you faster
+		p.stamina = maxf(0.0, p.stamina - 22.0 * delta / p.load_speed() * (1.0 + p.heat() * 0.5))  # heavier and hotter tires you faster
 		if p.stamina <= 0.0:
 			p.exhausted = true
 			main._toast(p, "หมดแรง! ต้องพักก่อนวิ่งต่อ")
@@ -167,7 +169,12 @@ func _tick_needs(p: Player, delta: float) -> void:
 			p.exhausted = false
 	if p.bitten:
 		p.bitten = false
-		var guard := 1.0 - p.armor()
+		var guard := 1.0 - p.bite_guard  # what got through where it bit
+		var where: String = Items.PART_NAMES.get(p.bite_where, "")
+		if p.bite_guard >= 0.5:
+			main._toast(p, "โดนกัดที่%s · ของที่ใส่กันไว้ได้ส่วนใหญ่" % where)
+		else:
+			main._toast(p, "โดนกัดที่%s!" % where)
 		if p.torn != "":
 			main._toast(p, "%sขาดแล้ว!" % p.torn)
 			p.torn = ""

@@ -11,10 +11,22 @@ const INV_SIZE := 8  # the hotbar; a bag adds slots after these, reached from th
 ## "over" is a second layer on the body: a vest goes on top of a shirt. The
 ## rest are for things worn with anything: masks and glasses, gloves, knee
 ## pads, a bag across the shoulder. (How each is drawn: see Clothes.)
-const SLOTS := ["head", "face", "body", "over", "hands", "legs", "knees", "feet", "back", "strap"]
-const SLOT_NAMES := {head = "หัว", face = "หน้า", body = "ตัว", over = "ทับเสื้อ", hands = "มือ", legs = "ขา",
-		knees = "เข่า", feet = "เท้า", back = "หลัง", strap = "สะพาย"}
-const MAX_ARMOR := 0.6
+const SLOTS := ["head", "face", "neck", "body", "over", "arms", "hands", "legs", "knees", "feet", "back", "strap"]
+const SLOT_NAMES := {head = "หัว", face = "หน้า", neck = "คอ", body = "ตัว", over = "ทับเสื้อ", arms = "แขน", hands = "มือ",
+		legs = "ขา", knees = "เข่า/แข้ง", feet = "เท้า", back = "หลัง", strap = "สะพาย"}
+
+## Where a bite can land. Zombies bite what's nearest their mouth: a forearm
+## thrown up to fend one off (most of all), the hands, the neck and shoulders
+## when one gets you from behind, the calves when it's on the ground. What you
+## wear guards each part on its own (an item's `guard`), so a leather jacket
+## saves your arms but not your neck.
+const PARTS := ["head", "face", "neck", "torso", "arms", "hands", "legs"]
+const PART_NAMES := {head = "หัว", face = "หน้า", neck = "คอ", torso = "ลำตัว", arms = "แขน", hands = "มือ", legs = "ขา"}
+## How likely a bite is to land on each part, by where the zombie is.
+const BITE_FRONT := {arms = 40, hands = 20, torso = 20, neck = 12, face = 8}
+const BITE_BEHIND := {neck = 40, torso = 35, arms = 15, head = 10}
+const BITE_GROUND := {legs = 100}
+const MAX_GUARD := 0.95
 
 ## Kilograms a survivor carries before slowing down (a bag adds its `carry`).
 ## Past it they slow, down to OVERLOAD_SPEED at OVERLOAD times the limit.
@@ -106,6 +118,9 @@ static func problems() -> Array:
 			"wear":
 				if d.get("slot") not in SLOTS:
 					out.append("%s: unknown slot %s" % [id, d.get("slot")])
+				for part in d.get("guard", {}):
+					if part not in PARTS:
+						out.append("%s: guards unknown body part %s" % [id, part])
 				if not d.has("draw") or not d.has("hp"):
 					out.append("%s: clothes need draw and hp" % id)
 				else:
@@ -154,12 +169,26 @@ static func effect_text(id: String) -> String:
 	return " · ".join(parts)
 
 
+## Share of a bite stopped at `part` by a set of worn item ids. Layers add up
+## the way they would: each stops its share of what gets past the one above.
+static func guard_at(ids: Array, part: String) -> float:
+	var through := 1.0
+	for id in ids:
+		through *= 1.0 - float(def(id).get("guard", {}).get(part, 0.0))
+	return minf(1.0 - through, MAX_GUARD)
+
+
 ## One line on what a piece of clothing does.
 static func wear_text(id: String) -> String:
 	var d := def(id)
 	var parts := ["สวมที่" + SLOT_NAMES[d.slot]]
-	if d.get("armor", 0.0) > 0:
-		parts.append("กันกัด %d%%" % roundi(d.armor * 100))
+	var g: Dictionary = d.get("guard", {})
+	if not g.is_empty():
+		parts.append("กันกัด " + " ".join(g.keys().map(func(k): return "%s %d%%" % [PART_NAMES[k], roundi(g[k] * 100)])))
+	if d.get("hot", 0.0) >= 0.15:
+		parts.append("ร้อน")
+	if d.get("muffle", false):
+		parts.append("ได้ยินไม่ชัด")
 	if d.get("bag", 0) > 0:
 		parts.append("ช่องเก็บของ +%d" % d.bag)
 	if d.get("speed", 1.0) < 1.0:
@@ -502,6 +531,22 @@ static func _wear_icon(ci: CanvasItem, r: Rect2, d: Dictionary) -> void:
 			ci.draw_colored_polygon(P.call([Vector2(-8, 8 - tall - 4), Vector2(0, 8 - tall - 4), Vector2(1, 2),
 					Vector2(12, 4), Vector2(12, 9), Vector2(-8, 9)]), col)
 			ci.draw_rect(Rect2(c + Vector2(-8, 8) * s, Vector2(20, 2) * s), dark if w.shape == "boots" else Color("f0f0e8"))
+		"armguards":
+			for sx in [-1.0, 1.0]:
+				ci.draw_rect(Rect2(c + Vector2(sx * 7 - 5, -12) * s, Vector2(10, 24) * s), col)
+				for i in 3:
+					ci.draw_line(c + Vector2(sx * 7 - 5, -8 + i * 8) * s, c + Vector2(sx * 7 + 5, -8 + i * 8) * s, Color("8a9098"), 2.0 * s)
+		"fullface":
+			ci.draw_circle(c, 13 * s, col)
+			ci.draw_rect(Rect2(c + Vector2(-9, -4) * s, Vector2(18, 7) * s), Color("141820"))
+			ci.draw_rect(Rect2(c + Vector2(-8, -3) * s, Vector2(6, 2) * s), Color(1, 1, 1, 0.3))
+		"scarf":
+			ci.draw_rect(Rect2(c + Vector2(-14, -6) * s, Vector2(28, 8) * s), col)
+			ci.draw_rect(Rect2(c + Vector2(4, 0) * s, Vector2(7, 16) * s), col.darkened(0.15))
+		"shinguards":
+			for sx in [-1.0, 1.0]:
+				ci.draw_rect(Rect2(c + Vector2(sx * 7 - 4, -14) * s, Vector2(8, 26) * s), col)
+				ci.draw_line(c + Vector2(sx * 7, -12) * s, c + Vector2(sx * 7, 10) * s, col.darkened(0.25), 1.5 * s)
 		"mask":
 			ci.draw_colored_polygon(P.call([Vector2(-12, -6), Vector2(12, -6), Vector2(10, 7), Vector2(0, 10), Vector2(-10, 7)]), col)
 			for i in 3:
