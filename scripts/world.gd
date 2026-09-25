@@ -9,7 +9,7 @@ const W := 160
 const H := 120
 const CHUNK := 16
 const BTS_H := 64.0  # how high the skytrain deck floats above the road
-enum { GRASS, DIRT, WATER, TREE, WALL, ROAD, SIDEWALK, SOI, BUILDING, PLAZA }
+enum { GRASS, DIRT, WATER, TREE, WALL, ROAD, SIDEWALK, SOI, BUILDING, PLAZA, FLOOR, IWALL }
 const COLORS := {
 	GRASS: Color("4a5733"),
 	DIRT: Color("6a5a43"),
@@ -21,6 +21,8 @@ const COLORS := {
 	SOI: Color("6b6862"),
 	BUILDING: Color("4a4640"),
 	PLAZA: Color("aaa293"),
+	FLOOR: Color("a89a82"),  # terrazzo inside shops and homes
+	IWALL: Color("3a3632"),  # a wall seen from above, once the roof is lifted off
 }
 
 var tiles := PackedInt32Array()
@@ -33,6 +35,9 @@ var tint := FastNoiseLite.new()  # large soft colour patches on the ground
 var prop_parent: Node  # y-sorted node that props are added to
 var props := {}  # cell -> TreeProp
 var building_nodes: Array = []
+var building_at := {}  # cell -> BuildingProp, for every cell of every footprint
+var containers: Array = []  # {id, kind, cell, table}, filled by CityGen
+var container_nodes: Array = []  # FurnitureProp, indexed by container id
 var overhead: Overhead
 
 # Layout records filled in by CityGen.
@@ -88,6 +93,17 @@ func _spawn_props() -> void:
 		b.z_index = 1
 		prop_parent.add_child(b)
 		building_nodes.append(b)
+		var r: Rect2i = rec.rect
+		for y in range(r.position.y, r.end.y):
+			for x in range(r.position.x, r.end.x):
+				building_at[Vector2i(x, y)] = b
+	for rec in containers:
+		var f := FurnitureProp.new()
+		f.data = rec
+		f.position = to_pos(rec.cell) + Vector2(0, TILE * 0.45)
+		f.z_index = 1
+		prop_parent.add_child(f)
+		container_nodes.append(f)
 	for rec in street_props:
 		var p := StreetProp.new()
 		p.data = rec
@@ -136,7 +152,7 @@ func set_tile(c: Vector2i, t: int) -> void:
 
 
 func is_solid(c: Vector2i) -> bool:
-	return get_tile(c) in [WATER, TREE, WALL, BUILDING] or blocked.has(c)
+	return get_tile(c) in [WATER, TREE, WALL, BUILDING, IWALL] or blocked.has(c)
 
 
 func in_intersection(c: Vector2i) -> bool:
@@ -186,7 +202,7 @@ func ray_length(from: Vector2, dir: Vector2, max_len: float) -> float:
 	var t := 0.0
 	while t < max_len:
 		var c := to_cell(from + dir * t)
-		if not in_bounds(c) or get_tile(c) in [TREE, WALL, BUILDING]:
+		if not in_bounds(c) or get_tile(c) in [TREE, WALL, BUILDING, IWALL]:
 			return t
 		t += 4.0
 	return max_len
@@ -303,6 +319,18 @@ func _draw_tile(ci: Node2D, x: int, y: int) -> void:
 				ci.draw_rect(Rect2(r.position + Vector2(4, 5), Vector2(8, 5)), Color("2e2c2a"))  # drain
 		PLAZA:
 			ci.draw_rect(r, base.darkened(0.08), false, 0.5)
+		FLOOR:
+			ci.draw_rect(r, base.darkened(0.1), false, 0.5)
+			for i in 4:  # terrazzo chips
+				var p := r.position + Vector2(hash01(x, y, i + 20), hash01(x, y, i + 30)) * (TILE - 1)
+				ci.draw_rect(Rect2(p, Vector2(1, 1)), base.darkened(0.25) if i % 2 else base.lightened(0.15))
+			if get_tile(c + Vector2i.DOWN) not in [FLOOR, IWALL]:
+				ci.draw_rect(Rect2(r.position + Vector2(0, TILE - 2), Vector2(TILE, 2)), Color("6a5a42"))  # threshold
+		IWALL:
+			ci.draw_rect(r, base)
+			for d in DIRS:
+				if get_tile(c + d) == FLOOR:
+					ci.draw_rect(_edge(r, d, 3), Color("6e665c"))  # lit inner face of the wall
 		WALL:
 			ci.draw_rect(Rect2(r.position, Vector2(TILE, 3)), base.lightened(0.1))
 			ci.draw_rect(Rect2(r.position + Vector2(0, TILE - 4), Vector2(TILE, 4)), base.darkened(0.3))

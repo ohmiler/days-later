@@ -24,6 +24,13 @@ var punch_side := false
 var pending_kind := Look.NONE
 var pending_t := 0.0
 var pending_stats: Array = []
+# Inventory: server-authoritative; the owning client gets a copy via main.inv_sync.
+var inv: Array = []  # INV_SIZE entries of null or {id, n, hp}
+var sel := 0
+var weapon_id := ""  # what everyone sees in this player's hand
+var search_id := -1  # server only: container being searched
+var search_t := 0.0
+var dropped := false  # server only: death bag already dropped this life
 var shoot_cd := 0.0
 var respawn := 0.0
 var net_pos := Vector2.ZERO
@@ -36,6 +43,16 @@ var view := [Look.FRONT, false]
 var moving := false
 var last_pos := Vector2.ZERO
 var flashlight: PointLight2D
+
+
+func _init() -> void:
+	inv.resize(Items.INV_SIZE)
+
+
+## The weapon in the selected slot, or "" for bare fists.
+func held_weapon() -> String:
+	var it = inv[sel]
+	return it.id if it != null and Items.is_weapon(it.id) else ""
 
 
 func alive() -> bool:
@@ -53,7 +70,7 @@ func take_damage(amount: float) -> void:
 
 ## Start an attack animation (runs on every peer via main.fx_melee).
 func play_attack(kind: int) -> void:
-	if kind != Look.KICK:
+	if kind in [Look.PUNCH_L, Look.PUNCH_R]:
 		punch_side = not punch_side
 		kind = Look.PUNCH_L if punch_side else Look.PUNCH_R
 	anim = kind
@@ -67,6 +84,7 @@ func server_tick(delta: float) -> void:
 		respawn -= delta
 		if respawn <= 0:
 			hp = MAX_HP
+			dropped = false
 			position = world.spawn_point()
 		return
 	position = world.slide(position, move.limit_length(1.0) * SPEED * delta, RADIUS)
@@ -115,11 +133,17 @@ func _draw() -> void:
 	if not alive():
 		Look.draw_corpse(self, aim.angle(), skin, shirt, 1.0)
 		return
-	var dur := 0.45 if anim == Look.KICK else 0.22
+	var wdef := Items.def(weapon_id)
+	var dur := 0.22
+	if anim == Look.KICK:
+		dur = 0.45
+	elif anim == Look.SWING:
+		dur = wdef.get("dur", 0.34)
 	var ext := 0.0
 	if anim != Look.NONE and anim_t < dur:
-		# Punches use a quick out-and-back curve; kicks pass their raw timeline to Look.kick_pose.
-		ext = anim_t / dur if anim == Look.KICK else sin(anim_t / dur * PI)
+		# Punches use a quick out-and-back curve; kicks and swings pass their raw timeline.
+		ext = sin(anim_t / dur * PI) if anim in [Look.PUNCH_L, Look.PUNCH_R] else anim_t / dur
 	Look.draw_human(self, view, aim.angle(), phase, moving and ext == 0.0, skin, shirt, pants, hair, false,
-			anim if ext > 0.0 else Look.NONE, ext, false, anim != Look.NONE and anim_t < 1.2)
+			anim if ext > 0.0 else Look.NONE, ext, false, anim != Look.NONE and anim_t < 1.2, Vector2.ZERO,
+			wdef.get("draw", {}))
 	Look.draw_hp(self, hp / MAX_HP)

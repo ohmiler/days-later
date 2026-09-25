@@ -146,6 +146,16 @@ func _text(rect: Rect2, text: String, col: Color, size: int) -> void:
 
 # --- Kinds ------------------------------------------------------------------
 
+## Open doorway in the front wall for buildings you can walk into.
+func _door() -> void:
+	if not data.get("enter", false):
+		return
+	var x: float = data.door * World.TILE
+	draw_rect(Rect2(x + 1, -GROUND_H + 1, World.TILE - 2, GROUND_H - 1), Color("120f0c"))
+	draw_rect(Rect2(x + 0.5, -GROUND_H + 0.5, World.TILE - 1, GROUND_H - 0.5), Color("5a4a3a"), false, 1.0)
+	draw_rect(Rect2(x + 2, -2, World.TILE - 4, 2), Color("3a2e24"))  # worn step
+
+
 func _draw_shop() -> void:
 	var col: Color = data.color
 	_flat_roof(col)
@@ -178,6 +188,7 @@ func _draw_shop() -> void:
 			draw_line(Vector2(2, y), Vector2(w - 2, y), Color("6e7072"), 0.5)
 		if rng.randf() < 0.4:
 			draw_line(Vector2(w * 0.3, -9), Vector2(w * 0.6, -5), Color("b8482e", 0.6), 1.2)  # graffiti
+	_door()
 	if data.sign != "":
 		var sr := _sign_rect()
 		var sc := Color.from_hsv(rng.randf(), 0.7, 0.75)
@@ -195,7 +206,8 @@ func _draw_store() -> void:
 	draw_rect(Rect2(3, -GROUND_H + 1, w - 6, GROUND_H - 2), Color("a8c8d4"))
 	for i in int((w - 10) / 6):
 		draw_rect(Rect2(6 + i * 6, -10, 4, 7), Color("6a8a9a"))  # shelves behind glass
-	draw_rect(Rect2(w * 0.5 - 4, -GROUND_H + 1, 8, GROUND_H - 2), Color("c8e0e8"))  # door
+	draw_rect(Rect2(w * 0.5 - 4, -GROUND_H + 1, 8, GROUND_H - 2), Color("c8e0e8"))  # glass door
+	_door()
 
 
 func _draw_condo() -> void:

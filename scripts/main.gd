@@ -40,6 +40,18 @@ var blood: Array = []  # [pos, radius, colour] - stays on the ground
 var corpses: Array = []  # [pos, angle, skin, shirt, ttl]
 var sparks: Array = []  # [pos, ttl, strong]
 var shake := 0.0
+const INTERACT_RANGE := 20.0
+const SEARCH_TIME := 1.6
+var pickups := {}  # id -> {pos, item: {id, n, hp}} items lying on the ground
+var next_pickup := 1
+var inv_bar: InventoryBar
+var toast: Label
+var toast_t := 0.0
+var search_until := 0.0  # client: progress bar for our own search
+var search_total := 1.0
+var hidden_building: BuildingProp  # the roof we lifted off because we are inside
+var prompt := ""  # "press E" hint drawn above whatever is in reach
+var prompt_pos := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -70,6 +82,20 @@ func _ready() -> void:
 	hud.add_theme_constant_override("outline_size", 4)
 	hud.add_theme_color_override("font_outline_color", Color.BLACK)
 	layer.add_child(hud)
+	inv_bar = InventoryBar.new()
+	layer.add_child(inv_bar)
+	toast = Label.new()
+	toast.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	toast.offset_top = -150
+	toast.offset_bottom = -110
+	toast.offset_left = -300
+	toast.offset_right = 300
+	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	toast.add_theme_font_override("font", Look.thai_font())
+	toast.add_theme_font_size_override("font_size", 20)
+	toast.add_theme_constant_override("outline_size", 6)
+	toast.add_theme_color_override("font_outline_color", Color.BLACK)
+	layer.add_child(toast)
 	_build_menu(layer)
 
 	for arg in OS.get_cmdline_user_args():
@@ -121,11 +147,12 @@ func _host(dedicated: bool) -> void:
 	_connect_once(multiplayer.peer_connected, _on_peer_connected)
 	_connect_once(multiplayer.peer_disconnected, _on_peer_disconnected)
 	world_seed = randi()
+	_loot_rng.randomize()
 	_make_world(world_seed)
 	for i in 25:
 		_spawn_zombie()
 	if not dedicated:
-		_add_player(1)
+		_send_inv(_add_player(1))
 	menu.hide()
 	print("Server listening on port %d" % port)
 
@@ -175,7 +202,16 @@ func _exit_tree() -> void:
 
 func _on_peer_connected(id: int) -> void:
 	init_world.rpc_id(id, world_seed)
-	_add_player(id)
+	var searched := []
+	for f: FurnitureProp in world.container_nodes:
+		if f.searched:
+			searched.append(f.data.id)
+	var items := []
+	for pid in pickups:
+		items.append([pid, pickups[pid].pos, pickups[pid].item])
+	sync_state.rpc_id(id, searched, items)
+	var p := _add_player(id)
+	_send_inv(p)
 	print("Player %d joined (%d online)" % [id, players.size()])
 
 
@@ -184,6 +220,14 @@ func _on_peer_disconnected(id: int) -> void:
 		players[id].queue_free()
 		players.erase(id)
 	print("Player %d left (%d online)" % [id, players.size()])
+
+
+@rpc("authority", "call_remote", "reliable")
+func sync_state(searched: Array, items: Array) -> void:
+	for id in searched:
+		world.container_nodes[id].set_searched(true)
+	for e in items:
+		pickup_add(e[0], e[1], e[2])
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -256,7 +300,16 @@ func _server_tick(delta: float) -> void:
 			if p.kicking:
 				_melee(p, Look.KICK, KICK)
 			elif p.punching:
-				_melee(p, Look.PUNCH_L, PUNCH)
+				var wid := p.held_weapon()
+				if wid == "":
+					_melee(p, Look.PUNCH_L, PUNCH)
+				else:
+					var w := Items.def(wid)
+					_melee(p, Look.SWING, [w.range, w.dmg, w.cd, w.stun, w.knock], w.dur * 0.45)
+		_tick_search(p, delta)
+		if not p.alive() and not p.dropped:
+			p.dropped = true
+			_drop_everything(p)
 	for z: Zombie in zombies.values():
 		z.server_tick(delta)
 	_separate()
@@ -271,7 +324,7 @@ func _server_tick(delta: float) -> void:
 		snap_timer = SNAPSHOT_RATE
 		var ps := []
 		for p: Player in players.values():
-			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills])
+			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id])
 		var zs := []
 		for z: Zombie in zombies.values():
 			zs.append([z.zid, z.position, z.hp])
@@ -299,12 +352,15 @@ func _separate() -> void:
 
 
 ## Punch hits the closest zombie in front; a kick hits everything in front.
-func _melee(p: Player, kind: int, stats: Array) -> void:
+func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 	p.shoot_cd = stats[2]
+	p.search_id = -1  # swinging interrupts a search
 	fx_melee.rpc(p.peer_id, kind)
 	p.pending_kind = kind
 	p.pending_stats = stats
-	p.pending_t = KICK_WINDUP if kind == Look.KICK else PUNCH_WINDUP
+	if windup < 0:
+		windup = KICK_WINDUP if kind == Look.KICK else PUNCH_WINDUP
+	p.pending_t = windup
 
 
 ## Punch hits the zombie in front that is closest to the aim; a kick hits
@@ -320,19 +376,203 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 			hits.append(z)
 	if hits.is_empty():
 		return
-	if kind != Look.KICK:
+	var wid := p.held_weapon() if kind == Look.SWING else ""
+	var cleave: bool = kind == Look.KICK or Items.def(wid).get("cleave", false)
+	if not cleave:
 		hits.sort_custom(func(a, b): return (a.position - p.position).normalized().dot(dir) > (b.position - p.position).normalized().dot(dir))
 		hits = [hits[0]]
 	for z: Zombie in hits:
 		z.hp -= stats[1]
 		z.stun = stats[3]
 		z.position = world.slide(z.position, dir * stats[4], Zombie.RADIUS)
-		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id)
+		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""))
 		if z.hp <= 0:
 			fx_death.rpc(z.position, z.facing, z.skin, z.shirt)
 			zombies.erase(z.zid)
 			z.queue_free()
 			p.kills += 1
+	if wid != "":
+		_wear_weapon(p)
+
+
+## Each hit wears the weapon down; at zero it breaks.
+func _wear_weapon(p: Player) -> void:
+	var it = p.inv[p.sel]
+	if it == null:
+		return
+	it.hp -= 1
+	if it.hp <= 0:
+		p.inv[p.sel] = null
+		fx_sound.rpc("break", p.position)
+		_toast(p, "%s หัก!" % Items.display_name(it.id))
+	_send_inv(p)
+
+
+# --- Inventory, searching and pickups (server) ------------------------------
+
+## Sender of the current RPC; for the host calling its own handler directly, itself.
+func _sender() -> Player:
+	var id := multiplayer.get_remote_sender_id()
+	return players.get(id if id != 0 else multiplayer.get_unique_id())
+
+
+## Call an owner-only RPC, or run it directly when the owner is this machine.
+func _notify(peer_id: int, method: StringName, args: Array) -> void:
+	if peer_id == multiplayer.get_unique_id():
+		callv(method, args)
+	else:
+		callv("rpc_id", [peer_id, method] + args)
+
+
+func _send_inv(p: Player) -> void:
+	p.weapon_id = p.held_weapon()
+	_notify(p.peer_id, &"inv_sync", [p.inv, p.sel])
+
+
+func _toast(p: Player, text: String) -> void:
+	_notify(p.peer_id, &"show_toast", [text])
+
+
+## Put an item in the first slot that takes it. Returns false if full.
+func _give(p: Player, id: String) -> bool:
+	var d := Items.def(id)
+	if d.get("type") != "weapon":
+		for it in p.inv:
+			if it != null and it.id == id and it.n < Items.STACK:
+				it.n += 1
+				return true
+	for i in Items.INV_SIZE:
+		if p.inv[i] == null:
+			p.inv[i] = {id = id, n = 1, hp = d.get("hp", 0)}
+			return true
+	return false
+
+
+func _spawn_pickup(pos: Vector2, item: Dictionary) -> void:
+	pickup_add.rpc(next_pickup, pos, item)
+	next_pickup += 1
+
+
+func _drop_everything(p: Player) -> void:
+	for i in Items.INV_SIZE:
+		if p.inv[i] != null:
+			_spawn_pickup(p.position + Vector2.from_angle(i * TAU / 8) * 6, p.inv[i])
+			p.inv[i] = null
+	_send_inv(p)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_select(slot: int) -> void:
+	var p := _sender()
+	if p and slot >= 0 and slot < Items.INV_SIZE:
+		p.sel = slot
+		_send_inv(p)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_use() -> void:
+	var p := _sender()
+	if p == null or not p.alive():
+		return
+	var it = p.inv[p.sel]
+	if it == null or Items.def(it.id).get("type") != "use":
+		return
+	p.hp = minf(Player.MAX_HP, p.hp + Items.def(it.id).heal)
+	it.n -= 1
+	if it.n <= 0:
+		p.inv[p.sel] = null
+	fx_sound.rpc("eat", p.position)
+	_toast(p, "ใช้ %s" % Items.display_name(it.id))
+	_send_inv(p)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_drop() -> void:
+	var p := _sender()
+	if p == null or p.inv[p.sel] == null:
+		return
+	_spawn_pickup(p.position + p.aim.normalized() * 8, p.inv[p.sel])
+	p.inv[p.sel] = null
+	_send_inv(p)
+
+
+## E: pick up the nearest item on the ground, else start searching furniture.
+@rpc("any_peer", "call_remote", "reliable")
+func req_interact() -> void:
+	var p := _sender()
+	if p == null or not p.alive():
+		return
+	var best := -1
+	var best_d := 14.0
+	for pid in pickups:
+		var d: float = p.position.distance_to(pickups[pid].pos)
+		if d < best_d:
+			best_d = d
+			best = pid
+	if best >= 0:
+		var item: Dictionary = pickups[best].item
+		var took := false
+		if item.get("n", 1) > 1 or Items.is_weapon(item.id):
+			for i in Items.INV_SIZE:
+				if p.inv[i] == null:
+					p.inv[i] = item.duplicate()
+					took = true
+					break
+		else:
+			took = _give(p, item.id)
+		if not took:
+			_toast(p, "กระเป๋าเต็ม")
+			return
+		pickup_del.rpc(best)
+		fx_sound.rpc("pickup", p.position)
+		_toast(p, "เก็บ %s" % Items.display_name(item.id))
+		_send_inv(p)
+		return
+	var f := _container_near(p.position)
+	if f and not f.searched:
+		p.search_id = f.data.id
+		p.search_t = SEARCH_TIME
+		fx_sound.rpc("rustle", f.position)
+		_notify(p.peer_id, &"search_started", [SEARCH_TIME])
+
+
+func _container_near(pos: Vector2) -> FurnitureProp:
+	var best: FurnitureProp = null
+	var best_d := INTERACT_RANGE
+	for f: FurnitureProp in world.container_nodes:
+		var d := pos.distance_to(f.position)
+		if d < best_d:
+			best_d = d
+			best = f
+	return best
+
+
+func _tick_search(p: Player, delta: float) -> void:
+	if p.search_id < 0:
+		return
+	var f: FurnitureProp = world.container_nodes[p.search_id]
+	if not p.alive() or p.move.length() > 0.1 or f.searched or p.position.distance_to(f.position) > INTERACT_RANGE + 4:
+		p.search_id = -1
+		_notify(p.peer_id, &"search_started", [0.0])
+		return
+	p.search_t -= delta
+	if p.search_t > 0:
+		return
+	p.search_id = -1
+	container_searched.rpc(f.data.id)
+	var found := Items.roll(f.data.table, _loot_rng)
+	var names := []
+	for id in found:
+		if not _give(p, id):
+			_spawn_pickup(p.position + Vector2(randf_range(-6, 6), 4), {id = id, n = 1, hp = Items.def(id).get("hp", 0)})
+		names.append(Items.display_name(id))
+	_toast(p, "เจอ: " + ", ".join(names) if not names.is_empty() else "ไม่มีอะไรเหลือแล้ว")
+	if not names.is_empty():
+		fx_sound.rpc("pickup", p.position)
+	_send_inv(p)
+
+
+var _loot_rng := RandomNumberGenerator.new()
 
 
 ## Guns come back later as loot; kept here for that milestone.
@@ -395,6 +635,7 @@ func snapshot(ps: Array, zs: Array, t: float) -> void:
 			p.aim = e[2]
 		p.hp = e[3]
 		p.kills = e[4]
+		p.weapon_id = e[5]
 	for id in players.keys():
 		if not seen.has(id):
 			players[id].queue_free()
@@ -432,10 +673,55 @@ func fx_melee(peer_id: int, kind: int) -> void:
 	var p: Player = players.get(peer_id)
 	if p:
 		p.play_attack(kind)
+		Sfx.play(self, "swing" if kind in [Look.SWING, Look.KICK] else "punch", p.position, -4.0)
 
 
 @rpc("authority", "call_local", "unreliable")
-func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int) -> void:
+func fx_sound(name: String, pos: Vector2) -> void:
+	Sfx.play(self, name, pos)
+
+
+@rpc("authority", "call_remote", "reliable")
+func inv_sync(inv: Array, sel: int) -> void:
+	var me: Player = players.get(multiplayer.get_unique_id())
+	if me:
+		me.inv = inv
+		me.sel = sel
+		me.weapon_id = me.held_weapon()
+	inv_bar.show_inventory(inv, sel)
+
+
+@rpc("authority", "call_remote", "reliable")
+func show_toast(text: String) -> void:
+	toast.text = text
+	toast_t = 2.5
+
+
+@rpc("authority", "call_remote", "reliable")
+func search_started(duration: float) -> void:
+	search_total = maxf(duration, 0.01)
+	search_until = Time.get_ticks_msec() / 1000.0 + duration
+
+
+@rpc("authority", "call_local", "reliable")
+func container_searched(id: int) -> void:
+	world.container_nodes[id].set_searched(true)
+
+
+@rpc("authority", "call_local", "reliable")
+func pickup_add(id: int, pos: Vector2, item: Dictionary) -> void:
+	pickups[id] = {pos = pos, item = item}
+	decals.queue_redraw()
+
+
+@rpc("authority", "call_local", "reliable")
+func pickup_del(id: int) -> void:
+	pickups.erase(id)
+	decals.queue_redraw()
+
+
+@rpc("authority", "call_local", "unreliable")
+func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, weapon_kind := "") -> void:
 	var z: Zombie = zombies.get(zid)
 	if z:
 		z.flinch(dir)
@@ -444,8 +730,10 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int) -
 		blood.append([pos + dir * randf_range(2, 8) + Vector2(randf_range(-3, 3), randf_range(-2, 2)),
 				randf_range(0.8, 2.2), Color(randf_range(0.35, 0.5), 0.02, 0.02, 0.85)])
 	decals.queue_redraw()
+	var blade := weapon_kind in ["knife", "machete", "axe"]
+	Sfx.play(self, "blade" if blade else ("kick" if strong else "hit"), pos)
 	if attacker == multiplayer.get_unique_id():
-		shake = maxf(shake, 2.2 if strong else 1.3)
+		shake = maxf(shake, 2.2 if strong or weapon_kind != "" else 1.3)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -481,6 +769,8 @@ func _process(delta: float) -> void:
 		camera.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake
 		shake = move_toward(shake, 0.0, delta * 14.0)
 		_fade_trees_near(me.position)
+		_update_inside(me)
+		_update_prompt(me)
 
 	if multiplayer.is_server():
 		_server_tick(delta)
@@ -506,16 +796,50 @@ func _process(delta: float) -> void:
 		corpses = corpses.filter(func(c): return c[4] > 0)
 		decals.queue_redraw()
 
+	toast_t -= delta
+	toast.modulate.a = clampf(toast_t, 0.0, 1.0)
+
 	hud.text = "%s   Players: %d   Zombies: %d" % [
 		"NIGHT" if world.is_night else "Day", players.size(), zombies.size()]
 	if me:
 		hud.text = "HP %d   Kills %d   " % [me.hp, me.kills] + hud.text
 		if not me.alive():
 			hud.text += "\n\nYOU DIED - respawning in %d..." % ceili(me.respawn)
-	hud.text += "\nWASD move | mouse aim | LMB punch | RMB kick | wheel zoom"
+	hud.text += "\nWASD move | mouse aim | LMB attack | RMB kick | E search/pick up | 1-8 slot | F use | G drop"
 
 
 var faded: Array = []
+
+
+## Walking into a building lifts its roof and front wall off so you can see inside.
+func _update_inside(me: Player) -> void:
+	var b: BuildingProp = world.building_at.get(world.to_cell(me.position))
+	if b and not b.data.get("enter", false):
+		b = null
+	if b != hidden_building:
+		if hidden_building:
+			hidden_building.visible = true
+		hidden_building = b
+		if b:
+			b.visible = false
+
+
+func _update_prompt(me: Player) -> void:
+	prompt = ""
+	for f: FurnitureProp in world.container_nodes:
+		f.set_highlight(false)
+	if not me.alive():
+		return
+	for pid in pickups:
+		if me.position.distance_to(pickups[pid].pos) < 14.0:
+			prompt = "E  เก็บ %s" % Items.display_name(pickups[pid].item.id)
+			prompt_pos = pickups[pid].pos + Vector2(0, -10)
+			return
+	var f := _container_near(me.position)
+	if f and not f.searched and (hidden_building != null or not world.building_at.has(world.to_cell(f.position))):
+		f.set_highlight(true)
+		prompt = "E  ค้นหา"
+		prompt_pos = f.position + Vector2(0, -26)
 
 
 ## Anything standing in front of the local player turns see-through so you
@@ -546,6 +870,17 @@ func _fade_trees_near(pos: Vector2) -> void:
 
 
 func _draw_fx() -> void:
+	var font := Look.thai_font()
+	if prompt != "":
+		fx.draw_string_outline(font, prompt_pos + Vector2(-30, 0), prompt, HORIZONTAL_ALIGNMENT_CENTER, 60, 6, 2, Color.BLACK)
+		fx.draw_string(font, prompt_pos + Vector2(-30, 0), prompt, HORIZONTAL_ALIGNMENT_CENTER, 60, 6, Color(1, 0.92, 0.6))
+	var now := Time.get_ticks_msec() / 1000.0
+	var me: Player = players.get(multiplayer.get_unique_id())
+	if me and now < search_until:
+		var k := 1.0 - (search_until - now) / search_total
+		var r := Rect2(me.position + Vector2(-9, -38), Vector2(18, 3))
+		fx.draw_rect(r.grow(0.6), Color(0, 0, 0, 0.7))
+		fx.draw_rect(Rect2(r.position, Vector2(r.size.x * k, r.size.y)), Color(1, 0.85, 0.4))
 	# Impact burst: a bright flash with streaks flying out.
 	for sp in sparks:
 		var k: float = sp[1] / 0.14
@@ -564,14 +899,38 @@ func _draw_fx() -> void:
 			fx.draw_circle(muzzle, 1.6, Color(1, 1, 0.8))
 
 
+## Ask the server to do something; the host just does it.
+func _request(method: StringName, args: Array) -> void:
+	if multiplayer.is_server():
+		callv(method, args)
+	else:
+		callv("rpc_id", [1, method] + args)
+
+
 func _draw_decals() -> void:
 	for b in blood:
 		decals.draw_circle(b[0], b[1], b[2])
+	for pid in pickups:
+		var pu: Dictionary = pickups[pid]
+		decals.draw_set_transform(pu.pos + Vector2(0, 1), 0, Vector2(1, 0.4))
+		decals.draw_circle(Vector2.ZERO, 5, Color(0, 0, 0, 0.35))
+		decals.draw_set_transform(Vector2.ZERO)
+		Items.draw_icon(decals, Rect2(pu.pos + Vector2(-6, -9), Vector2(12, 12)), pu.item.id)
 	for c in corpses:
 		Look.draw_corpse(decals, c[1], c[2], c[3], minf(1.0, c[4] / 5.0))
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if world and event is InputEventKey and event.pressed and not event.echo:
+		var k: int = event.keycode
+		if k == KEY_E:
+			_request(&"req_interact", [])
+		elif k == KEY_F:
+			_request(&"req_use", [])
+		elif k == KEY_G:
+			_request(&"req_drop", [])
+		elif k >= KEY_1 and k <= KEY_8:
+			_request(&"req_select", [k - KEY_1])
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			camera.zoom = (camera.zoom * 1.1).clamp(Vector2(1, 1), Vector2(6, 6))

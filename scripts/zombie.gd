@@ -19,6 +19,7 @@ var wander := Vector2.ZERO
 var stun := 0.0  # staggered after being hit
 var hit_t := 0.0  # > 0 while flinching from a hit (visual, every peer)
 var hit_dir := Vector2.ZERO
+var groan_t := randf_range(2.0, 10.0)
 var facing := 0.0
 var last_pos := Vector2.ZERO
 var skin: Color
@@ -102,6 +103,12 @@ func _process(delta: float) -> void:
 		facing = lerp_angle(facing, moved.angle(), minf(1.0, 8.0 * delta))
 	view = Look.pick_view(facing, view)
 	hit_t = maxf(0.0, hit_t - delta)
+	groan_t -= delta
+	if groan_t <= 0:
+		groan_t = randf_range(5.0, 12.0)
+		var cam := get_viewport().get_camera_2d()
+		if cam and cam.global_position.distance_to(global_position) < 260:
+			Sfx.play(get_parent(), "groan", position, -8.0, randf_range(0.85, 1.15))
 	# Flash bright for an instant when struck.
 	modulate = Color(1, 1, 1).lerp(Color(2.2, 1.6, 1.5), clampf(hit_t / 0.25, 0, 1) ** 2)
 	queue_redraw()

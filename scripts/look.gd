@@ -15,7 +15,7 @@ const CHEST := Vector2(0, -15)  # where guns and flashlights sit
 const HEAD := Vector2(0, -24)
 
 enum { FRONT, BACK, SIDE }
-enum { NONE, PUNCH_L, PUNCH_R, KICK }  # attack poses
+enum { NONE, PUNCH_L, PUNCH_R, KICK, SWING }  # attack poses
 
 static var _cone: Texture2D
 static var _font: Font
@@ -44,7 +44,7 @@ static func pick_view(angle: float, prev: Array) -> Array:
 static func draw_human(ci: CanvasItem, vf: Array, angle: float, phase: float, moving: bool,
 		skin: Color, shirt: Color, pants: Color, hair: Color, zombie: bool,
 		attack: int = NONE, ext: float = 0.0, armed: bool = false, guard: bool = false,
-		recoil := Vector2.ZERO) -> void:
+		recoil := Vector2.ZERO, weapon: Dictionary = {}) -> void:
 	var view: int = vf[0]
 	var sx := -1.0 if vf[1] else 1.0
 	var s := sin(phase) if moving else 0.0  # walk cycle, -1..1
@@ -68,11 +68,11 @@ static func draw_human(ci: CanvasItem, vf: Array, angle: float, phase: float, mo
 		lunge = -Vector2.from_angle(angle) * Vector2(1.4, 0.7) * k.y + Vector2(0, 0.7 * k.x)
 	ci.draw_set_transform(Vector2(lean * sx, -bob) + lunge + recoil, 0, Vector2(sx, 1))
 	# Fists come up when fighting; otherwise arms hang and swing with the walk.
-	var fists := not zombie and (attack != NONE or guard or armed)
+	var fists := not zombie and (attack != NONE or guard or armed or not weapon.is_empty())
 	if zombie:
 		_zombie_arms(ci, view, skin, shirt, phase, true)
 	elif fists:
-		_player_arms(ci, view, angle, sx, skin, shirt, attack, ext, armed, true)
+		_player_arms(ci, view, angle, sx, skin, shirt, attack, ext, armed, true, weapon)
 	else:
 		_idle_arms(ci, view, s, skin, shirt, true)
 	_torso(ci, view, shirt, pants, zombie)
@@ -80,7 +80,7 @@ static func draw_human(ci: CanvasItem, vf: Array, angle: float, phase: float, mo
 	if zombie:
 		_zombie_arms(ci, view, skin, shirt, phase, false)
 	elif fists:
-		_player_arms(ci, view, angle, sx, skin, shirt, attack, ext, armed, false)
+		_player_arms(ci, view, angle, sx, skin, shirt, attack, ext, armed, false, weapon)
 	else:
 		_idle_arms(ci, view, s, skin, shirt, false)
 	if attack == KICK and view == FRONT:
@@ -318,18 +318,18 @@ static func _shoulders(view: int) -> Array:
 ## `behind` selects which arms to draw in this pass: arms facing away from the
 ## camera go behind the torso, the others in front.
 static func _player_arms(ci: CanvasItem, view: int, angle: float, sx: float, skin: Color, shirt: Color,
-		attack: int, ext: float, armed: bool, behind: bool) -> void:
+		attack: int, ext: float, armed: bool, behind: bool, weapon: Dictionary = {}) -> void:
 	if armed:
 		if behind == (view == BACK):
 			_draw_gun_arms(ci, view, angle, sx, skin, shirt)
 		return
-	_draw_fists(ci, view, angle, sx, skin, shirt, attack, ext, behind)
+	_draw_fists(ci, view, angle, sx, skin, shirt, attack, ext, behind, weapon)
 
 
 ## Boxing guard with fists by the chin; a punch drives one fist straight out
 ## along the aim while the other stays up.
 static func _draw_fists(ci: CanvasItem, view: int, angle: float, sx: float, skin: Color, shirt: Color,
-		attack: int, ext: float, behind: bool) -> void:
+		attack: int, ext: float, behind: bool, weapon: Dictionary = {}) -> void:
 	var d := _local_dir(angle, sx)
 	var side := d.orthogonal().normalized()
 	var sh := _shoulders(view)
@@ -342,6 +342,9 @@ static func _draw_fists(ci: CanvasItem, view: int, angle: float, sx: float, skin
 		var is_behind := view == BACK or (view == SIDE and i == 0)
 		if is_behind != behind:
 			continue
+		if i == 1 and not weapon.is_empty():
+			_weapon_arm(ci, view, d, sh[1], skin, shirt, attack, ext, weapon, is_behind)
+			continue
 		var fist: Vector2 = guard[i]
 		if attack == reach[i]:
 			# Full reach sideways; foreshortened when punching toward or away from the camera.
@@ -350,6 +353,80 @@ static func _draw_fists(ci: CanvasItem, view: int, angle: float, sx: float, skin
 		var elbow: Vector2 = sh[i].lerp(fist, 0.5) + Vector2(0, 2.6 * bend) - side * (1.0 if i == 0 else -1.0) * 0.8 * bend
 		var dim := 0.25 if is_behind and view == SIDE else 0.0
 		_arm(ci, sh[i], elbow, fist, sleeve.darkened(dim), skin.darkened(dim), true)
+
+
+## Weapon angle (relative to the aim) through a swing, t in 0..1: cock back
+## over the shoulder, whip through, follow through, then return to the ready pose.
+static func swing_angle(t: float) -> float:
+	if t < 0.3:
+		return lerpf(-1.1, -2.3, t / 0.3)
+	if t < 0.55:
+		return lerpf(-2.3, 0.9, ease((t - 0.3) / 0.25, 0.5))
+	if t < 0.7:
+		return 0.9
+	return lerpf(0.9, -1.1, (t - 0.7) / 0.3)
+
+
+## The weapon hand: holds the weapon raised and ready, or swings it through an arc.
+static func _weapon_arm(ci: CanvasItem, view: int, d: Vector2, sh: Vector2, skin: Color, shirt: Color,
+		attack: int, t: float, weapon: Dictionary, behind: bool) -> void:
+	var base := atan2(d.y, d.x)
+	var a := base + (swing_angle(t) if attack == SWING else -1.1)
+	var dv := Vector2.from_angle(a)
+	var hand := sh + Vector2(dv.x, dv.y * 0.8) * 6.5 + Vector2(0, 1.0)
+	var elbow := sh.lerp(hand, 0.5) + Vector2(0, 1.4)
+	var dim := 0.25 if behind and view == SIDE else 0.0
+	if attack == SWING and t > 0.3 and t < 0.62:
+		# Motion trail along the arc the weapon tip just travelled.
+		var pts := PackedVector2Array()
+		var reach: float = 6.5 + weapon.len
+		var a0 := base - 2.3
+		for k in 7:
+			var ak := lerpf(a0, a, k / 6.0)
+			pts.append(sh + Vector2(cos(ak), sin(ak) * 0.8) * reach)
+		ci.draw_polyline(pts, Color(1, 1, 1, 0.35), 1.6)
+	_arm(ci, sh, elbow, hand, shirt.darkened(0.05 + dim), skin.darkened(dim), true)
+	_draw_weapon(ci, hand, dv, weapon)
+	ci.draw_circle(hand, 1.5, skin.darkened(dim))  # fingers wrap over the handle
+
+
+## A melee weapon gripped at `hand`, pointing along `dv`.
+static func _draw_weapon(ci: CanvasItem, hand: Vector2, dv: Vector2, w: Dictionary) -> void:
+	var L: float = w.len
+	var col: Color = w.col
+	var n := dv.orthogonal()
+	var butt := hand - dv * 2.0
+	var tip := hand + dv * L
+	var dark := Color("2a2420")
+	match w.kind:
+		"plank":
+			_limb(ci, butt, tip, 2.3, 2.5, col)
+			ci.draw_line(butt + n * 0.4, tip + n * 0.4, col.lightened(0.15), 0.4)
+			for k in 2:
+				ci.draw_line(tip - dv * (1.5 + k * 2.0), tip - dv * (1.5 + k * 2.0) + n * 2.0, Color("9a9a9a"), 0.5)  # nails
+		"bat":
+			_limb(ci, butt, tip, 1.2, 2.7, col)
+			_limb(ci, butt, hand + dv * 1.5, 1.4, 1.4, dark)  # grip tape
+		"pipe":
+			_limb(ci, butt, tip, 1.8, 1.8, col)
+			ci.draw_line(butt + n * 0.4, tip + n * 0.4, col.lightened(0.3), 0.5)
+		"knife":
+			_limb(ci, butt, hand + dv * 1.6, 1.7, 1.7, dark)
+			ci.draw_colored_polygon(PackedVector2Array([hand + dv * 1.6 + n * 0.9, tip, hand + dv * 1.6 - n * 0.5]), col)
+		"machete":
+			_limb(ci, butt, hand + dv * 1.8, 1.8, 1.8, dark)
+			ci.draw_colored_polygon(PackedVector2Array([hand + dv * 1.8 + n * 1.0, tip - dv * 1.5 + n * 1.4, tip,
+					hand + dv * 1.8 - n * 0.6]), col)
+			ci.draw_line(hand + dv * 2.0 + n * 0.9, tip - dv * 1.5 + n * 1.3, col.lightened(0.3), 0.4)
+		"axe":
+			_limb(ci, butt, tip, 1.4, 1.4, Color("8a6a44"))
+			ci.draw_colored_polygon(PackedVector2Array([tip - dv * 3.5 + n * 0.6, tip - dv * 4.5 + n * 4.0,
+					tip + dv * 0.5 + n * 4.2, tip + n * 0.6]), col)
+			ci.draw_line(tip - dv * 4.5 + n * 4.0, tip + dv * 0.5 + n * 4.2, col.lightened(0.35), 0.6)  # edge
+		"hammer":
+			_limb(ci, butt, tip, 1.4, 1.4, Color("8a6a44"))
+			ci.draw_colored_polygon(PackedVector2Array([tip - dv * 1.3 - n * 2.4, tip - dv * 1.3 + n * 2.6,
+					tip + dv * 1.3 + n * 2.6, tip + dv * 1.3 - n * 2.4]), col)
 
 
 ## Rifle held at the chest, pointing at `angle`, with both arms reaching it.
