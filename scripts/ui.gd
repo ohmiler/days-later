@@ -118,6 +118,12 @@ func set_inventory(inv: Array, sel: int) -> void:
 
 
 func set_worn(worn: Dictionary) -> void:
+	var held := []
+	for h in Items.HANDS:
+		if worn.get(h) != null:
+			held.append(Items.display_name(worn[h].id))
+	hotbar.hands = " + ".join(held)
+	hotbar.queue_redraw()
 	gear.worn = worn
 	gear.queue_redraw()
 

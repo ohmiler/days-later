@@ -11,6 +11,7 @@ const LIFT := 10.0
 var slots: Array = []
 var selected := 0
 var hover := -1  # slot under the mouse: highlighted, and its details shown instead
+var hands := ""  # what's held, e.g. "มีดทำครัว + ค้อน" ("" empty-handed)
 
 
 func _ready() -> void:
@@ -89,8 +90,10 @@ func _draw() -> void:
 	# Name of the held item (or the one under the mouse), with what it does.
 	var shown := hover if hover >= 0 else selected
 	var cur = slots[shown] if shown < slots.size() else null
-	var name := "มือเปล่า" if hover < 0 else "ช่องว่าง"
-	var info := "คลิกซ้ายต่อย · คลิกขวาเตะ" if hover < 0 else "คลิกเพื่อเลือก"
+	var name := (hands if hands != "" else "มือเปล่า") if hover < 0 else "ช่องว่าง"
+	var info := ("คลิกซ้ายฟาด สลับมือ · คลิกขวาเตะ" if hands != "" else "คลิกซ้ายต่อย · คลิกขวาเตะ") if hover < 0 else "คลิกเพื่อเลือก"
+	if hover < 0 and cur != null and Items.is_weapon(cur.id):
+		cur = null  # (weapons are in your hands now: the label says what they hold)
 	if cur != null:
 		var d := Items.def(cur.id)
 		name = Items.display_name(cur.id)

@@ -223,7 +223,7 @@ func actions_for(p: Player, id: int) -> Array:
 		why = "แบตหมด" if m.electric else "น้ำมันหมด · เติมจากแกลลอน"
 	out.append(Interact._act("ride", "ขี่", why == "", why))
 	if not v.key:
-		var tool := p.held_weapon() == "screwdriver"
+		var tool := p.holds(["screwdriver"])
 		out.append(Interact._act("hotwire", "ต่อสายตรง (ถือไขควง)", tool, "ต้องถือไขควงไว้ในมือ"))
 	if not m.electric and v.fuel < m.fuel:
 		var has := Crafting.count_in(p.inv, "fuelcan") > 0

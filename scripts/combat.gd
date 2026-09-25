@@ -59,7 +59,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 			hits.append(picked)
 	if hits.is_empty():
 		return
-	var wid := p.held_weapon() if kind == Look.SWING else ""
+	var wid := p.hand_weapon(p.swing_hand) if kind in [Look.SWING, Look.SWING_L] else ""
 	var cleave: bool = kind == Look.KICK or Items.def(wid).get("cleave", false)
 	if cleave:
 		hits = hits.filter(func(z): return z == picked or (z.position - p.position).normalized().dot(dir) > 0.0 or z.position.distance_to(p.position) < 12.0)
@@ -130,12 +130,14 @@ func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
 
 ## Each hit wears the weapon down; at zero it breaks.
 func _wear_weapon(p: Player) -> void:
-	var it = p.inv[p.sel]
+	var slot := "hand_" + p.swing_hand
+	var it = p.worn.get(slot)
 	if it == null:
 		return
 	it.hp -= 1
 	if it.hp <= 0:
-		p.inv[p.sel] = null
+		p.worn.erase(slot)
+		p.refresh_wear()
 		main.fx_sound.rpc("break", p.position)
 		main._make_noise(p.position, main.NOISE_BREAK)
 		main._toast(p, "%s หัก!" % Items.display_name(it.id))
@@ -186,7 +188,7 @@ func fx_melee(peer_id: int, kind: int) -> void:
 		p.play_attack(kind)
 		if p.is_local:
 			main.ui.tutorial("kick" if kind == Look.KICK else "attack")
-		Sfx.play(main, "swing" if kind in [Look.SWING, Look.KICK] else "punch", p.position, -4.0)
+		Sfx.play(main, "swing" if kind in [Look.SWING, Look.SWING_L, Look.KICK] else "punch", p.position, -4.0)
 
 
 @rpc("authority", "call_local", "unreliable")

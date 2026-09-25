@@ -27,7 +27,9 @@ var pending_stats: Array = []
 # Inventory: server-authoritative; the owning client gets a copy via main.inventory.inv_sync.
 var inv: Array = []  # INV_SIZE entries of null or {id, n, hp}
 var sel := 0
-var weapon_id := ""  # what everyone sees in this player's hand
+var weapon_id := ""  # what everyone sees in this player's right hand (the left is in wear_ids)
+var next_hand := "r"  # server: the hand the next swing comes from (swings alternate)
+var swing_hand := "r"  # server: the hand of the swing under way
 var search_id := -1  # server only: container being searched
 var search_t := 0.0
 var craft := {}  # server: the making/mending job under way ({kind, t, ...}; see Crafting)
@@ -102,9 +104,18 @@ func _init() -> void:
 
 
 ## The weapon in the selected slot, or "" for bare fists.
+## The weapon in the right hand (every machine knows, from wear_ids), or "".
 func held_weapon() -> String:
-	var it = inv[sel]
-	return it.id if it != null and Items.is_weapon(it.id) else ""
+	return wear_ids.get("hand_r", "")
+
+
+func hand_weapon(hand: String) -> String:
+	return wear_ids.get("hand_" + hand, "")
+
+
+## Holding any of these, in either hand.
+func holds(ids: Array) -> bool:
+	return wear_ids.get("hand_r", "") in ids or wear_ids.get("hand_l", "") in ids
 
 
 func alive() -> bool:
@@ -123,10 +134,7 @@ func take_damage(amount: float) -> void:
 
 ## Start an attack animation (runs on every peer via main.combat.fx_melee).
 func play_attack(kind: int) -> void:
-	if kind in [Look.PUNCH_L, Look.PUNCH_R]:
-		punch_side = not punch_side
-		kind = Look.PUNCH_L if punch_side else Look.PUNCH_R
-	anim = kind
+	anim = kind  # (the server says which hand: swings alternate between them)
 	anim_t = 0.0
 
 
@@ -469,12 +477,15 @@ func _draw() -> void:
 	if riding >= 0 and riding < world.vehicles.size():
 		_draw_riding(world.vehicles[riding])
 		return
-	var wdef := Items.def(weapon_id)
+	var wdef := Items.def(hand_weapon("r"))
+	var ldef := Items.def(hand_weapon("l"))
 	var dur := 0.22
 	if anim == Look.KICK:
 		dur = 0.45
 	elif anim == Look.SWING:
 		dur = wdef.get("dur", 0.34)
+	elif anim == Look.SWING_L:
+		dur = ldef.get("dur", 0.34)
 	var ext := 0.0
 	if anim != Look.NONE and anim_t < dur:
 		# Punches use a quick out-and-back curve; kicks and swings pass their raw timeline.
@@ -483,7 +494,7 @@ func _draw() -> void:
 	Look.lift = Vector2(0, -lift)
 	Look.draw(self, {view = view, angle = aim.angle(), phase = phase * (0.6 if sneak else 1.0), moving = moving and ext == 0.0,
 			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = anim != Look.NONE and anim_t < 1.2,
-			crouch = 3.0 if sneak else 0.0, weapon = wdef.get("draw", {})}, look)
+			crouch = 3.0 if sneak else 0.0, weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {})}, look)
 	Look.lift = Vector2.ZERO
 	draw_set_transform(Vector2(0, -lift))
 	Look.draw_hp(self, hp / MAX_HP)

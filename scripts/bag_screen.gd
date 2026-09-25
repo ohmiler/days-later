@@ -43,6 +43,7 @@ const WORN_AT := {
 	body = Vector2(22, 116), over = Vector2(218, 116), arms = Vector2(22, 170), hands = Vector2(218, 170),
 	legs = Vector2(22, 224), knees = Vector2(218, 224), back = Vector2(22, 278), strap = Vector2(218, 278),
 	feet = Vector2(120, 332),
+	hand_r = Vector2(22, 332), hand_l = Vector2(218, 332),  # what you hold: right hand on the left, as the doll faces you
 }
 const DOLL_AT := Vector2(145, 310)  # the doll's feet
 const DOLL_SCALE := 5.4
@@ -81,7 +82,7 @@ func _ready() -> void:
 
 func _slots() -> Array:
 	var out := []  # [ref, rect]
-	for slot in Items.SLOTS:
+	for slot in Items.SLOTS + Items.HANDS:
 		out.append([["worn", slot], Rect2(WORN_AT.get(slot, Vector2.ZERO), Vector2(WSLOT, WSLOT))])
 	for i in inv.size():
 		var row := i / COLS
@@ -225,6 +226,10 @@ func _actions(ref: Array, it: Dictionary) -> Array:
 	var out := []
 	match ref[0]:
 		"inv":
+			if d.get("type") == "weapon":
+				out.append(["ถือสองมือ" if Items.two_handed(it.id) else "ถือขวา", "hold_r"])
+				if not Items.two_handed(it.id):
+					out.append(["ถือซ้าย", "hold_l"])
 			match d.get("type"):
 				"use":
 					out.append(["ใช้", "use"])
@@ -242,7 +247,7 @@ func _actions(ref: Array, it: Dictionary) -> Array:
 				out.append(["เก็บเข้าตู้", "stash"])
 			out.append(["ทิ้ง", "drop"])
 		"worn":
-			out.append(["ถอด", "use"])
+			out.append(["ปล่อย" if ref[1] in Items.HANDS else "ถอด", "use"])
 			if Crafting.repair_with(it) != "":
 				out.append(["ซ่อม", "repair"])
 			out.append(["ทิ้ง", "drop"])
@@ -267,6 +272,10 @@ func _do(action: String, ref: Array) -> void:
 			move_requested.emit(ref, ["inv", -1])
 		"stash":
 			move_requested.emit(ref, _far())
+		"hold_r":
+			move_requested.emit(ref, ["worn", "hand_r"])
+		"hold_l":
+			move_requested.emit(ref, ["worn", "hand_l"])
 
 
 func _menu_rect(i: int) -> Rect2:
@@ -375,9 +384,14 @@ func _draw() -> void:
 		if it == null:
 			draw_style_box(UiTheme.box(SLOT_BG if ref[0] != "ground" else Color(0.91, 0.88, 0.81, 0.03), 6,
 					UiTheme.WARN if lit and not drag.is_empty() else SLOT_EDGE, 2 if ref[0] != "ground" else 1), r)
-			if ref[0] == "worn":
+			if ref == ["worn", "hand_l"] and worn.get("hand_r") != null and Items.two_handed(worn.hand_r.id):
+				# The left hand is on the other end of a two-handed weapon.
+				Items.draw_icon(self, r.grow(-r.size.x * 0.19), worn.hand_r.id)
+				draw_rect(r.grow(-2), Color(0.06, 0.055, 0.045, 0.55))
+				_label(r, "สองมือ", Color(UiTheme.PAPER, 0.6), false)
+			elif ref[0] == "worn":
 				_slot_outline(r, ref[1])
-				_label(r, Items.SLOT_NAMES[ref[1]], Color(UiTheme.PAPER, 0.4), false)
+				_label(r, Items.SLOT_NAMES.get(ref[1], Items.HAND_NAMES.get(ref[1], "")), Color(UiTheme.PAPER, 0.4), false)
 		else:
 			draw_style_box(UiTheme.box(CARD_BG if ref != drag else Color("6e5b3c"), 6, UiTheme.WARN if lit else Color("6e5b3c"), 2), r)
 			if ref != drag:
@@ -411,7 +425,12 @@ func _draw_worn_side(head: Font, body: Font) -> void:
 		var views := [[Look.FRONT, false], [Look.SIDE, false], [Look.BACK, false], [Look.SIDE, true]]
 		var angles := [PI / 2, 0.0, -PI / 2, PI]
 		Look.body_xf = Transform2D(0.0, Vector2(DOLL_SCALE, DOLL_SCALE), 0.0, DOLL_AT)
-		Look.draw(self, {view = views[doll_view], angle = angles[doll_view]}, doll_look)
+		var held := {}
+		for h in Items.HANDS:
+			if worn.get(h) != null:
+				held[h] = Items.def(worn[h].id).get("draw", {})
+		Look.draw(self, {view = views[doll_view], angle = angles[doll_view], weapon = held.get("hand_r", {}),
+				weapon_l = held.get("hand_l", {})}, doll_look)
 		Look.body_xf = Transform2D.IDENTITY
 		draw_set_transform(Vector2.ZERO)
 		# Wounds where they are: red still open, pale once bandaged.
@@ -532,7 +551,11 @@ func _draw_card(head: Font, body: Font) -> void:
 	var stats := []  # [mark, text]
 	match d.get("type"):
 		"weapon":
-			stats.append(["hit", "ฟาด %d" % d.dmg])
+			if shown == ["worn", "hand_l"]:
+				stats.append(["hit", "ฟาด %d (มือซ้าย %d%%)" % [roundi(d.dmg * Items.OFF_HAND), roundi(Items.OFF_HAND * 100)]])
+			else:
+				stats.append(["hit", "ฟาด %d" % d.dmg])
+			stats.append(["hit", "สองมือ" if Items.two_handed(it.id) else "มือเดียว · ถือคู่ได้"])
 		"wear":
 			var g: Dictionary = d.get("guard", {})
 			for part in g:
@@ -645,6 +668,11 @@ func _slot_outline(r: Rect2, slot: String) -> void:
 			draw_rect(Rect2(c + Vector2(-9, -9), Vector2(18, 20)), col, false, w)
 			draw_arc(c + Vector2(0, -9), 4, PI, TAU, 8, col, w)
 			draw_rect(Rect2(c + Vector2(-5, 3), Vector2(10, 5)), col, false, w)
+		"hand_r", "hand_l":  # a hand, open
+			draw_rect(Rect2(c + Vector2(-6, -2), Vector2(12, 10)), col, false, w)
+			for i in 4:
+				draw_line(c + Vector2(-5 + i * 3.3, -2), c + Vector2(-5 + i * 3.3, -9), col, w)
+			draw_line(c + Vector2(6 if slot == "hand_l" else -6, 2), c + Vector2(10 if slot == "hand_l" else -10, -2), col, w)
 		"strap":  # a shoulder bag
 			draw_line(c + Vector2(-11, -12), c + Vector2(4, 0), col, w)
 			draw_rect(Rect2(c + Vector2(-2, -1), Vector2(14, 11)), col, false, w)

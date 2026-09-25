@@ -28,6 +28,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var ext: float = st.get("ext", 0.0)
 	var guard: bool = st.get("guard", false)
 	var weapon: Dictionary = st.get("weapon", {})
+	var weapon_l: Dictionary = st.get("weapon_l", {})  # a second weapon, in the left hand
 	var fall: float = st.get("fall", 0.0)
 	var fall_dir: float = st.get("fall_dir", 1.0)
 	var girth: float = st.get("girth", 1.0) * lk.get("build", 1.0)
@@ -99,8 +100,8 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 			a.merge({sleeve_dark = 0.1, skin_dark = 0.1}, true)
 	elif zombie and fall <= 0.0:
 		arms = _zombie_arms(view, phase, girth, breed, vary, bite, scream)
-	elif not zombie and (attack != Look.NONE or guard or not weapon.is_empty()):
-		arms = _fist_arms(view, angle, sx, attack, ext, weapon)
+	elif not zombie and (attack != Look.NONE or guard or not weapon.is_empty() or not weapon_l.is_empty()):
+		arms = _fist_arms(view, angle, sx, attack, ext, weapon, weapon_l)
 	else:
 		arms = _idle_arms(view, s)
 	for i in arms.size():
@@ -266,7 +267,7 @@ static func _idle_arms(view: int, s: float) -> Array:
 
 ## Boxing guard with fists by the chin; a punch drives one fist straight out
 ## along the aim. With a weapon, the right hand holds it instead.
-static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: float, weapon: Dictionary) -> Array:
+static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: float, weapon: Dictionary, weapon_l := {}) -> Array:
 	var d := local_dir(angle, sx)
 	var side := d.orthogonal().normalized()
 	var sh := shoulders(view)
@@ -281,7 +282,7 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 		var behind := view == Look.BACK or (view == Look.SIDE and i == 0)
 		var dim := 0.25 if behind and view == Look.SIDE else 0.0
 		if i == 1 and not weapon.is_empty():
-			var main_arm := _weapon_arm(d, sh[1], attack, ext, weapon, behind, dim)
+			var main_arm := _weapon_arm(d, sh[1], Look.SWING if attack == Look.SWING else Look.NONE, ext, weapon, behind, dim)
 			if two_hands:
 				# The other hand holds the handle lower down, so both arms follow the swing.
 				var far := view == Look.BACK or view == Look.SIDE
@@ -291,6 +292,10 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 				out.insert(0, off_arm)  # replaces the guard arm
 				out.remove_at(1)
 			out.append(main_arm)
+			continue
+		if i == 0 and not weapon_l.is_empty() and not two_hands:
+			# A second weapon in the left hand: held and swung the same way, from the left shoulder.
+			out.append(_weapon_arm(d, sh[0], Look.SWING if attack == Look.SWING_L else Look.NONE, ext, weapon_l, behind, dim))
 			continue
 		var fist: Vector2 = guard[i]
 		if attack == reach[i]:
