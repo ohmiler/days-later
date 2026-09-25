@@ -2,14 +2,24 @@ class_name Zombie
 extends Node2D
 ## AI runs on the server only; clients just interpolate to snapshots.
 
-const SPEED := 38.0
 const RADIUS := 5.0
-const MAX_HP := 60.0
+## Zombie breeds. The breed comes from the zombie's id, so every peer agrees
+## without sending it. door = how hard it hits doors.
+const KINDS := {
+	"normal": {speed = 38.0, hp = 60.0, dmg = 8.0, girth = 1.0, door = 1.0},
+	"runner": {speed = 64.0, hp = 35.0, dmg = 6.0, girth = 0.8, door = 0.7},
+	"fat": {speed = 25.0, hp = 170.0, dmg = 14.0, girth = 1.5, door = 3.0},
+	"screamer": {speed = 34.0, hp = 45.0, dmg = 6.0, girth = 0.9, door = 0.6},
+}
 
 var world: World
 var players: Dictionary  # shared reference to main's peer_id -> Player
 var zid := 0
-var hp := MAX_HP
+var kind := "normal"
+var speed := 38.0
+var max_hp := 60.0
+var hp := 60.0
+var scream_cd := 0.0
 var net_pos := Vector2.ZERO
 var path: Array[Vector2i] = []
 var target: Player
@@ -58,15 +68,20 @@ func server_tick(delta: float) -> void:
 		elif investigate_t > 0.0:
 			goal = investigate
 		if goal != Vector2.INF:
-			path.assign(world.astar.get_id_path(world.to_cell(position), world.to_cell(goal)))
-			if not path.is_empty():
-				path.remove_at(0)
+			path.assign(world.path_between(position, goal))
 		elif randf() < 0.3:
 			wander = Vector2.from_angle(randf() * TAU) if randf() < 0.6 else Vector2.ZERO
+	var prev_state := state
 	state = 2 if target else (1 if investigate_t > 0.0 else 0)
+	scream_cd -= delta
+	if kind == "screamer" and state == 2 and prev_state != 2 and scream_cd <= 0.0 and get_parent().has_method("zombie_scream"):
+		scream_cd = 8.0
+		get_parent().zombie_scream(self)
 
 	if target == null or not target.alive():
 		if investigate_t > 0.0:
+			if _bash_door_ahead():
+				return
 			if position.distance_to(investigate) < 10.0 or path.is_empty():
 				investigate_t = minf(investigate_t, 1.5)  # arrived: look around a moment, then lose interest
 				_move(wander, delta * 0.3)
@@ -76,15 +91,33 @@ func server_tick(delta: float) -> void:
 		_move(wander, delta * 0.5)
 		return
 	var d := position.distance_to(target.position)
+	if d >= 12 and _bash_door_ahead():
+		return
 	if d < 12:
 		if attack_cd <= 0:
-			target.take_damage(8)
+			target.take_damage(KINDS[kind].dmg)
 			target.bitten = true
 			attack_cd = 1.0
 	elif d < 20 or path.is_empty():
 		_move((target.position - position).normalized(), delta)
 	else:
 		_follow(delta)
+
+
+## If a closed door is in the way, pound on it. Returns true while bashing.
+func _bash_door_ahead() -> bool:
+	var id := world.closed_door_near(position, 17.0)
+	if id < 0:
+		return false
+	var dc: Vector2i = world.doors[id].cell
+	var ahead := not path.is_empty() and path[0] == dc
+	if not (ahead or path.is_empty()):
+		return false
+	facing = (world.to_pos(dc) - position).angle()
+	if attack_cd <= 0.0:
+		attack_cd = 1.1
+		get_parent().damage_door(id, 12.0 * KINDS[kind].door)
+	return true
 
 
 func _follow(delta: float) -> void:
@@ -107,7 +140,7 @@ func hear(pos: Vector2) -> void:
 
 
 func _move(dir: Vector2, delta: float) -> void:
-	position = world.slide(position, dir * SPEED * delta, RADIUS)
+	position = world.slide(position, dir * speed * delta, RADIUS)
 
 
 ## Closest player it can actually see: sneaking halves the range, walls block
@@ -135,16 +168,47 @@ func _nearest_player(max_dist: float) -> Player:
 func _ready() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = zid
+	set_kind(kind_for(zid) if outfit.is_empty() else "normal")
 	skin = Look.ZOMBIE_SKINS[rng.randi() % Look.ZOMBIE_SKINS.size()]
 	shirt = Look.SHIRTS[rng.randi() % Look.SHIRTS.size()].darkened(0.15)
 	pants = Look.PANTS[rng.randi() % Look.PANTS.size()]
 	hair = Look.HAIRS[rng.randi() % Look.HAIRS.size()].darkened(0.3)
+	match kind:
+		"runner":
+			skin = skin.darkened(0.25)  # dried out and wiry
+		"fat":
+			skin = skin.lightened(0.12).lerp(Color("b8b890"), 0.4)
+		"screamer":
+			skin = Color("c8c6bc")
 	if not outfit.is_empty():
 		apply_outfit(outfit)
 
 
+static func kind_for(id: int) -> String:
+	var h := (id * 2654435761) % 1000
+	if h < 680:
+		return "normal"
+	if h < 830:
+		return "runner"
+	if h < 940:
+		return "fat"
+	return "screamer"
+
+
+func set_kind(k: String) -> void:
+	var was_full := hp >= max_hp
+	kind = k
+	var d: Dictionary = KINDS[k]
+	speed = d.speed
+	max_hp = d.hp
+	if was_full:
+		hp = max_hp
+
+
 func apply_outfit(o: Array) -> void:
 	outfit = o
+	if kind != "normal":
+		set_kind("normal")
 	shirt = Color(o[0]).darkened(0.1)
 	pants = o[1]
 	hair = o[2]
@@ -192,8 +256,8 @@ func flinch(dir: Vector2) -> void:
 func _draw() -> void:
 	var recoil := hit_dir * 3.0 * sin(clampf(hit_t / 0.25, 0, 1) * PI * 0.5)
 	Look.draw_human(self, view, facing, phase, moving and hit_t <= 0, skin, shirt, pants, hair, true,
-			Look.NONE, 0.0, false, false, recoil)
-	Look.draw_hp(self, hp / MAX_HP)
+			Look.NONE, 0.0, false, false, recoil, {}, 0.0, 1.0, KINDS[kind].girth)
+	Look.draw_hp(self, hp / max_hp)
 	if alert_t > 0.0 and state > 0:
 		var a := clampf(alert_t / 0.4, 0.0, 1.0)
 		var pop := 1.0 + 0.4 * clampf((alert_t - 1.1) / 0.2, 0.0, 1.0)

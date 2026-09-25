@@ -53,6 +53,12 @@ static func _build(name: String) -> AudioStreamWAV:
 			samples.append_array(_tone(0.09, 990.0, 0.35))
 		"eat":
 			samples = _rustle(rng, 0.35)
+		"scream":  # a screamer calling the others
+			samples = _sweep_tone(rng, 1.1, 700.0, 1300.0, 0.45)
+		"siren":  # horde warning drifting over the city
+			samples = _siren(2.6)
+		"door":  # fist and shoulder against wood
+			samples = _thump(rng, 0.22, 120.0, 70.0, 0.8)
 		"break":
 			samples = _thump(rng, 0.12, 300.0, 150.0, 0.4)
 			_mix(samples, _noise_sweep(rng, 0.12, 0.8, 1.0, 0.6))
@@ -136,6 +142,36 @@ static func _rustle(rng: RandomNumberGenerator, length: float) -> PackedFloat32A
 			gate = rng.randf_range(0.0, 1.0) if rng.randf() < 0.7 else 0.0
 		y += (rng.randf_range(-1, 1) - y) * 0.5
 		out[i] = y * gate * 0.35
+	return out
+
+
+static func _sweep_tone(rng: RandomNumberGenerator, length: float, f0: float, f1: float, gain: float) -> PackedFloat32Array:
+	var n := int(length * RATE)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var phase := 0.0
+	var y := 0.0
+	for i in n:
+		var t := float(i) / n
+		var f := lerpf(f0, f1, sin(t * PI * 0.5)) * (1.0 + 0.04 * sin(t * 90.0))
+		phase += TAU * f / RATE
+		y += (rng.randf_range(-1, 1) - y) * 0.6
+		var env := clampf(t / 0.05, 0, 1) * clampf((1.0 - t) / 0.35, 0, 1)
+		out[i] = (sin(phase) * 0.6 + sin(phase * 2.01) * 0.25 + y * 0.35) * env * gain
+	return out
+
+
+static func _siren(length: float) -> PackedFloat32Array:
+	var n := int(length * RATE)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var phase := 0.0
+	for i in n:
+		var t := float(i) / n
+		var f := 520.0 + 280.0 * (0.5 - 0.5 * cos(t * TAU * 1.5))
+		phase += TAU * f / RATE
+		var env := clampf(t / 0.1, 0, 1) * clampf((1.0 - t) / 0.3, 0, 1)
+		out[i] = (sin(phase) + 0.3 * sin(phase * 3.0)) * 0.3 * env
 	return out
 
 

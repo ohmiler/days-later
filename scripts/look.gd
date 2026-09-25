@@ -18,7 +18,8 @@ enum { FRONT, BACK, SIDE }
 enum { NONE, PUNCH_L, PUNCH_R, KICK, SWING }  # attack poses
 
 static var _cone: Texture2D
-static var _base := Transform2D.IDENTITY  # whole-body transform (used to topple a falling body)
+static var _base := Transform2D.IDENTITY
+static var _girth := 1.0  # body width multiplier (fat and skinny zombies)  # whole-body transform (used to topple a falling body)
 static var _font: Font
 
 
@@ -40,7 +41,8 @@ static func pick_view(angle: float, prev: Array) -> Array:
 static func draw_human(ci: CanvasItem, vf: Array, angle: float, phase: float, moving: bool,
 		skin: Color, shirt: Color, pants: Color, hair: Color, zombie: bool,
 		attack: int = NONE, ext: float = 0.0, armed: bool = false, guard: bool = false,
-		recoil := Vector2.ZERO, weapon: Dictionary = {}, fall := 0.0, fall_dir := 1.0) -> void:
+		recoil := Vector2.ZERO, weapon: Dictionary = {}, fall := 0.0, fall_dir := 1.0, girth := 1.0) -> void:
+	_girth = girth
 	# Dying: knees buckle, then the body topples like a plank around the feet
 	# (accelerating as it goes) and settles with a small bounce.
 	var sink := 0.0
@@ -263,7 +265,7 @@ static func _idle_arms(ci: CanvasItem, view: int, s: float, skin: Color, shirt: 
 
 ## Shirt with rounded shoulders, lit from the top-left.
 static func _torso(ci: CanvasItem, view: int, shirt: Color, pants: Color, zombie: bool) -> void:
-	var w := 3.0 if view == SIDE else 4.4
+	var w := (3.0 if view == SIDE else 4.4) * _girth
 	var top := shirt.lightened(0.08)
 	var bot := shirt.darkened(0.25)
 	ci.draw_polygon(PackedVector2Array([Vector2(-w + 1.2, -20), Vector2(w - 1.2, -20), Vector2(w, -18.6),
@@ -490,8 +492,8 @@ static func _zombie_arms(ci: CanvasItem, view: int, skin: Color, shirt: Color, p
 			if not behind:
 				for s in [-1.0, 1.0]:
 					# Reaching toward the camera: foreshortened, hands big and low.
-					var sh := Vector2(4.0 * s, -18.6)
-					var hand := Vector2(2.8 * s, -12.3 + sway * s)
+					var sh := Vector2(4.0 * s * _girth, -18.6)
+					var hand := Vector2(2.8 * s * _girth, -12.3 + sway * s)
 					_arm(ci, sh, sh.lerp(hand, 0.5) + Vector2(0.6 * s, 0), hand, sleeve, arm, false)
 					ci.draw_circle(hand, 1.7, arm)
 		BACK:

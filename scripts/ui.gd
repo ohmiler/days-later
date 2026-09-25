@@ -27,6 +27,8 @@ var tut: TutorialCard
 var feed: VBoxContainer
 var hotbar: InventoryBar
 var help: Control
+var banner: Label
+var banner_t := 0.0
 var death_label: Label
 var death_sub: Label
 var done_steps := {}
@@ -61,6 +63,13 @@ func set_status(text: String) -> void:
 
 func set_inventory(inv: Array, sel: int) -> void:
 	hotbar.show_inventory(inv, sel)
+
+
+## A big message across the top of the screen for a few seconds.
+func announce(text: String) -> void:
+	banner.text = text
+	banner_t = 5.0
+	push_feed(text, "kill")
 
 
 func toggle_help() -> void:
@@ -134,6 +143,8 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	vitals.offset_top = vitals.offset_bottom - (150 if vitals.hint != "" else 126)
 	vitals.queue_redraw()
 
+	banner_t = maxf(0.0, banner_t - delta)
+	banner.modulate.a = clampf(banner_t, 0.0, 1.0)
 	clock.day = day
 	clock.time = time
 	clock.online = online
@@ -263,6 +274,19 @@ func _build_hud() -> void:
 	hotbar = InventoryBar.new()
 	hud.add_child(hotbar)
 
+	banner = _label("", UiTheme.heavy(), 34, Color("ff6a5a"))
+	banner.anchor_left = 0.5
+	banner.anchor_right = 0.5
+	banner.offset_left = -520
+	banner.offset_right = 520
+	banner.offset_top = 140
+	banner.offset_bottom = 190
+	banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	banner.add_theme_constant_override("outline_size", 12)
+	banner.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	banner.modulate.a = 0.0
+	hud.add_child(banner)
+
 
 func _build_death() -> void:
 	death_label = _label("คุณตายแล้ว", UiTheme.heavy(), 72, Color("d8342a"))
@@ -295,9 +319,9 @@ func _build_help() -> void:
 	sheet.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	sheet.offset_left = -370
 	sheet.offset_right = 370
-	sheet.offset_top = -250
-	sheet.offset_bottom = 250
-	sheet.pivot_offset = Vector2(370, 250)
+	sheet.offset_top = -270
+	sheet.offset_bottom = 270
+	sheet.pivot_offset = Vector2(370, 270)
 	sheet.rotation = 0.01
 	help.add_child(sheet)
 
@@ -493,6 +517,9 @@ class Clock extends Control:
 	var time := 0.3
 	var online := 1
 
+	func _horde_now() -> bool:
+		return (day % 3 == 0 and time > 0.764) or (day % 3 == 1 and day > 1 and time < 0.036)
+
 	func _draw() -> void:
 		var w := size.x
 		var title := "วันที่ %d" % day
@@ -523,7 +550,13 @@ class Clock extends Control:
 			draw_circle(ic, 6, Color("ffb35c"))
 		var warn := ""
 		var wc := Color("ffb35c")
-		if time >= 0.70 and time < 0.764:
+		if _horde_now():
+			warn = "ฝูงซอมบี้กำลังบุก! อยู่ในที่ปลอดภัย"
+			wc = Color("ff5a4a")
+		elif day % 3 == 0 and time < 0.764:
+			warn = "คืนนี้: ฝูงซอมบี้จะบุก"
+			wc = Color("ff7a5a")
+		elif time >= 0.70 and time < 0.764:
 			warn = "อีก %d นาทีจะมืด ซอมบี้จะออกมามากขึ้น" % ceili((0.764 - time) * 24.0 * 60.0)
 		elif night:
 			warn = "ซอมบี้มองเห็นไกลขึ้นในความมืด"
@@ -568,7 +601,7 @@ class HelpSheet extends Control:
 		["[คลิกขวา]", "เตะ ผลักซอมบี้ออก"], ["[F]", "ใช้ของ (กิน / รักษา)"],
 		["[ลูกกลิ้ง]", "ซูมกล้อง"], ["[G]", "ทิ้งของ"],
 		["[Shift]", "วิ่ง (เร็ว แต่เสียงดัง)"], ["[Ctrl]/[C]", "ย่อง (เงียบ ซอมบี้เห็นยาก)"],
-		["[H]", "เปิด / ปิดหน้านี้"],
+		["[R]", "ตอกไม้เสริม / ซ่อมประตู"], ["[H]", "เปิด / ปิดหน้านี้"],
 	]
 
 	func _draw() -> void:
@@ -584,5 +617,5 @@ class HelpSheet extends Control:
 			var kw := UiTheme.draw_rich(self, p, ROWS[i][0], UiTheme.heading(), 16, UiTheme.INK)
 			draw_string(UiTheme.body_bold(), p + Vector2(maxf(kw, 60) + 14, 0), ROWS[i][1], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.INK)
 			draw_dashed_line(p + Vector2(0, 16), p + Vector2(320, 16), UiTheme.PAPER_DARK, 1.0, 4.0)
-		draw_string(UiTheme.body(), Vector2(36, size.y - 30), "เคล็ดลับ: ซอมบี้ได้ยินเสียง ย่องเข้าร้านเงียบ ๆ แล้วค่อยค้นของ",
+		draw_string(UiTheme.body(), Vector2(36, size.y - 30), "ทุก 3 วันจะมีคืนฝูง: ยึดร้านสักหลัง กด E ปิดประตู แล้วกด R ตอกไม้ให้แน่น",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(UiTheme.INK, 0.65))

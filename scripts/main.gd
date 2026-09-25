@@ -48,6 +48,12 @@ const NOISE_HIT := 130.0
 const NOISE_SEARCH := 60.0
 const NOISE_BREAK := 170.0
 var sneak_toggle := false
+# Horde nights: every HORDE_EVERY days the whole city comes for you.
+const HORDE_EVERY := 3
+const HORDE_MAX_ZOMBIES := 160
+var horde_announced := -1  # day we last announced / started / ended, so each fires once
+var horde_started := -1
+var horde_ended := -1
 var players := {}  # peer_id -> Player
 var zombies := {}  # zid -> Zombie
 var next_zid := 1
@@ -217,7 +223,10 @@ func _on_peer_connected(id: int) -> void:
 	var items := []
 	for pid in pickups:
 		items.append([pid, pickups[pid].pos, pickups[pid].item])
-	sync_state.rpc_id(id, searched, items)
+	var doors := []
+	for d in world.doors:
+		doors.append([d.id, d.closed, d.hp, d.boards, d.broken])
+	sync_state.rpc_id(id, searched, items, doors)
 	var p := _add_player(id)
 	_send_inv(p)
 	print("Player %d joined (%d online)" % [id, players.size()])
@@ -231,7 +240,9 @@ func _on_peer_disconnected(id: int) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func sync_state(searched: Array, items: Array) -> void:
+func sync_state(searched: Array, items: Array, doors: Array) -> void:
+	for e in doors:
+		world.set_door(e[0], e[1], e[2], e[3], e[4])
 	for id in searched:
 		world.container_nodes[id].set_searched(true)
 	for e in items:
@@ -339,10 +350,16 @@ func _server_tick(delta: float) -> void:
 		z.server_tick(delta)
 	_separate()
 
+	_tick_horde()
+	var horde := is_horde(day, time)
 	spawn_timer -= delta
-	if spawn_timer <= 0 and zombies.size() < MAX_ZOMBIES:
-		_spawn_zombie()
-		spawn_timer = 1.5 if world.is_night else 5.0
+	if spawn_timer <= 0 and zombies.size() < (HORDE_MAX_ZOMBIES if horde else MAX_ZOMBIES):
+		if horde and not players.is_empty():
+			_spawn_horde_zombie()
+			spawn_timer = 0.35
+		else:
+			_spawn_zombie()
+			spawn_timer = 1.5 if world.is_night else 5.0
 
 	snap_timer -= delta
 	if snap_timer <= 0:
@@ -471,6 +488,87 @@ func _tick_needs(p: Player, delta: float) -> void:
 		_warn(p, "fever", p.infection > 60.0, "เชื้อลุกลาม ตัวเริ่มร้อนและเดินช้าลง...")
 		if p.infection >= 100.0:
 			_turn(p)
+
+
+## A zombie pounds on a door (server).
+func damage_door(id: int, dmg: float) -> void:
+	var d: Dictionary = world.doors[id]
+	if not d.closed:
+		return
+	var hp: float = d.hp - dmg
+	# Boards take the beating first; each one splinters off as its share runs out.
+	var boards: int = mini(d.boards, maxi(0, ceili((hp - World.DOOR_HP) / World.BOARD_HP)))
+	var pos := world.to_pos(d.cell)
+	if hp <= 0.0:
+		door_state.rpc(id, false, 0.0, 0, true)
+		fx_sound.rpc("break", pos)
+		_make_noise(pos, NOISE_BREAK)
+	else:
+		door_state.rpc(id, true, hp, boards, false)
+		fx_sound.rpc("door", pos)
+		_make_noise(pos, NOISE_HIT)
+
+
+@rpc("authority", "call_local", "reliable")
+func door_state(id: int, closed: bool, hp: float, boards: int, broken: bool) -> void:
+	world.set_door(id, closed, hp, boards, broken)
+
+
+## A screamer that spots you shrieks: every zombie for a long way comes running.
+func zombie_scream(z: Zombie) -> void:
+	fx_sound.rpc("scream", z.position)
+	_make_noise(z.position, 260.0)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_reinforce() -> void:
+	var p := _sender()
+	if p == null or not p.alive():
+		return
+	var id := world.door_near(p.position, 18.0)
+	if id < 0:
+		return
+	var slot := -1
+	for i in Items.INV_SIZE:
+		if p.inv[i] != null and p.inv[i].id == "wood":
+			slot = i
+	if slot < 0:
+		_toast(p, "ต้องมีไม้กระดาน")
+		return
+	var d: Dictionary = world.doors[id]
+	if d.broken:
+		door_state.rpc(id, false, World.DOOR_HP, 0, false)
+		_toast(p, "ซ่อมประตูแล้ว")
+	elif d.boards >= World.MAX_BOARDS:
+		_toast(p, "ตอกไม้เต็มแล้ว")
+		return
+	else:
+		door_state.rpc(id, d.closed, minf(d.hp + World.BOARD_HP, World.DOOR_HP + (d.boards + 1) * World.BOARD_HP), d.boards + 1, false)
+		_toast(p, "ตอกไม้เสริมประตู (%d/%d)" % [d.boards + 1, World.MAX_BOARDS])
+	p.inv[slot].n -= 1
+	if p.inv[slot].n <= 0:
+		p.inv[slot] = null
+	fx_sound.rpc("door", p.position)
+	_make_noise(p.position, NOISE_SWING)  # hammering is loud
+	_send_inv(p)
+
+
+func _toggle_door(p: Player, id: int) -> void:
+	var d: Dictionary = world.doors[id]
+	if d.broken:
+		_toast(p, "ประตูพัง ต้องซ่อมด้วยไม้กระดาน [R]")
+		return
+	if not d.closed:
+		# Don't shut it on someone standing in the doorway.
+		var c := world.to_pos(d.cell)
+		for q: Player in players.values():
+			if q.alive() and q.position.distance_to(c) < 9.0:
+				return
+		for z: Zombie in zombies.values():
+			if z.position.distance_to(c) < 9.0:
+				return
+	door_state.rpc(id, not d.closed, d.hp, d.boards, false)
+	fx_sound.rpc("door", world.to_pos(d.cell))
 
 
 ## Every zombie within `radius` goes to look.
@@ -665,6 +763,10 @@ func req_interact() -> void:
 		_toast(p, "เก็บ %s" % Items.display_name(item.id))
 		_send_inv(p)
 		return
+	var door := _door_for_e(p.position)
+	if door >= 0:
+		_toggle_door(p, door)
+		return
 	var f := _container_near(p.position)
 	if f and not f.searched:
 		p.search_id = f.data.id
@@ -672,6 +774,18 @@ func req_interact() -> void:
 		fx_sound.rpc("rustle", f.position)
 		_make_noise(f.position, NOISE_SEARCH)
 		_notify(p.peer_id, &"search_started", [SEARCH_TIME])
+
+
+## The door E would use: one you're standing in, or any close one when
+## there's no unsearched furniture in reach.
+func _door_for_e(pos: Vector2) -> int:
+	var door := world.door_near(pos, 15.0)
+	if door >= 0:
+		return door
+	var f := _container_near(pos)
+	if f == null or f.searched:
+		return world.door_near(pos, 16.0)
+	return -1
 
 
 func _container_near(pos: Vector2) -> FurnitureProp:
@@ -735,6 +849,46 @@ func _fire(p: Player) -> void:
 			hit.queue_free()
 			p.kills += 1
 	fx_shot.rpc(from, from + dir * length, hit != null)
+
+
+static func is_horde(d: int, t: float) -> bool:
+	# The horde night starts at dusk on every third day and runs past midnight.
+	return (d % HORDE_EVERY == 0 and t > 0.764) or (d % HORDE_EVERY == 1 and d > 1 and t < 0.036)
+
+
+func _tick_horde() -> void:
+	if day % HORDE_EVERY == 0 and time > 0.62 and horde_announced != day:
+		horde_announced = day
+		fx_announce.rpc("คืนนี้ฝูงซอมบี้จะบุกเมือง! หาที่หลบ ปิดประตู ตอกไม้ให้แน่น", true)
+	if is_horde(day, time) and horde_started != day - (0 if day % HORDE_EVERY == 0 else 1):
+		horde_started = day - (0 if day % HORDE_EVERY == 0 else 1)
+		spawn_timer = 0.0
+		fx_announce.rpc("ฝูงซอมบี้มาแล้ว!", true)
+	if day % HORDE_EVERY == 1 and day > 1 and time > 0.036 and time < 0.2 and horde_ended != day:
+		horde_ended = day
+		fx_announce.rpc("รอดคืนฝูงมาได้ · ฟ้าใกล้สางแล้ว", false)
+
+
+## Horde zombies come in from just off-screen of a random player and head straight for them.
+func _spawn_horde_zombie() -> void:
+	var targets: Array = players.values().filter(func(q): return q.alive())
+	if targets.is_empty():
+		return
+	var p: Player = targets[randi() % targets.size()]
+	for attempt in 20:
+		var pos: Vector2 = p.position + Vector2.from_angle(randf() * TAU) * randf_range(280, 420)
+		if world.can_stand(pos, 5):
+			var z := _add_zombie(next_zid, pos)
+			next_zid += 1
+			z.hear(p.position)
+			return
+
+
+@rpc("authority", "call_local", "reliable")
+func fx_announce(text: String, siren: bool) -> void:
+	ui.announce(text)
+	if siren:
+		Sfx.play(self, "siren", camera.position, -6.0, 1.0)
 
 
 func _spawn_zombie() -> void:
@@ -1042,6 +1196,16 @@ func _update_prompt(me: Player) -> void:
 			prompt = "[E] เก็บ %s" % Items.display_name(pickups[pid].item.id)
 			prompt_pos = pickups[pid].pos + Vector2(0, -10)
 			return
+	var door := _door_for_e(me.position)
+	if door >= 0:
+		var d: Dictionary = world.doors[door]
+		var has_wood := me.inv.any(func(it): return it != null and it.id == "wood")
+		if d.broken:
+			prompt = "ประตูพัง" + ("  [R] ซ่อม" if has_wood else "  (ต้องมีไม้กระดาน)")
+		else:
+			prompt = ("[E] เปิดประตู" if d.closed else "[E] ปิดประตู") + ("  [R] ตอกไม้" if has_wood and d.boards < World.MAX_BOARDS else "")
+		prompt_pos = world.to_pos(d.cell) + Vector2(0, -22)
+		return
 	var f := _container_near(me.position)
 	if f and not f.searched and (hidden_building != null or not world.building_at.has(world.to_cell(f.position))):
 		f.set_highlight(true)
@@ -1154,6 +1318,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			ui.push_feed("ย่อง: เงียบ ช้า มองเห็นยาก" if sneak_toggle else "เลิกย่อง")
 		elif k == KEY_E:
 			_request(&"req_interact", [])
+		elif k == KEY_R:
+			_request(&"req_reinforce", [])
 		elif k == KEY_F:
 			_request(&"req_use", [])
 		elif k == KEY_G:

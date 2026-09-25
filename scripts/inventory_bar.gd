@@ -74,6 +74,8 @@ func _draw() -> void:
 				info = "ทนทาน %d / %d · คลิกซ้ายฟาด" % [cur.hp, d.hp]
 			"use":
 				info = "กด F ใช้ · " + Items.effect_text(cur.id)
+			"material":
+				info = "ยืนที่ประตูแล้วกด R เพื่อตอกเสริม / ซ่อม"
 			_:
 				info = "เก็บไว้แลกของ"
 	var cx := size.x / 2

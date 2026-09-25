@@ -9,7 +9,10 @@ const W := 160
 const H := 120
 const CHUNK := 16
 const BTS_H := 64.0  # how high the skytrain deck floats above the road
-enum { GRASS, DIRT, WATER, TREE, WALL, ROAD, SIDEWALK, SOI, BUILDING, PLAZA, FLOOR, IWALL }
+const DOOR_HP := 60.0
+const BOARD_HP := 60.0  # each board nailed across a door
+const MAX_BOARDS := 3
+enum { GRASS, DIRT, WATER, TREE, WALL, ROAD, SIDEWALK, SOI, BUILDING, PLAZA, FLOOR, IWALL, DOOR }
 const COLORS := {
 	GRASS: Color("4a5733"),
 	DIRT: Color("6a5a43"),
@@ -23,6 +26,7 @@ const COLORS := {
 	PLAZA: Color("aaa293"),
 	FLOOR: Color("a89a82"),  # terrazzo inside shops and homes
 	IWALL: Color("3a3632"),  # a wall seen from above, once the roof is lifted off
+	DOOR: Color("a89a82"),
 }
 
 var tiles := PackedInt32Array()
@@ -38,6 +42,9 @@ var building_nodes: Array = []
 var building_at := {}  # cell -> BuildingProp, for every cell of every footprint
 var containers: Array = []  # {id, kind, cell, table}, filled by CityGen
 var container_nodes: Array = []  # FurnitureProp, indexed by container id
+var doors: Array = []  # {id, cell, closed, hp, boards, broken}, filled by CityGen
+var door_at := {}  # cell -> door id
+var door_nodes: Array = []
 var overhead: Overhead
 
 # Layout records filled in by CityGen.
@@ -97,6 +104,18 @@ func _spawn_props() -> void:
 		for y in range(r.position.y, r.end.y):
 			for x in range(r.position.x, r.end.x):
 				building_at[Vector2i(x, y)] = b
+	for d in doors:
+		door_at[d.cell] = d.id
+		if d.broken:
+			d.closed = false
+		var n := DoorProp.new()
+		n.door = d
+		# A hair below the building's front wall so it draws on top of the facade.
+		n.position = Vector2(d.cell.x * TILE, (d.cell.y + 1) * TILE + 0.2)
+		n.z_index = 1
+		prop_parent.add_child(n)
+		door_nodes.append(n)
+		astar.set_point_solid(d.cell, d.closed)
 	for rec in containers:
 		var f := FurnitureProp.new()
 		f.data = rec
@@ -152,7 +171,59 @@ func set_tile(c: Vector2i, t: int) -> void:
 
 
 func is_solid(c: Vector2i) -> bool:
+	if door_at.has(c):
+		return doors[door_at[c]].closed
 	return get_tile(c) in [WATER, TREE, WALL, BUILDING, IWALL] or blocked.has(c)
+
+
+## Update a door from the server's state.
+func set_door(id: int, closed: bool, hp: float, boards: int, broken: bool) -> void:
+	var d: Dictionary = doors[id]
+	d.closed = closed
+	d.hp = hp
+	d.boards = boards
+	d.broken = broken
+	astar.set_point_solid(d.cell, closed)
+	door_nodes[id].queue_redraw()
+
+
+func door_near(pos: Vector2, reach: float) -> int:
+	var c := to_cell(pos)
+	var best := -1
+	var best_d := reach
+	for dy in range(-2, 3):
+		for dx in range(-2, 3):
+			var id: int = door_at.get(c + Vector2i(dx, dy), -1)
+			if id >= 0:
+				var d := pos.distance_to(to_pos(doors[id].cell))
+				if d < best_d:
+					best_d = d
+					best = id
+	return best
+
+
+func closed_door_near(pos: Vector2, reach: float) -> int:
+	var id := door_near(pos, reach)
+	return id if id >= 0 and doors[id].closed else -1
+
+
+## Path from a to b. If b is inside a building shut behind its door, the path
+## leads to that door instead (so zombies know where to start pounding).
+func path_between(a: Vector2, b: Vector2) -> Array:
+	var from := to_cell(a)
+	var p: Array = astar.get_id_path(from, to_cell(b))
+	if p.is_empty():
+		var bld: BuildingProp = building_at.get(to_cell(b))
+		if bld and bld.data.get("enter", false):
+			var dc := Vector2i(bld.data.rect.position.x + bld.data.door, bld.data.rect.end.y - 1)
+			var id: int = door_at.get(dc, -1)
+			if id >= 0 and doors[id].closed:
+				astar.set_point_solid(dc, false)
+				p = astar.get_id_path(from, dc)
+				astar.set_point_solid(dc, true)
+	if not p.is_empty():
+		p.remove_at(0)
+	return p
 
 
 func in_intersection(c: Vector2i) -> bool:
@@ -202,7 +273,7 @@ func ray_length(from: Vector2, dir: Vector2, max_len: float) -> float:
 	var t := 0.0
 	while t < max_len:
 		var c := to_cell(from + dir * t)
-		if not in_bounds(c) or get_tile(c) in [TREE, WALL, BUILDING, IWALL]:
+		if not in_bounds(c) or get_tile(c) in [TREE, WALL, BUILDING, IWALL] or (door_at.has(c) and doors[door_at[c]].closed):
 			return t
 		t += 4.0
 	return max_len
@@ -319,7 +390,7 @@ func _draw_tile(ci: Node2D, x: int, y: int) -> void:
 				ci.draw_rect(Rect2(r.position + Vector2(4, 5), Vector2(8, 5)), Color("2e2c2a"))  # drain
 		PLAZA:
 			ci.draw_rect(r, base.darkened(0.08), false, 0.5)
-		FLOOR:
+		FLOOR, DOOR:
 			ci.draw_rect(r, base.darkened(0.1), false, 0.5)
 			for i in 4:  # terrazzo chips
 				var p := r.position + Vector2(hash01(x, y, i + 20), hash01(x, y, i + 30)) * (TILE - 1)

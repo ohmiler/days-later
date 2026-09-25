@@ -91,7 +91,9 @@ static func _make_enterable(w: World, rec: Dictionary, rng: RandomNumberGenerato
 	w.fill(r, World.IWALL)
 	w.fill(inner, World.FLOOR)
 	var door := r.position.x + rng.randi_range(1, r.size.x - 2)
-	w.fill(Rect2i(door, r.end.y - 1, 1, 1), World.FLOOR)
+	w.fill(Rect2i(door, r.end.y - 1, 1, 1), World.DOOR)
+	w.doors.append({id = w.doors.size(), cell = Vector2i(door, r.end.y - 1), closed = rng.randf() < 0.4,
+			hp = World.DOOR_HP, boards = 0, broken = rng.randf() < 0.1})
 	rec.enter = true
 	rec.door = door - r.position.x
 	rec.table = "store" if rec.kind == "store" else SIGN_LOOT.get(rec.sign, "home")

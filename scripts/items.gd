@@ -34,6 +34,8 @@ const DEFS := {
 	"mama": {name = "บะหมี่กึ่งสำเร็จรูป", type = "use", food = 40.0, drink = -5.0},
 	"snack": {name = "ขนมถุง", type = "use", food = 20.0},
 	"energy": {name = "เครื่องดื่มชูกำลัง", type = "use", food = 5.0, drink = 25.0, stamina = 100.0},
+	# Building material: reinforce or repair doors (R)
+	"wood": {name = "ไม้กระดาน", type = "material"},
 	# Valuables, for trading later
 	"gold": {name = "สร้อยทอง", type = "junk"},
 }
@@ -43,9 +45,9 @@ const LOOT := {
 	"store": [["water", 4], ["mama", 3], ["snack", 4], ["energy", 2], ["painkiller", 1]],
 	"med": [["bandage", 4], ["painkiller", 3], ["firstaid", 1], ["antibiotic", 2], ["water", 1]],
 	"food": [["knife", 2], ["mama", 2], ["snack", 2], ["water", 2], ["energy", 1]],
-	"tools": [["pipe", 3], ["hammer", 3], ["plank", 3], ["axe", 1], ["machete", 1]],
+	"tools": [["pipe", 3], ["hammer", 3], ["plank", 3], ["axe", 1], ["machete", 1], ["wood", 5]],
 	"valuables": [["gold", 3], ["bat", 1], ["knife", 1]],
-	"home": [["plank", 2], ["bat", 1], ["knife", 2], ["water", 3], ["mama", 3], ["snack", 2], ["bandage", 2]],
+	"home": [["plank", 2], ["bat", 1], ["knife", 2], ["water", 3], ["mama", 3], ["snack", 2], ["bandage", 2], ["wood", 3]],
 }
 
 ## Furniture that goes in each kind of place.
@@ -154,6 +156,11 @@ static func draw_icon(ci: CanvasItem, r: Rect2, id: String) -> void:
 			ci.draw_rect(Rect2(c - Vector2(8, 13) * s, Vector2(16, 6) * s), Color("f0ece4"))
 			ci.draw_rect(Rect2(c - Vector2(5, 2) * s, Vector2(10, 7) * s), Color("f0ece4"))
 			ci.draw_rect(Rect2(c - Vector2(1, 1) * s, Vector2(2, 5) * s), Color("3a8a4a"))
+		"wood":
+			for i in 3:
+				var y := (-8 + i * 7) * s
+				ci.draw_rect(Rect2(c + Vector2(-13 * s, y), Vector2(26, 5) * s), Color("a8885a").darkened(i * 0.08))
+				ci.draw_rect(Rect2(c + Vector2(-13 * s, y), Vector2(26, 1.2) * s), Color("c8a878"))
 		"gold":
 			ci.draw_arc(c, 9 * s, 0, TAU, 20, Color("e0b840"), 3 * s)
 			ci.draw_circle(c + Vector2(0, 9) * s, 3 * s, Color("f0d060"))

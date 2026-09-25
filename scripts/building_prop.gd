@@ -151,7 +151,7 @@ func _door() -> void:
 	if not data.get("enter", false):
 		return
 	var x: float = data.door * World.TILE
-	draw_rect(Rect2(x + 1, -GROUND_H + 1, World.TILE - 2, GROUND_H - 1), Color("120f0c"))
+	draw_rect(Rect2(x + 1, -GROUND_H + 1, World.TILE - 2, GROUND_H - 1), Color("120f0c"))  # the DoorProp draws the door itself
 	draw_rect(Rect2(x + 0.5, -GROUND_H + 0.5, World.TILE - 1, GROUND_H - 0.5), Color("5a4a3a"), false, 1.0)
 	draw_rect(Rect2(x + 2, -2, World.TILE - 4, 2), Color("3a2e24"))  # worn step
 
