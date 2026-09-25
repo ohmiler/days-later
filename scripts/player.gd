@@ -342,11 +342,8 @@ func _draw() -> void:
 		return
 	if riding >= 0 and riding < world.vehicles.size():
 		# Astride the bike: sitting up, hands forward on the bars, facing where it goes.
-		var dir: float = world.vehicles[riding].dir
-		Look.lift = Vector2(-2.0 * dir, -5.0)
-		Look.draw(self, {view = [Look.SIDE, dir < 0.0], angle = 0.0 if dir > 0.0 else PI, moving = false,
-				crouch = 4.0, guard = true}, look)
-		Look.lift = Vector2.ZERO
+		var v: Dictionary = world.vehicles[riding]
+		Look.draw(self, {view = [Look.SIDE, v.dir < 0.0], anchors = StreetProp.rider_anchors(v.model)}, look)
 		return
 	var wdef := Items.def(weapon_id)
 	var dur := 0.22

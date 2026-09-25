@@ -753,6 +753,7 @@ func _update_prompt(me: Player) -> void:
 		return
 	if me.riding >= 0:
 		prompt = "[E] ลงจากรถ · " + Vehicles.title_of(world.vehicles[me.riding])
+		prompt_pos = me.position + Vector2(0, -34)  # over the rider's head
 		return
 	var t := Interact.target(self, me)
 	var list := Interact.actions(self, me, t)
@@ -920,6 +921,10 @@ func _draw_decals() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if world and in_game and event is InputEventKey and not event.pressed and event.keycode == KEY_E and e_down_at >= 0.0:
 		e_down_at = -1.0
+		var rider: Player = players.get(multiplayer.get_unique_id())
+		if rider and rider.riding >= 0:
+			_request(&"req_interact", [])  # on a bike, E gets you off
+			return
 		if ui.wheel.visible:
 			var a: Dictionary = ui.wheel.chosen()
 			ui.wheel.close()
