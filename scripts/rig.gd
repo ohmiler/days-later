@@ -72,8 +72,8 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	# The upper body bobs with the walk, leans in (zombies), lunges into punches,
 	# rocks back from kicks and hits, and drops when crouching.
 	var lean := 1.2 if zombie and view == Look.SIDE else 0.0
-	# (A punch puts the shoulder into it: the arm alone only reaches so far.)
-	var lunge := Vector2.from_angle(angle) * Vector2(3.0, 1.0) * ext if attack in [Look.PUNCH_L, Look.PUNCH_R] else Vector2.ZERO
+	# (Only a little for a punch: the shoulder turns into it instead, see _fist_arms.)
+	var lunge := Vector2.from_angle(angle) * Vector2(0.8, 0.5) * ext if attack in [Look.PUNCH_L, Look.PUNCH_R] else Vector2.ZERO
 	if attack == Look.KICK:
 		var k := Look.kick_pose(ext)
 		lunge = -Vector2.from_angle(angle) * Vector2(1.4, 0.7) * k.y + Vector2(0, 0.7 * k.x)
@@ -372,10 +372,14 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 					_elbow_pref(view, 0), _elbow_bend(view)))
 			continue
 		var fist: Vector2 = guard[i]
+		var from: Vector2 = sh[i]
 		if attack == reach[i]:
+			# The shoulder turns forward into the punch, adding to the arm's reach
+			# without the whole body sliding off its hips.
+			from += Vector2(d.x, d.y * 0.5) * 1.8 * ext
 			# Straight out along the aim; foreshortened when punching toward or away from the camera.
-			fist = fist.lerp(sh[i] + Vector2(d.x * 13.0, d.y * 6.0) + Vector2(0, 2.0 * absf(d.y)), ext)
-		out.append(_reach_arm(sh[i], fist, _elbow_pref(view, i), behind, {fist = true, dim = dim}, _elbow_bend(view)))
+			fist = fist.lerp(from + Vector2(d.x * 13.0, d.y * 6.0) + Vector2(0, 2.0 * absf(d.y)), ext)
+		out.append(_reach_arm(from, fist, _elbow_pref(view, i), behind, {fist = true, dim = dim}, _elbow_bend(view)))
 	return out
 
 

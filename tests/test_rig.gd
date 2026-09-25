@@ -87,6 +87,12 @@ func run() -> void:
 		check(l.x <= rh.x and l.y > -17.0 and rh.y > -17.0, "%s from the front: held low, arms not crossed (%s, %s)" % [id, l, rh])
 
 
+	# A punch turns the shoulder into it; the body stays over its hips.
+	var pr := Rig.build({view = [Look.SIDE, false], attack = Look.PUNCH_R, ext = 1.0}, {})
+	var sh_idle: Vector2 = Rig.shoulders(Look.SIDE)[1]
+	check(absf(pr.upper.x) <= 1.0 and _arm_by_idx(pr, 1).sh.x > sh_idle.x + 1.0,
+			"punching, the shoulder goes forward, not the whole body (body %.1f)" % pr.upper.x)
+
 	# Easing: raising the fists eases in over BLEND_TIME instead of jumping.
 	var mem := {}
 	var idle_st := {view = [Look.SIDE, false]}
