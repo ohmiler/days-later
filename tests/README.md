@@ -1,0 +1,47 @@
+# Tests
+
+Automated checks that the game still works after a change. Each `test_*.gd`
+starts a real game with no window, does things, and checks the results.
+They use the `test` save slot, so they never touch your real save.
+
+## Run all of them
+
+From the project folder (change the path to wherever your Godot is):
+
+```
+"C:\Users\Miler\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe" --headless --path . -s res://tests/run_all.gd
+```
+
+It prints one line per file and ends with `ALL PASSED` or the files that failed,
+with each failed check underneath. Takes about 15 seconds.
+
+Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
+
+## What they cover
+
+| File | Checks |
+|---|---|
+| `test_city` | The city from a seed is exactly the same as before (saved cities depend on it), every door can be walked to |
+| `test_combat` | Punch/kick/weapon hits, clicking the body, knock-downs, cut-off arms, weapon wear, death styles |
+| `test_zombie` | The telegraphed bite, interrupting it, armour, chasing, getting back up |
+| `test_inventory` | Stack sizes, quick heal, drag/merge/split/drop, clothes slots, backpack size |
+| `test_doors` | Opening, not shutting on someone, boarding, smashing windows |
+| `test_save` | Save and resume: doors, furniture contents, day/time, player, bag, clothes |
+| `test_net` | A second process joins over the network: names, looks, chat, snapshots, opening a cupboard |
+
+## Writing a new one
+
+Make `tests/test_something.gd`:
+
+```gdscript
+extends "res://tests/test_base.gd"
+
+func run() -> void:
+	await host(9310)          # a fresh game (pick an unused port)
+	var z := zombie_at(me.position + Vector2(14, 0))
+	simulate(1.0)             # one second of server time
+	check(me.hp < 100.0, "the zombie bit me")
+```
+
+`test_base.gd` has the helpers: `host`, `close_game`, `zombie_at`, `simulate`,
+`wait`, `frames`, `check`, `bag`, `count`.
