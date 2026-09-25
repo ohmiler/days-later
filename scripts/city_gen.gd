@@ -450,8 +450,9 @@ static func _street_furniture(w: World, rng: RandomNumberGenerator) -> void:
 			w.blocked[c] = true
 			w.street_props.append({kind = "cart", pos = w.to_pos(c) + Vector2(0, 5), seed = rng.randi()})
 		elif in_front and roll < 0.35:
-			w.street_props.append({kind = "motorbike", pos = w.to_pos(c) + Vector2(rng.randf_range(-3, 3), 5),
-					seed = rng.randi()})
+			var bike := {kind = "motorbike", pos = w.to_pos(c) + Vector2(rng.randf_range(-3, 3), 5), seed = rng.randi()}
+			if not _bike_near(w, bike.pos):
+				w.street_props.append(bike)
 		elif in_front and roll < 0.55:
 			w.street_props.append({kind = "trash", pos = w.to_pos(c) + Vector2(rng.randf_range(-4, 4), 5),
 					seed = rng.randi()})
@@ -542,7 +543,9 @@ static func _aftermath(w: World, rng: RandomNumberGenerator) -> void:
 				_prop(w, "spirit", w.to_pos(c) + Vector2(0, 5), rng)
 				continue
 			if w.get_tile(c) in [World.SIDEWALK, World.SOI] and not w.blocked.has(c) and rng.randf() < 0.28:
-				w.street_props.append({kind = "motorbike", pos = w.to_pos(c) + Vector2(rng.randf_range(-3, 3), 3), seed = rng.randi()})
+				var bike := {kind = "motorbike", pos = w.to_pos(c) + Vector2(rng.randf_range(-3, 3), 3), seed = rng.randi()}
+				if not _bike_near(w, bike.pos):
+					w.street_props.append(bike)
 	# Long-tail boats left in the canal, some half sunk.
 	for x in range(4, World.W - 4, 9):
 		if rng.randf() < 0.5 and w.get_tile(Vector2i(x, CANAL_Y + 1)) == World.WATER:
@@ -555,6 +558,15 @@ static func _prop(w: World, kind: String, pos: Vector2, rng: RandomNumberGenerat
 
 ## Free ground that will not wall anyone in: nothing solid next to it, and not
 ## in front of a door.
+## Parked bikes need room: none closer than a bike's length and a bit.
+## (Only decides whether to keep one; draws no random numbers.)
+static func _bike_near(w: World, pos: Vector2) -> bool:
+	for p in w.street_props:
+		if p.kind == "motorbike" and absf(p.pos.x - pos.x) < 40.0 and absf(p.pos.y - pos.y) < 10.0:
+			return true
+	return false
+
+
 static func _fits(w: World, cells: Array, road_ok := false) -> bool:
 	for cell: Vector2i in cells:
 		var t := w.get_tile(cell)

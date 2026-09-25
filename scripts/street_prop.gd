@@ -8,8 +8,7 @@ static var _glow_tex: Texture2D
 ## Vehicles are drawn this much bigger than their shapes below, so a car is
 ## longer than a person is tall (see CityGen._size_vehicles for what they block).
 const VEHICLE_SCALE := 1.6
-const MOTORBIKE_SCALE := 2.2  # its sketch is small: this makes it about 1.9 m long
-const VEHICLES := ["car", "taxi", "tuktuk", "motorbike", "wreck", "army"]
+const VEHICLES := ["car", "taxi", "tuktuk", "wreck", "army"]  # drawn bigger (a motorbike is drawn to size)
 
 var data: Dictionary
 
@@ -182,17 +181,61 @@ func _tuktuk() -> void:
 		draw_circle(Vector2(x, -2.5), 2.2, Color("161616"))
 
 
+## Colours Bangkok's scooters come in.
+const BIKE_COLORS := [Color("b8262a"), Color("1e1e22"), Color("e8e6e0"), Color("2a5aa8"), Color("d86a9a"),
+		Color("a8acb0"), Color("3a7a4a"), Color("e0a020")]
+
+
+## A step-through scooter, the kind every motorbike taxi rides, drawn at its
+## real size (about 1.9 m long): small wheels, a floorboard between them,
+## leg shield, seat, handlebars. Some carry a delivery box; some lie where
+## they fell.
 func _motorbike() -> void:
-	var col := Color.from_hsv(float(data.seed % 97) / 97.0, 0.5, 0.45)
+	var col: Color = BIKE_COLORS[data.seed % BIKE_COLORS.size()]
+	var dark := col.darkened(0.35)
 	var s := 1.0 if data.seed % 2 else -1.0
-	_shadow(Vector2(7, 1.5))
-	draw_set_transform(Vector2.ZERO, 0, Vector2(s, 1))
-	draw_circle(Vector2(-5, -2), 2.0, Color("161616"))
-	draw_circle(Vector2(5, -2), 2.0, Color("161616"))
-	draw_colored_polygon(PackedVector2Array([Vector2(-5, -3), Vector2(3, -3), Vector2(5, -7), Vector2(-3, -7)]), col)
-	draw_rect(Rect2(-4.5, -8, 5, 1.5), Color("1e1e1e"))  # seat
-	draw_line(Vector2(4, -6), Vector2(5, -10), Color("2a2a2a"), 0.8)
-	draw_line(Vector2(3.5, -10), Vector2(6.5, -10), Color("2a2a2a"), 0.8)  # handlebars
+	var fallen: bool = data.seed % 7 == 3
+	var box: int = (data.seed / 7) % 5  # 0: food delivery box (green), 1: (orange)
+	_shadow(Vector2(15, 3) if not fallen else Vector2(16, 5))
+	# Fallen over: seen from above it lies flat, so squash it and tip it.
+	draw_set_transform(Vector2(0, -2) if fallen else Vector2.ZERO, -0.12 * s if fallen else 0.0, Vector2(s, 0.5 if fallen else 1.0))
+	var tyre := Color("141414")
+	var hub := Color("8a8e92")
+	for wx in [-10.0, 11.0]:
+		draw_circle(Vector2(wx, -4.5), 4.5, tyre)
+		draw_circle(Vector2(wx, -4.5), 2.0, hub)
+		draw_circle(Vector2(wx, -4.5), 0.8, Color("2a2a2a"))
+	# Exhaust and engine under the seat.
+	draw_rect(Rect2(-14, -6.5, 8, 1.6), Color("6a6e72"))
+	draw_rect(Rect2(-14.5, -6.7, 1.6, 2), Color("9a9ea2"))
+	draw_rect(Rect2(-7, -9.5, 6, 4.5), Color("3a3c40"))
+	# Floorboard between the wheels.
+	draw_rect(Rect2(-3, -9, 9, 2), Color("26282c"))
+	# Rear body up to the seat, with the tail light and plate.
+	draw_colored_polygon(PackedVector2Array([Vector2(-15.5, -10), Vector2(-12.5, -14.5), Vector2(-2.5, -13.5),
+			Vector2(-1.5, -8.5), Vector2(-8, -8), Vector2(-14.5, -7.5)]), col)
+	draw_line(Vector2(-14.8, -10.2), Vector2(-3, -12.6), col.lightened(0.25), 0.7)  # a highlight along the side panel
+	draw_rect(Rect2(-16.2, -12, 1.4, 2), Color("d8302a"))  # tail light
+	draw_rect(Rect2(-16.6, -9.4, 2.2, 1.8), Color("ecebe4"))  # plate
+	# Seat.
+	draw_colored_polygon(PackedVector2Array([Vector2(-13.5, -14.2), Vector2(-12.5, -16.4), Vector2(-3, -15.8),
+			Vector2(-2, -13.6)]), Color("1c1c1e"))
+	# Front: leg shield, fork, fender, handlebars, headlight, a mirror.
+	draw_colored_polygon(PackedVector2Array([Vector2(3.5, -8.5), Vector2(6.5, -8.5), Vector2(9.5, -18.5),
+			Vector2(6, -19.5), Vector2(3, -11)]), col)
+	draw_line(Vector2(8, -17), Vector2(11, -5), Color("7a7e82"), 1.2)
+	draw_colored_polygon(PackedVector2Array([Vector2(7.5, -9.5), Vector2(14.5, -8.5), Vector2(13.5, -10.5),
+			Vector2(9, -11)]), dark)
+	draw_line(Vector2(4.5, -21), Vector2(10, -20.2), Color("1a1a1a"), 1.1)
+	draw_rect(Rect2(8.6, -19.6, 2.6, 2.2), col.lightened(0.1))
+	draw_rect(Rect2(10.6, -19.2, 1.2, 1.6), Color("f4eed0"))  # headlight
+	draw_line(Vector2(6, -21), Vector2(5, -24), Color("3a3a3a"), 0.6)
+	draw_circle(Vector2(5, -24.2), 0.9, Color("5a6068"))
+	if box < 2 and not fallen:  # a delivery rider's box on the back
+		var bc := Color("2e9a4a") if box == 0 else Color("e0782a")
+		draw_rect(Rect2(-15, -24.5, 9, 8.5), bc)
+		draw_rect(Rect2(-15, -24.5, 9, 1.5), bc.lightened(0.25))
+		draw_rect(Rect2(-13.5, -21.5, 6, 2.5), Color(1, 1, 1, 0.8))
 	draw_set_transform(Vector2.ZERO)
 
 
