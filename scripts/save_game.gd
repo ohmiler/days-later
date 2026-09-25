@@ -94,7 +94,7 @@ static func save_player(p: Player) -> void:
 		version = VERSION, name = p.pname, alive = p.alive(),
 		pos = p.position, on_roof = p.on_roof, hp = p.hp, kills = p.kills,
 		hunger = p.hunger, thirst = p.thirst, infection = p.infection, bleeding = p.bleeding, stamina = p.stamina,
-		inv = p.inv, sel = p.sel,
+		inv = p.inv, sel = p.sel, worn = p.worn,
 	})
 
 
@@ -113,10 +113,12 @@ static func load_player_into(p: Player, name: String) -> bool:
 	p.infection = d.infection
 	p.bleeding = d.bleeding
 	p.stamina = d.stamina
+	p.worn = d.get("worn", {})
+	p.refresh_wear()
 	var inv: Array = d.inv
-	inv.resize(Items.INV_SIZE)
+	inv.resize(p.bag_size())
 	p.inv = inv
-	p.sel = clampi(d.sel, 0, Items.INV_SIZE - 1)
+	p.sel = clampi(d.sel, 0, inv.size() - 1)
 	return true
 
 

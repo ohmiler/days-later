@@ -113,6 +113,7 @@ func _ready() -> void:
 	ui.host_requested.connect(func(n: String, resume: bool):
 		player_name = n
 		_host(false, resume))
+	ui.unequip_requested.connect(func(slot: String): _request(&"req_unequip", [slot]))
 	ui.join_requested.connect(func(addr: String, n: String):
 		player_name = n
 		_join(addr))
@@ -416,7 +417,7 @@ func _server_tick(delta: float) -> void:
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
 					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof],
-					p.app_code])
+					p.app_code, p.wear_ids])
 		var zs := []
 		for z: Zombie in zombies.values():
 			zs.append([z.zid, z.position, z.hp, z.state])
@@ -511,10 +512,17 @@ func _tick_needs(p: Player, delta: float) -> void:
 			p.exhausted = false
 	if p.bitten:
 		p.bitten = false
-		if p.infection <= 0.0 and randf() < BITE_INFECT_CHANCE:
+		var guard := 1.0 - p.armor()
+		if p.torn != "":
+			_toast(p, "%sขาดแล้ว!" % p.torn)
+			p.torn = ""
+			_send_inv(p)
+		elif not p.worn.is_empty():
+			_send_inv(p)  # clothes wore down
+		if p.infection <= 0.0 and randf() < BITE_INFECT_CHANCE * guard:
 			p.infection = 12.0
 			_toast(p, "โดนกัด! ติดเชื้อแล้ว หายาปฏิชีวนะ")
-		if not p.bleeding and randf() < BITE_BLEED_CHANCE:
+		if not p.bleeding and randf() < BITE_BLEED_CHANCE * guard:
 			p.bleeding = true
 			_toast(p, "เลือดออก! ใช้ผ้าพันแผลห้ามเลือด")
 	var dmg := 0.0
@@ -595,7 +603,7 @@ func req_reinforce() -> void:
 ## Nail a board across a door or window, or repair a broken door (server).
 func _reinforce(p: Player, id: int) -> void:
 	var slot := -1
-	for i in Items.INV_SIZE:
+	for i in p.inv.size():
 		if p.inv[i] != null and p.inv[i].id == "wood":
 			slot = i
 	if slot < 0:
@@ -682,11 +690,11 @@ func _turn(p: Player) -> void:
 	p.infection = 100.0
 	p.take_damage(9999)
 	p.dropped = true
-	_drop_everything(p)
+	_drop_everything(p, true)
 	fx_turned.rpc(p.peer_id)
 	var z := _add_zombie(next_zid, p.position)
 	next_zid += 1
-	var o := [p.shirt, p.pants, p.hair]
+	var o := [p.shirt, p.pants, p.hair, p.wear_ids.duplicate()]
 	z.apply_outfit(o)
 	outfits[z.zid] = o
 	zombie_outfit.rpc(z.zid, o)
@@ -709,7 +717,17 @@ func fx_turned(peer_id: int) -> void:
 
 
 func _kill_zombie(z: Zombie, fall_dir: float) -> void:
-	fx_death.rpc(z.position, fall_dir, z.skin, z.shirt, z.pants, z.hair)
+	fx_death.rpc(z.position, fall_dir, z.skin, z.shirt, z.pants, z.hair, z.wear)
+	# What it wore can be taken off the body: always what a turned survivor had
+	# on, sometimes an ordinary zombie's (often worn half through).
+	var i := 0
+	for slot in z.wear:
+		var id: String = z.wear[slot]
+		var full: int = Items.def(id).get("hp", 1)
+		if not z.outfit.is_empty() or randf() < 0.35:
+			var hp := full if not z.outfit.is_empty() else maxi(1, int(full * randf_range(0.3, 0.8)))
+			_spawn_pickup(z.position + Vector2.from_angle(i * 1.3) * 7, {id = id, n = 1, hp = hp})
+		i += 1
 	zombies.erase(z.zid)
 	z.queue_free()
 
@@ -804,7 +822,71 @@ func _notify(peer_id: int, method: StringName, args: Array) -> void:
 
 func _send_inv(p: Player) -> void:
 	p.weapon_id = p.held_weapon()
-	_notify(p.peer_id, &"inv_sync", [p.inv, p.sel])
+	_notify(p.peer_id, &"inv_sync", [p.inv, p.sel, p.worn])
+
+
+## Put on the clothing in hotbar slot `idx`; whatever was worn there goes into
+## that hotbar slot in its place.
+func _equip(p: Player, idx: int) -> void:
+	var it: Dictionary = p.inv[idx]
+	var slot: String = Items.def(it.id).slot
+	var old = p.worn.get(slot)
+	p.worn[slot] = it
+	p.inv[idx] = old
+	p.refresh_wear()
+	_fit_bag(p)
+	fx_sound.rpc("rustle", p.position)
+	_toast(p, "สวม%s" % Items.display_name(it.id))
+	_send_inv(p)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_unequip(slot: String) -> void:
+	var p := _sender()
+	if p == null or not p.alive() or p.worn.get(slot) == null:
+		return
+	var it: Dictionary = p.worn[slot]
+	# Taking the bag off loses its slots, so the item must fit in what is left.
+	var room := Items.INV_SIZE if slot == "back" else p.inv.size()
+	var free := -1
+	for i in room:
+		if p.inv[i] == null:
+			free = i
+			break
+	if free < 0:
+		_toast(p, "กระเป๋าเต็ม · วางของก่อน (G)")
+		return
+	p.inv[free] = it
+	p.worn.erase(slot)
+	p.refresh_wear()
+	_fit_bag(p)
+	fx_sound.rpc("rustle", p.position)
+	_toast(p, "ถอด%s" % Items.display_name(it.id))
+	_send_inv(p)
+
+
+## Grow or shrink the hotbar to what the worn bag allows. Things in slots that
+## go away move into free slots, or fall to the ground if there is no room.
+func _fit_bag(p: Player) -> void:
+	var n := p.bag_size()
+	if p.inv.size() < n:
+		p.inv.resize(n)
+		return
+	for i in range(n, p.inv.size()):
+		var it = p.inv[i]
+		if it == null:
+			continue
+		var moved := false
+		for j in n:
+			if p.inv[j] == null:
+				p.inv[j] = it
+				moved = true
+				break
+		if not moved:
+			_spawn_pickup(p.position + Vector2(randf_range(-6, 6), 5), it)
+			_toast(p, "%s ตกพื้น · กระเป๋าไม่พอ" % Items.display_name(it.id))
+	p.inv.resize(n)
+	p.sel = mini(p.sel, n - 1)
 
 
 func _toast(p: Player, text: String) -> void:
@@ -819,7 +901,7 @@ func _give(p: Player, id: String) -> bool:
 			if it != null and it.id == id and it.n < Items.STACK:
 				it.n += 1
 				return true
-	for i in Items.INV_SIZE:
+	for i in p.inv.size():
 		if p.inv[i] == null:
 			p.inv[i] = {id = id, n = 1, hp = d.get("hp", 0)}
 			return true
@@ -831,8 +913,16 @@ func _spawn_pickup(pos: Vector2, item: Dictionary) -> void:
 	next_pickup += 1
 
 
-func _drop_everything(p: Player) -> void:
-	for i in Items.INV_SIZE:
+## Everything a dead player had falls to the ground. When they `turned`, their
+## clothes stay on the zombie they became instead (and drop when it dies).
+func _drop_everything(p: Player, turned := false) -> void:
+	var k := 0
+	for slot in p.worn:
+		if not turned:
+			_spawn_pickup(p.position + Vector2.from_angle(k * 1.7 + 0.5) * 9, p.worn[slot])
+		k += 1
+	p.worn.clear()  # still drawn on the body until respawn (see Player.refresh_wear)
+	for i in p.inv.size():
 		if p.inv[i] != null:
 			_spawn_pickup(p.position + Vector2.from_angle(i * TAU / 8) * 6, p.inv[i])
 			p.inv[i] = null
@@ -842,7 +932,7 @@ func _drop_everything(p: Player) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func req_select(slot: int) -> void:
 	var p := _sender()
-	if p and slot >= 0 and slot < Items.INV_SIZE:
+	if p and slot >= 0 and slot < p.inv.size():
 		p.sel = slot
 		_send_inv(p)
 
@@ -853,6 +943,9 @@ func req_use() -> void:
 	if p == null or not p.alive():
 		return
 	var it = p.inv[p.sel]
+	if it != null and Items.is_wear(it.id):
+		_equip(p, p.sel)
+		return
 	if it != null and Items.def(it.id).get("type") == "trap":
 		_place_trap(p, it)
 		return
@@ -945,7 +1038,7 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			var item: Dictionary = pickups[t.id].item
 			var took := false
 			if item.get("n", 1) > 1 or Items.is_weapon(item.id):
-				for i in Items.INV_SIZE:
+				for i in p.inv.size():
 					if p.inv[i] == null:
 						p.inv[i] = item.duplicate()
 						took = true
@@ -1026,7 +1119,7 @@ func _fire(p: Player) -> void:
 	if hit:
 		hit.hp -= GUN_DAMAGE
 		if hit.hp <= 0:
-			fx_death.rpc(hit.position, 1.0 if dir.x >= 0 else -1.0, hit.skin, hit.shirt, hit.pants, hit.hair)
+			fx_death.rpc(hit.position, 1.0 if dir.x >= 0 else -1.0, hit.skin, hit.shirt, hit.pants, hit.hair, hit.wear)
 			zombies.erase(hit.zid)
 			hit.queue_free()
 			p.kills += 1
@@ -1114,6 +1207,8 @@ func snapshot(ps: Array, zs: Array, t: float, d: int) -> void:
 		p.pname = e[6]
 		if e[8] != p.app_code:
 			p.set_appearance(e[8])
+		if e[9] != p.wear_ids:
+			p.set_wear(e[9])
 		var n: Array = e[7]
 		p.hunger = n[0]
 		p.thirst = n[1]
@@ -1174,15 +1269,17 @@ func fx_sound(name: String, pos: Vector2) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func inv_sync(inv: Array, sel: int) -> void:
+func inv_sync(inv: Array, sel: int, worn: Dictionary) -> void:
 	var me: Player = players.get(multiplayer.get_unique_id())
 	if me:
 		me.inv = inv
 		me.sel = sel
+		me.worn = worn
 		me.weapon_id = me.held_weapon()
 		if me.weapon_id != "":
 			ui.tutorial("equip")
 	ui.set_inventory(inv, sel)
+	ui.set_worn(worn)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1235,14 +1332,15 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, w
 
 
 @rpc("authority", "call_local", "reliable")
-func fx_death(pos: Vector2, fall_dir: float, skin: Color, shirt: Color, pants: Color, hair: Color) -> void:
-	leave_corpse(pos, fall_dir, skin, shirt, pants, hair, true, 0.0)
+func fx_death(pos: Vector2, fall_dir: float, skin: Color, shirt: Color, pants: Color, hair: Color, wear: Dictionary) -> void:
+	leave_corpse(pos, fall_dir, skin, shirt, pants, hair, true, 0.0, Items.wear_draw(wear))
 
 
 ## A fallen body on the ground; `age` lets a respawned player's body carry on where it was.
 func leave_corpse(pos: Vector2, fall_dir: float, skin: Color, shirt: Color, pants: Color, hair: Color,
-		zombie: bool, age: float) -> void:
+		zombie: bool, age: float, wear := {}) -> void:
 	var c := Corpse.new()
+	c.wear = wear
 	c.position = pos
 	c.skin = skin
 	c.shirt = shirt
@@ -1278,7 +1376,8 @@ func _process(delta: float) -> void:
 			ui.wheel.open(last_target.title, last_actions, centre)
 		if ui.wheel.visible:
 			ui.wheel.point(get_viewport().get_mouse_position())
-		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.wheel.visible
+		var over_gear := ui.gear.visible and ui.gear.get_global_rect().has_point(ui.gear.get_global_mouse_position())
+		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.wheel.visible and not over_gear
 		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
 		me.sneak = sneak_toggle or Input.is_key_pressed(KEY_CTRL)
 		me.sprint = Input.is_key_pressed(KEY_SHIFT) and not me.sneak
@@ -1585,8 +1684,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			_request(&"req_use", [])
 		elif k == KEY_G:
 			_request(&"req_drop", [])
-		elif k >= KEY_1 and k <= KEY_8:
+		elif k >= KEY_1 and k <= KEY_9:
 			_request(&"req_select", [k - KEY_1])
+		elif k == KEY_0:
+			_request(&"req_select", [9])
+		elif k == KEY_TAB:
+			ui.toggle_gear()
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			play_zoom = (play_zoom * 1.1).clamp(Vector2(1, 1), Vector2(6, 6))

@@ -23,6 +23,7 @@ const DECOR := {
 	"tools": ["tires", "bike", "oil", "litter"],
 	"med": ["boxes", "litter"],
 	"valuables": ["boxes", "litter"],
+	"clothes": ["boxes", "litter"],
 	"store": ["boxes", "litter", "litter"],
 	"home": ["mattress", "fan", "tv", "shrine", "litter"],
 }
@@ -33,6 +34,7 @@ const SIGN_LOOT := {
 	"อาหารตามสั่ง": "food", "โจ๊ก ข้าวต้ม": "food",
 	"ซ่อมมอเตอร์ไซค์": "tools", "ร้านวัสดุ": "tools", "ขายส่ง": "tools",
 	"ร้านทอง": "valuables", "โรงรับจำนำ": "valuables",
+	"ผ้าไหม": "clothes", "ร้านเสริมสวย": "clothes",
 }
 
 

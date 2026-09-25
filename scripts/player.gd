@@ -59,6 +59,11 @@ var hair: Color
 var pants: Color
 var app_code := -1  # appearance, packed (Look.pack); the player picks it in the menu
 var look := {}  # colours and shapes to draw with, from app_code
+# Clothes: server keeps the items (slot -> {id, n, hp}); every machine knows
+# the ids (slot -> id, from snapshots), which is all drawing and speed need.
+var worn := {}
+var wear_ids := {}
+var torn := ""  # server: name of something a bite just tore apart, for main to report
 var phase := 0.0
 var view := [Look.FRONT, false]
 var moving := false
@@ -113,6 +118,8 @@ func server_tick(delta: float) -> void:
 			stamina = 100.0
 			turned = false
 			warned.clear()
+			refresh_wear()  # the clothes stayed on the body; the new survivor starts in their own
+			inv.resize(bag_size())
 			position = world.spawn_point()
 		return
 	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof)
@@ -127,12 +134,59 @@ func speed_mult() -> float:
 		m = 1.6
 	if infection > 60.0:
 		m *= 0.85
+	for slot in wear_ids:
+		m *= Items.def(wear_ids[slot]).get("speed", 1.0)
 	return m
+
+
+## Share of a bite stopped by what you're wearing.
+func armor() -> float:
+	var a := 0.0
+	for slot in wear_ids:
+		a += Items.def(wear_ids[slot]).get("armor", 0.0)
+	return minf(a, Items.MAX_ARMOR)
+
+
+## Hotbar slots: the base eight plus whatever the bag on your back holds.
+func bag_size() -> int:
+	return Items.INV_SIZE + Items.def(wear_ids.get("back", "")).get("bag", 0)
+
+
+## Server: after `worn` changes, update the ids everyone sees.
+func refresh_wear() -> void:
+	var ids := {}
+	for slot in worn:
+		if worn[slot] != null:
+			ids[slot] = worn[slot].id
+	set_wear(ids)
+
+
+func set_wear(ids: Dictionary) -> void:
+	wear_ids = ids
+	look.wear = Items.wear_draw(ids)
+	queue_redraw()
+
+
+## Server: a zombie bite. Clothing soaks up part of it and wears down doing so.
+func bite(dmg: float) -> void:
+	var a := armor()
+	take_damage(dmg * (1.0 - a))
+	bitten = true
+	var armored := worn.keys().filter(func(k): return worn[k] != null and Items.def(worn[k].id).get("armor", 0.0) > 0.0)
+	if armored.is_empty():
+		return
+	var slot: String = armored.pick_random()
+	worn[slot].hp -= 1
+	if worn[slot].hp <= 0:
+		torn = Items.display_name(worn[slot].id)
+		worn.erase(slot)
+		refresh_wear()
 
 
 func set_appearance(code: int) -> void:
 	app_code = code
 	look = Look.look_of(Look.unpack(code))
+	look.wear = Items.wear_draw(wear_ids)
 	skin = look.skin
 	shirt = look.shirt
 	pants = look.pants
@@ -179,7 +233,7 @@ func _process(delta: float) -> void:
 		if death_t > 0.0:
 			# Respawned: leave the old body where it fell.
 			if not turned and get_parent().has_method("leave_corpse"):
-				get_parent().leave_corpse(last_death_pos, fall_dir, skin, shirt, pants, hair, false, death_t)
+				get_parent().leave_corpse(last_death_pos, fall_dir, skin, shirt, pants, hair, false, death_t, look.get("wear", {}))
 			death_t = 0.0
 	else:
 		if death_t == 0.0:

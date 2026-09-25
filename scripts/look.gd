@@ -112,10 +112,12 @@ static func draw(ci: CanvasItem, st: Dictionary, lk: Dictionary) -> void:
 static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
 	_base = r.base
 	_girth = r.girth
+	lk = _dress(lk, r.zombie)
+	var wear: Dictionary = lk.get("wear", {})
 	var sx: float = r.sx
 	var tip: float = r.tip
 	var pants: Color = lk.pants
-	var shoe: Color = lk.get("shoes", SHOE)
+	var shoe: Color = lk.shoes
 	# Contact shadow, stretching out under the body as it falls.
 	ci.draw_set_transform(lift + Vector2(r.fall_dir * 12.0 * tip, 0), 0, Vector2(1 + 1.6 * tip, 0.38))
 	ci.draw_circle(Vector2.ZERO, 7.5, Color(0, 0, 0, 0.35))
@@ -123,23 +125,57 @@ static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
 	# Legs stay planted; everything above them bobs.
 	_xf(ci, Vector2.ZERO, Vector2(sx, 1))
 	for leg in r.legs:
-		_draw_leg(ci, leg, pants, shoe)
+		_draw_leg(ci, leg, lk)
 	ci.draw_rect(Rect2(-3.3, -11.5, 6.6, 2.6), pants.darkened(0.06))  # hips join the legs to the body
 
 	_xf(ci, r.upper, Vector2(sx, 1))
+	var pack: Dictionary = wear.get("back", {})
+	if not pack.is_empty() and r.view == SIDE:
+		_pack_side(ci, pack)  # behind everything, on the far side of the body
 	for a in r.arms_back:
 		_draw_arm(ci, a, lk)
+	var body: Dictionary = wear.get("body", {})
+	if body.get("shape") == "hoodie" and r.view != BACK:
+		ci.draw_circle(Vector2(-0.6 if r.view == SIDE else 0.0, -20.6), 3.4, (lk.shirt as Color).darkened(0.2))  # hood, behind the head
 	_torso(ci, r.view, lk.shirt, pants, r.zombie)
-	_head(ci, r.view, r.head, lk.skin, lk.hair, lk.get("hair_style", "short"), r.zombie, r.closed)
+	if body.get("shape") == "vest":
+		_vest(ci, r.view, body)
+	if not pack.is_empty() and r.view != SIDE:
+		_pack(ci, r.view, pack)
+	_head(ci, r.view, r.head, lk.skin, lk.hair, lk.get("hair_style", "short"), r.zombie, r.closed, wear.get("head", {}))
+	if body.get("shape") == "hoodie" and r.view == BACK:
+		ci.draw_colored_polygon(_arc(Vector2(0, -20.2), 3.6, 0.0, PI), (lk.shirt as Color).darkened(0.12))  # hood down the back
 	for a in r.arms_front:
 		_draw_arm(ci, a, lk)
 	if not r.front_kick.is_empty():
 		_xf(ci, Vector2.ZERO, Vector2(sx, 1))
-		_front_kick_leg(ci, r.front_kick, pants, shoe)
+		_front_kick_leg(ci, r.front_kick, lk)
 	ci.draw_set_transform(Vector2.ZERO)
 
 
 const SHOE := Color("1e1a16")
+
+
+## Apply what is worn to the base look: clothes recolour the shirt, trousers and
+## shoes and set flags (long sleeves, shorts, boots) that the body parts read.
+static func _dress(lk: Dictionary, zombie: bool) -> Dictionary:
+	var out := lk.duplicate()
+	out.shoes = lk.get("shoes", SHOE)
+	var wear: Dictionary = lk.get("wear", {})
+	var grime := 0.15 if zombie else 0.0  # the dead's clothes are filthy
+	var body: Dictionary = wear.get("body", {})
+	if not body.is_empty() and body.shape != "vest":
+		out.shirt = (body.col as Color).darkened(grime)
+		out.long_sleeves = body.shape in ["long", "hoodie"]
+	var legs: Dictionary = wear.get("legs", {})
+	if not legs.is_empty():
+		out.pants = (legs.col as Color).darkened(grime)
+		out.shorts = legs.shape == "shorts"
+	var feet: Dictionary = wear.get("feet", {})
+	if not feet.is_empty():
+		out.shoes = (feet.col as Color).darkened(grime)
+		out.boots = feet.shape == "boots"
+	return out
 
 
 ## Set the drawing transform for a body part, on top of the whole-body transform.
@@ -155,18 +191,23 @@ static func draw_blood_pool(ci: CanvasItem, dir: float, k: float) -> void:
 	ci.draw_set_transform(Vector2.ZERO)
 
 
-static func _draw_leg(ci: CanvasItem, leg: Dictionary, pants: Color, shoe: Color) -> void:
+static func _draw_leg(ci: CanvasItem, leg: Dictionary, lk: Dictionary) -> void:
+	var pants: Color = lk.pants
+	var shoe: Color = lk.shoes
 	var col := pants.darkened(0.18) if leg.far else pants
+	# Below the knee: bare legs in shorts.
+	var shin: Color = (lk.skin as Color).darkened(0.18 if leg.far else 0.05) if lk.get("shorts", false) else col
+	var boot := 1.1 if lk.get("boots", false) else 0.0
 	match leg.type:
 		"rect":
-			_leg_rect(ci, leg.x, leg.lift, col, shoe)
+			_leg_rect(ci, leg.x, leg.lift, col, shoe, shin, boot)
 		"line":
-			_leg_line(ci, leg.hip, leg.foot, col, shoe)
+			_leg_line(ci, leg.hip, leg.foot, col, shoe, shin, boot)
 		"limb":
 			var side: bool = leg.shoe == "side_kick"
 			var w := [3.1, 2.8, 2.4] if side else [3.2, 2.9, 2.5]
 			_limb(ci, leg.hip, leg.knee, w[0], w[1], col)
-			_limb(ci, leg.knee, leg.foot, w[1], w[2], col)
+			_limb(ci, leg.knee, leg.foot, w[1], w[2], shin)
 			var foot: Vector2 = leg.foot
 			var e: float = leg.e
 			if side:
@@ -194,12 +235,13 @@ static func kick_pose(t: float) -> Vector2:
 
 
 ## Front kick toward the camera; the sole grows as it comes closer.
-static func _front_kick_leg(ci: CanvasItem, k: Dictionary, pants: Color, shoe: Color) -> void:
+static func _front_kick_leg(ci: CanvasItem, k: Dictionary, lk: Dictionary) -> void:
+	var shoe: Color = lk.shoes
 	var foot: Vector2 = k.foot
 	var e: float = k.e
-	var lit := pants.lightened(0.06)  # nearer the camera, catches more light
+	var lit := (lk.pants as Color).lightened(0.06)  # nearer the camera, catches more light
 	_limb(ci, k.hip, k.knee, 3.3, 3.1, lit)
-	_limb(ci, k.knee, foot, 3.1, 2.7, lit)
+	_limb(ci, k.knee, foot, 3.1, 2.7, (lk.skin as Color) if lk.get("shorts", false) else lit)
 	var size := Vector2(3.2, 2.0) + Vector2(2.0, 2.6) * e
 	var sole := Rect2(foot - Vector2(size.x * 0.5, size.y * 0.5), size)
 	ci.draw_rect(sole, shoe)
@@ -209,17 +251,21 @@ static func _front_kick_leg(ci: CanvasItem, k: Dictionary, pants: Color, shoe: C
 
 
 ## Front/back leg: straight down, lifted by `lift` mid-stride.
-static func _leg_rect(ci: CanvasItem, x: float, up: float, pants: Color, shoe: Color) -> void:
-	ci.draw_rect(Rect2(x, -10.5, 2.8, 10.5 - up - 1.7), pants)
-	ci.draw_rect(Rect2(x - 0.3, -up - 1.9, 3.4, 1.9), shoe)
+static func _leg_rect(ci: CanvasItem, x: float, up: float, pants: Color, shoe: Color, shin: Color, boot: float) -> void:
+	ci.draw_rect(Rect2(x, -10.5, 2.8, 10.5 - up - 1.7), shin)
+	if shin != pants:
+		ci.draw_rect(Rect2(x - 0.1, -10.5, 3.0, 5.0 - up * 0.5), pants)  # shorts end above the knee
+	ci.draw_rect(Rect2(x - 0.3, -up - 1.9 - boot, 3.4, 1.9 + boot), shoe)
 
 
 ## Side leg from hip to foot with a slight forward knee; the shoe points forward.
-static func _leg_line(ci: CanvasItem, hip: Vector2, foot: Vector2, pants: Color, shoe: Color) -> void:
+static func _leg_line(ci: CanvasItem, hip: Vector2, foot: Vector2, pants: Color, shoe: Color, shin: Color, boot: float) -> void:
 	var knee := hip.lerp(foot, 0.5) + Vector2(0.8, 0)
+	ci.draw_line(knee, foot + Vector2(0, -1.4), shin, 2.6 if shin == pants else 2.2)
 	ci.draw_line(hip, knee, pants, 2.9)
-	ci.draw_line(knee, foot + Vector2(0, -1.4), pants, 2.6)
-	ci.draw_rect(Rect2(foot + Vector2(-1.3, -1.9), Vector2(3.8, 1.9)), shoe)
+	ci.draw_rect(Rect2(foot + Vector2(-1.3, -1.9 - boot), Vector2(3.8 - boot * 0.6, 1.9 + boot)), shoe)
+	if boot > 0.0:
+		ci.draw_rect(Rect2(foot + Vector2(-1.3, -1.9), Vector2(3.8, 1.9)), shoe)
 
 
 ## A tapered limb segment with round ends, like a capsule.
@@ -235,15 +281,20 @@ static func _limb(ci: CanvasItem, a: Vector2, b: Vector2, wa: float, wb: float, 
 ## One arm: short sleeve over the shoulder, bare forearm, closed hand. A dark
 ## outline pass first keeps the arm readable against the body behind it.
 static func _arm(ci: CanvasItem, sh: Vector2, elbow: Vector2, hand: Vector2, sleeve: Color, skin: Color,
-		fist := false) -> void:
+		fist := false, long := false) -> void:
 	var line := skin.darkened(0.45)
 	var cuff := sh.lerp(elbow, 0.75)
 	_limb(ci, sh, elbow, 3.6, 3.0, line)
 	_limb(ci, elbow, hand, 3.0, 2.6, line)
 	ci.draw_circle(hand, 2.1 if fist else 1.8, line)
-	_limb(ci, elbow, hand, 2.2, 1.8, skin)  # forearm
-	_limb(ci, cuff, elbow, 2.3, 2.2, skin.darkened(0.05))
-	_limb(ci, sh, cuff, 3.0, 2.8, sleeve)  # sleeve
+	if long:
+		# Sleeve all the way down to the wrist.
+		_limb(ci, elbow, elbow.lerp(hand, 0.8), 2.5, 2.2, sleeve.darkened(0.08))
+		_limb(ci, sh, elbow, 3.0, 2.6, sleeve)
+	else:
+		_limb(ci, elbow, hand, 2.2, 1.8, skin)  # forearm
+		_limb(ci, cuff, elbow, 2.3, 2.2, skin.darkened(0.05))
+		_limb(ci, sh, cuff, 3.0, 2.8, sleeve)  # sleeve
 	ci.draw_circle(hand, 1.5 if fist else 1.2, skin)
 	if fist:
 		ci.draw_circle(hand + Vector2(-0.4, -0.4), 0.6, skin.lightened(0.15))  # knuckle highlight
@@ -257,7 +308,7 @@ static func _draw_arm(ci: CanvasItem, a: Dictionary, lk: Dictionary) -> void:
 	var held: Dictionary = a.weapon
 	if not held.is_empty() and not held.trail.is_empty():
 		ci.draw_polyline(held.trail, Color(1, 1, 1, 0.35), 1.6)
-	_arm(ci, a.sh, a.elbow, a.hand, sleeve, skin, a.fist)
+	_arm(ci, a.sh, a.elbow, a.hand, sleeve, skin, a.fist, lk.get("long_sleeves", false))
 	if a.big_hand:
 		ci.draw_circle(a.hand, 1.7, skin)
 	if not held.is_empty():
@@ -287,8 +338,92 @@ static func _torso(ci: CanvasItem, view: int, shirt: Color, pants: Color, zombie
 			ci.draw_circle(p, 0.9, Color(0.33, 0.05, 0.04, 0.8))  # dried blood
 
 
+## Armour vest (or a hi-vis rider's vest) over the shirt: panel front and back.
+static func _vest(ci: CanvasItem, view: int, v: Dictionary) -> void:
+	var w := (3.2 if view == SIDE else 4.5) * _girth
+	var col: Color = v.col
+	var pts := PackedVector2Array([Vector2(-w + 1.6, -19.8), Vector2(-w * 0.35, -19.8), Vector2(-w * 0.2, -18.2),
+			Vector2(w * 0.2, -18.2), Vector2(w * 0.35, -19.8), Vector2(w - 1.6, -19.8), Vector2(w, -18.2),
+			Vector2(w * 0.88, -11.2), Vector2(-w * 0.88, -11.2), Vector2(-w, -18.2)])
+	if view != FRONT:
+		pts = PackedVector2Array([Vector2(-w + 1.4, -19.9), Vector2(w - 1.4, -19.9), Vector2(w, -18.2),
+				Vector2(w * 0.88, -11.2), Vector2(-w * 0.88, -11.2), Vector2(-w, -18.2)])
+	ci.draw_colored_polygon(pts, col)
+	ci.draw_polyline(pts + PackedVector2Array([pts[0]]), col.darkened(0.35), 0.5)
+	if v.get("plate", false):
+		# Pouches and a light strip where the plate sits.
+		ci.draw_rect(Rect2(-w * 0.7, -14.2, w * 1.4, 2.2), col.darkened(0.2))
+		for i in 3:
+			ci.draw_line(Vector2(-w * 0.7 + (i + 1) * w * 0.35, -14.2), Vector2(-w * 0.7 + (i + 1) * w * 0.35, -12.0), col.darkened(0.45), 0.4)
+		ci.draw_line(Vector2(-w * 0.6, -18.0), Vector2(w * 0.6, -18.0), col.lightened(0.18), 0.5)
+	else:
+		# Hi-vis strips, like Bangkok's motorbike taxi vests.
+		ci.draw_line(Vector2(-w * 0.9, -14.8), Vector2(w * 0.9, -14.8), Color("e8e4d0"), 0.8)
+		ci.draw_line(Vector2(-w * 0.88, -12.6), Vector2(w * 0.88, -12.6), Color("e8e4d0"), 0.6)
+
+
+## Backpack seen from the front (only the straps) or from behind (the whole bag).
+static func _pack(ci: CanvasItem, view: int, p: Dictionary) -> void:
+	var col: Color = p.col
+	var big: bool = p.get("big", false)
+	if view == FRONT:
+		for sx in [-1.0, 1.0]:
+			ci.draw_line(Vector2(2.9 * sx * _girth, -19.6), Vector2(2.6 * sx * _girth, -12.8), col.darkened(0.25), 1.0)
+		return
+	var h := 9.5 if big else 7.0
+	var hw := (3.8 if big else 3.2)
+	var r := Rect2(-hw, -19.8, hw * 2, h)
+	ci.draw_rect(Rect2(r.position + Vector2(0.3, 0.6), r.size), Color(0, 0, 0, 0.25))
+	ci.draw_rect(r, col)
+	ci.draw_rect(Rect2(r.position, Vector2(r.size.x, 2.6)), col.darkened(0.18))  # flap
+	ci.draw_rect(Rect2(-1.6, r.end.y - 3.6, 3.2, 2.4), col.darkened(0.12))  # front pocket
+	ci.draw_line(Vector2(-hw, r.position.y + 2.6), Vector2(hw, r.position.y + 2.6), col.darkened(0.4), 0.4)
+	if big:
+		ci.draw_rect(Rect2(-hw - 0.4, -21.2, hw * 2 + 0.8, 1.6), Color("6a5a3a"))  # rolled mat on top
+
+
+## Side view: the bag sits against the back, the strap crosses the shoulder.
+static func _pack_side(ci: CanvasItem, p: Dictionary) -> void:
+	var col: Color = p.col
+	var big: bool = p.get("big", false)
+	var h := 9.5 if big else 7.0
+	var d := 3.4 if big else 2.6
+	var x := -3.0 * _girth
+	ci.draw_rect(Rect2(x - d, -19.8, d + 1.0, h), col.darkened(0.08))
+	ci.draw_rect(Rect2(x - d, -19.8, d + 1.0, 2.2), col.darkened(0.22))
+	if big:
+		ci.draw_rect(Rect2(x - d - 0.2, -21.2, d + 1.4, 1.6), Color("6a5a3a"))
+
+
+## Hats and helmets, over the hair.
+static func _headwear(ci: CanvasItem, view: int, c: Vector2, h: Dictionary) -> void:
+	var col: Color = h.col
+	match h.shape:
+		"helmet":
+			# Open-face motorbike helmet: a shell over the crown, a visor rim, a chin strap.
+			ci.draw_colored_polygon(_arc(c + Vector2(0, -0.5), 5.0, PI, TAU), col)
+			ci.draw_rect(Rect2(c.x - 5.0, c.y - 0.9, 10.0, 1.2), col.darkened(0.12))
+			ci.draw_colored_polygon(_arc(c + Vector2(-1.4, -2.6), 1.4, PI, TAU), col.lightened(0.3))  # shine
+			if view == SIDE:
+				ci.draw_rect(Rect2(c.x + 2.2, c.y - 1.6, 3.2, 0.9), Color("2a3036"))  # visor edge
+				ci.draw_line(c + Vector2(-0.6, 0.2), c + Vector2(1.6, 3.8), Color("2a2a2a"), 0.4)
+			elif view == FRONT:
+				ci.draw_rect(Rect2(c.x - 3.8, c.y - 1.6, 7.6, 0.8), Color("2a3036"))
+				for sx in [-1.0, 1.0]:
+					ci.draw_line(c + Vector2(4.0 * sx, 0.2), c + Vector2(2.2 * sx, 3.8), Color("2a2a2a"), 0.4)
+		"cap":
+			ci.draw_colored_polygon(_arc(c + Vector2(0, -0.9), 4.5, PI, TAU), col)
+			match view:
+				FRONT:
+					ci.draw_rect(Rect2(c.x - 3.6, c.y - 1.5, 7.2, 1.1), col.darkened(0.25))  # brim, from underneath
+				SIDE:
+					ci.draw_rect(Rect2(c.x + 2.4, c.y - 1.6, 3.8, 0.9), col.darkened(0.15))
+				BACK:
+					ci.draw_rect(Rect2(c.x - 1.2, c.y - 1.2, 2.4, 0.7), col.darkened(0.3))  # strap
+
+
 static func _head(ci: CanvasItem, view: int, c: Vector2, skin: Color, hair: Color, style: String,
-		zombie: bool, closed := false) -> void:
+		zombie: bool, closed := false, hat := {}) -> void:
 	ci.draw_rect(Rect2(-1.2, -21, 2.4, 2), skin.darkened(0.25))  # neck
 	ci.draw_circle(c, 4.2, skin.darkened(0.18))
 	ci.draw_circle(c + Vector2(-0.4, -0.4), 3.7, skin)
@@ -296,8 +431,10 @@ static func _head(ci: CanvasItem, view: int, c: Vector2, skin: Color, hair: Colo
 	if closed:
 		eye = skin.darkened(0.45)  # eyes shut
 	var dark := skin.darkened(0.4)
-	if style == "bald":
+	if style == "bald" and hat.is_empty():
 		ci.draw_circle(c + Vector2(-1.4, -2.2), 1.0, skin.lightened(0.18))  # shine on the scalp
+	if not hat.is_empty():
+		style = "buzz" if style in ["short", "buzz", "bald"] else style  # hat flattens the hair; long hair still shows
 	match view:
 		FRONT:
 			if style == "long":
@@ -350,6 +487,8 @@ static func _head(ci: CanvasItem, view: int, c: Vector2, skin: Color, hair: Colo
 			ci.draw_circle(c + Vector2(2.4, 0.3), 0.55, eye)
 			ci.draw_circle(c + Vector2(4.0, 1.0), 0.75, skin)  # nose
 			ci.draw_rect(Rect2(c.x + 2.3, c.y + 2.3, 1.3, 0.45), Color("3a1a16") if zombie else dark)
+	if not hat.is_empty():
+		_headwear(ci, view, c, hat)
 
 
 static func _arc(c: Vector2, r: float, a0: float, a1: float) -> PackedVector2Array:

@@ -38,7 +38,9 @@ var investigate_t := 0.0
 var state := 0  # 0 idle, 1 heard something, 2 sees a player (sent to clients)
 var alert_t := 0.0  # client: how long to show the ? / ! mark
 var shown_state := 0
-var outfit: Array = []  # [shirt, pants, hair] of the player this zombie used to be
+var outfit: Array = []  # [shirt, pants, hair, wear ids] of the player this zombie used to be
+var wear := {}  # slot -> item id; ordinary zombies' clothes come from their id (Items.zombie_wear)
+var wear_look := {}
 var facing := 0.0
 var last_pos := Vector2.ZERO
 var skin: Color
@@ -100,8 +102,7 @@ func server_tick(delta: float) -> void:
 		return
 	if d < 12:
 		if attack_cd <= 0:
-			target.take_damage(KINDS[kind].dmg)
-			target.bitten = true
+			target.bite(KINDS[kind].dmg)
 			attack_cd = 1.0
 	elif d < 20 or path.is_empty():
 		_move((target.position - position).normalized(), delta)
@@ -174,6 +175,7 @@ func _ready() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = zid
 	set_kind(kind_for(zid) if outfit.is_empty() else "normal")
+	_set_wear(Items.zombie_wear(zid))
 	skin = Look.ZOMBIE_SKINS[rng.randi() % Look.ZOMBIE_SKINS.size()]
 	shirt = Look.SHIRTS[rng.randi() % Look.SHIRTS.size()].darkened(0.15)
 	pants = Look.PANTS[rng.randi() % Look.PANTS.size()]
@@ -217,6 +219,12 @@ func apply_outfit(o: Array) -> void:
 	shirt = Color(o[0]).darkened(0.1)
 	pants = o[1]
 	hair = o[2]
+	_set_wear(o[3] if o.size() > 3 else {})
+
+
+func _set_wear(ids: Dictionary) -> void:
+	wear = ids
+	wear_look = Items.wear_draw(ids)
 
 
 func _process(delta: float) -> void:
@@ -260,8 +268,8 @@ func flinch(dir: Vector2) -> void:
 
 func _draw() -> void:
 	var recoil := hit_dir * 3.0 * sin(clampf(hit_t / 0.25, 0, 1) * PI * 0.5)
-	Look.draw_human(self, view, facing, phase, moving and hit_t <= 0, skin, shirt, pants, hair, true,
-			Look.NONE, 0.0, false, false, recoil, {}, 0.0, 1.0, KINDS[kind].girth)
+	Look.draw(self, {view = view, angle = facing, phase = phase, moving = moving and hit_t <= 0, zombie = true,
+			recoil = recoil, girth = KINDS[kind].girth}, {skin = skin, shirt = shirt, pants = pants, hair = hair, wear = wear_look})
 	Look.draw_hp(self, hp / max_hp)
 	if alert_t > 0.0 and state > 0:
 		var a := clampf(alert_t / 0.4, 0.0, 1.0)
