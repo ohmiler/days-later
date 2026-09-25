@@ -92,8 +92,9 @@ func run() -> void:
 		var gun_at := me.position + Look.CHEST + Vector2(0, -lift)
 		me.aim = tz.position + Vector2(0, -12) - gun_at
 		me.worn.hand_r = {id = "pistol", n = 1, hp = 100, ammo = 5}
-		me.shoot_cd = 0.0
-		main.combat.fire(me, "r")
+		for i in 3:  # (shots spread at random: one of three is sure to land if the aim is right)
+			me.shoot_cd = 0.0
+			main.combat.fire(me, "r")
 		check(tz.hp < 1000.0 or main.world.building_at.has(main.world.to_cell(tz.position)), "from a roof the shot lands where aimed (hp %.0f)" % tz.hp)
 	me.on_roof = false
 

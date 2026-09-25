@@ -16,6 +16,27 @@ const PUNCH_WINDUP := 0.08  # the hit lands when the fist is out, not on the cli
 const KICK_WINDUP := 0.18  # matches the foot snapping out in Look.kick_pose
 
 const SEVER_CHANCE := 0.2  # a blade hit that does not kill takes an arm this often
+const COMBO_RESET := 0.9  # after this long without a blow, the next one starts the 1-2 again
+
+
+## The next blow from `p`'s hands: {hand, kind, stats, windup}. Swings alternate
+## between the hands (a two-handed weapon uses both every time), starting from
+## the right again after a pause. The server acts on it; the local player's
+## client also uses it to show the swing the moment they click.
+static func next_swing(p: Player) -> Dictionary:
+	var hand := p.next_hand if p.anim_t < COMBO_RESET else "r"
+	if Items.two_handed(p.hand_weapon("r")):
+		hand = "r"
+	var wid := p.hand_weapon(hand)
+	if wid == "":
+		return {hand = hand, kind = Look.PUNCH_R if hand == "r" else Look.PUNCH_L, stats = PUNCH, windup = PUNCH_WINDUP}
+	var w := Items.def(wid)
+	if Items.is_gun(wid):  # not aiming: a blow with it
+		w = {range = 17.0, dmg = w.bash, cd = 0.55, stun = 0.35, knock = 6.0, dur = 0.3}
+	var dual: bool = p.hand_weapon("r") != "" and p.hand_weapon("l") != ""
+	var dmg: float = w.dmg * (Items.OFF_HAND if hand == "l" else 1.0)
+	return {hand = hand, kind = Look.SWING if hand == "r" else Look.SWING_L,
+			stats = [w.range, dmg, w.cd * (Items.DUAL_SPEED if dual else 1.0), w.stun, w.knock], windup = w.dur * 0.45}
 ## Punch hits the closest zombie in front; a kick hits everything in front.
 func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 	p.shoot_cd = stats[2]
@@ -304,10 +325,46 @@ func fx_shot(from: Vector2, to: Vector2, hit: bool) -> void:
 func fx_melee(peer_id: int, kind: int) -> void:
 	var p: Player = main.players.get(peer_id)
 	if p:
-		p.play_attack(kind)
 		if p.is_local:
 			main.ui.tutorial("kick" if kind == Look.KICK else "attack")
-		Sfx.play(main, "swing" if kind in [Look.SWING, Look.SWING_L, Look.KICK] else "punch", p.position, -4.0)
+			if p.predicted > 0:
+				p.predicted -= 1  # already shown when the button was pressed (see show_swing)
+				return
+		show_swing(p, kind)
+
+
+## The swing's animation and sound.
+func show_swing(p: Player, kind: int) -> void:
+	p.play_attack(kind)
+	Sfx.play(main, "swing" if kind in [Look.SWING, Look.SWING_L, Look.KICK] else "punch", p.position, -4.0)
+
+
+const HITSTOP := 0.05
+
+
+## Client, local player: swing the moment the button is pressed rather than a
+## round trip later, guessing the cooldown the server keeps. The server still
+## decides what the blow hits; its word on the swing is then not shown twice.
+func predict(me: Player, delta: float) -> void:
+	me.local_cd -= delta
+	me.punch_buf -= delta
+	me.kick_buf -= delta
+	if me.anim_t > 1.0:
+		me.predicted = 0  # nothing came back for a while: stop waiting on it
+	if not me.alive() or me.riding >= 0 or me.sleeping or me.local_cd > 0.0 or me.aiming:
+		return
+	if me.wants_kick():
+		me.kick_buf = 0.0
+		me.local_cd = KICK[2]
+		me.predicted += 1
+		show_swing(me, Look.KICK)
+	elif me.wants_punch():
+		me.punch_buf = 0.0
+		var sw := next_swing(me)
+		me.next_hand = "l" if sw.hand == "r" else "r"
+		me.local_cd = sw.stats[2]
+		me.predicted += 1
+		show_swing(me, sw.kind)
 
 
 @rpc("authority", "call_local", "unreliable")
@@ -317,6 +374,9 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, w
 	var z: Zombie = main.zombies.get(zid)
 	if z:
 		z.flinch(dir)
+	var who: Player = main.players.get(attacker)
+	if who and who.anim_t < 0.4:
+		who.hitstop = HITSTOP  # the blow lands: a beat of stillness sells its weight
 	main.sparks.append([pos + Look.CHEST - dir * 3.0, 0.14, strong])
 	for i in 4 if strong else 2:
 		main.blood.append([pos + dir * randf_range(2, 8) + Vector2(randf_range(-3, 3), randf_range(-2, 2)),

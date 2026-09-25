@@ -368,28 +368,17 @@ func _server_tick(delta: float) -> void:
 				combat._resolve_melee(p, p.pending_kind, p.pending_stats)
 				p.pending_kind = Look.NONE
 		if p.alive() and p.shoot_cd <= 0 and p.riding < 0:
-			if p.kicking:
+			if p.wants_kick():
+				p.kick_buf = 0.0
 				combat._melee(p, Look.KICK, combat.KICK)
 			elif p.punching and p.aiming and p.gun_hand() != "":
 				combat.fire(p, p.gun_hand())
-			elif p.punching:
-				# Swings alternate between the hands; a two-handed weapon uses both every time.
-				var hand := p.next_hand
-				if Items.two_handed(p.hand_weapon("r")):
-					hand = "r"
-				p.next_hand = "l" if hand == "r" else "r"
-				p.swing_hand = hand
-				var wid := p.hand_weapon(hand)
-				if wid == "":
-					combat._melee(p, Look.PUNCH_R if hand == "r" else Look.PUNCH_L, combat.PUNCH)
-				else:
-					var w := Items.def(wid)
-					if Items.is_gun(wid):  # not aiming: a blow with it
-						w = {range = 17.0, dmg = w.bash, cd = 0.55, stun = 0.35, knock = 6.0, dur = 0.3}
-					var dual: bool = p.hand_weapon("r") != "" and p.hand_weapon("l") != ""
-					var dmg: float = w.dmg * (Items.OFF_HAND if hand == "l" else 1.0)
-					combat._melee(p, Look.SWING if hand == "r" else Look.SWING_L,
-							[w.range, dmg, w.cd * (Items.DUAL_SPEED if dual else 1.0), w.stun, w.knock], w.dur * 0.45)
+			elif p.wants_punch():
+				p.punch_buf = 0.0
+				var sw := Combat.next_swing(p)
+				p.next_hand = "l" if sw.hand == "r" else "r"
+				p.swing_hand = sw.hand
+				combat._melee(p, sw.kind, sw.stats, sw.windup)
 		inventory._tick_search(p, delta)
 		crafting.server_tick(p, delta)
 		survival._tick_needs(p, delta)
@@ -659,10 +648,11 @@ func _process(delta: float) -> void:
 		me.aim = aim
 		if multiplayer.is_server():
 			me.move = move
-			me.punching = punch
-			me.kicking = kick
+			me.set_attack_input(punch, kick)
 		else:
 			net.send_input.rpc_id(1, move, aim, punch, kick, me.sprint, me.sneak, aiming)
+			me.set_attack_input(punch, kick)
+			combat.predict(me, delta)
 			if me.riding >= 0 and me.alive():
 				Vehicles.step(me, world.vehicles[me.riding], move, delta, world)
 			elif me.alive() and not me.sleeping:
