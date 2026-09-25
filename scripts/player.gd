@@ -1,0 +1,125 @@
+class_name Player
+extends Node2D
+## A connected player. The server simulates it; clients predict their own
+## player and interpolate everyone else toward the server snapshot.
+
+const SPEED := 90.0
+const RADIUS := 5.0
+const MAX_HP := 100.0
+const RESPAWN_TIME := 5.0
+
+var world: World
+var peer_id := 0
+var is_local := false
+var hp := MAX_HP
+var kills := 0
+var aim := Vector2.RIGHT
+var move := Vector2.ZERO
+var punching := false
+var kicking := false
+var anim := Look.NONE
+var anim_t := 0.0
+var punch_side := false
+# Server only: a swing lands a moment after it starts, when the limb is extended.
+var pending_kind := Look.NONE
+var pending_t := 0.0
+var pending_stats: Array = []
+var shoot_cd := 0.0
+var respawn := 0.0
+var net_pos := Vector2.ZERO
+var skin: Color
+var shirt: Color
+var hair: Color
+var pants: Color
+var phase := 0.0
+var view := [Look.FRONT, false]
+var moving := false
+var last_pos := Vector2.ZERO
+var flashlight: PointLight2D
+
+
+func alive() -> bool:
+	return hp > 0
+
+
+func take_damage(amount: float) -> void:
+	if not alive():
+		return
+	hp -= amount
+	if hp <= 0:
+		hp = 0
+		respawn = RESPAWN_TIME
+
+
+## Start an attack animation (runs on every peer via main.fx_melee).
+func play_attack(kind: int) -> void:
+	if kind != Look.KICK:
+		punch_side = not punch_side
+		kind = Look.PUNCH_L if punch_side else Look.PUNCH_R
+	anim = kind
+	anim_t = 0.0
+
+
+## Server only.
+func server_tick(delta: float) -> void:
+	shoot_cd -= delta
+	if not alive():
+		respawn -= delta
+		if respawn <= 0:
+			hp = MAX_HP
+			position = world.spawn_point()
+		return
+	position = world.slide(position, move.limit_length(1.0) * SPEED * delta, RADIUS)
+
+
+func _ready() -> void:
+	# Looks are picked from the peer id so every client agrees on them.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = peer_id
+	skin = Look.SKINS[rng.randi() % Look.SKINS.size()]
+	shirt = Look.SHIRTS[rng.randi() % Look.SHIRTS.size()]
+	hair = Look.HAIRS[rng.randi() % Look.HAIRS.size()]
+	pants = Look.PANTS[rng.randi() % Look.PANTS.size()]
+	flashlight = PointLight2D.new()
+	flashlight.texture = Look.cone_texture()
+	flashlight.texture_scale = 1.6
+	flashlight.color = Color("fff1c8")
+	flashlight.position = Look.CHEST
+	flashlight.energy = 0.0
+	add_child(flashlight)
+
+
+func _process(delta: float) -> void:
+	if not multiplayer.is_server():
+		if is_local:
+			# Trust local prediction, but drift toward the server and snap on big errors.
+			if position.distance_to(net_pos) > 40:
+				position = net_pos
+			else:
+				position = position.lerp(net_pos, minf(1.0, 2.0 * delta))
+		else:
+			position = position.lerp(net_pos, minf(1.0, 15.0 * delta))
+	var step := position.distance_to(last_pos)
+	last_pos = position
+	moving = step > 0.05
+	phase = phase + step * 0.45 if moving else 0.0
+	flashlight.rotation = aim.angle()
+	view = Look.pick_view(aim.angle(), view)
+	anim_t += delta
+	flashlight.energy = move_toward(flashlight.energy, 1.1 if world.is_night and alive() else 0.0, delta)
+	flashlight.visible = flashlight.energy > 0.01
+	queue_redraw()
+
+
+func _draw() -> void:
+	if not alive():
+		Look.draw_corpse(self, aim.angle(), skin, shirt, 1.0)
+		return
+	var dur := 0.45 if anim == Look.KICK else 0.22
+	var ext := 0.0
+	if anim != Look.NONE and anim_t < dur:
+		# Punches use a quick out-and-back curve; kicks pass their raw timeline to Look.kick_pose.
+		ext = anim_t / dur if anim == Look.KICK else sin(anim_t / dur * PI)
+	Look.draw_human(self, view, aim.angle(), phase, moving and ext == 0.0, skin, shirt, pants, hair, false,
+			anim if ext > 0.0 else Look.NONE, ext, false, anim != Look.NONE and anim_t < 1.2)
+	Look.draw_hp(self, hp / MAX_HP)
