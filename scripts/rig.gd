@@ -180,12 +180,23 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 	var guard := [chin + side * 2.4, chin - side * 2.4 + d * 1.2]
 	var reach := [Look.PUNCH_L, Look.PUNCH_R]
 	var out := []
+	var grip: String = weapon.get("grip", "swing")
+	var two_hands := grip in ["chop", "sweep"]
 	for i in 2:
 		# Back view: both arms are behind the body. Side view: the far arm (i == 0) is.
 		var behind := view == Look.BACK or (view == Look.SIDE and i == 0)
 		var dim := 0.25 if behind and view == Look.SIDE else 0.0
 		if i == 1 and not weapon.is_empty():
-			out.append(_weapon_arm(d, sh[1], attack, ext, weapon, behind, dim))
+			var main_arm := _weapon_arm(d, sh[1], attack, ext, weapon, behind, dim)
+			if two_hands:
+				# The other hand holds the handle lower down, so both arms follow the swing.
+				var far := view == Look.BACK or view == Look.SIDE
+				var dim0 := 0.25 if view == Look.SIDE else 0.0
+				var off: Vector2 = main_arm.hand - (main_arm.weapon.dir as Vector2) * 2.6
+				var off_arm := _arm(sh[0], sh[0].lerp(off, 0.5) + Vector2(0, 1.6), off, far, {fist = true, dim = dim0})
+				out.insert(0, off_arm)  # replaces the guard arm
+				out.remove_at(1)
+			out.append(main_arm)
 			continue
 		var fist: Vector2 = guard[i]
 		if attack == reach[i]:
@@ -197,19 +208,69 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 	return out
 
 
-## The weapon hand: holds the weapon raised and ready, or swings it through an arc.
+## How each grip moves, as angles from the aim direction (radians):
+## [ready, wound back, follow-through, arm length, depth squash].
+##   swing  one hand, over the shoulder and across (machete, hammer)
+##   chop   two hands, raised high and brought straight down (axe, pipe)
+##   sweep  two hands, a wide flat arc at waist height (bat, plank)
+const GRIPS := {
+	swing = [-1.1, -2.3, 0.9, 6.5, 0.8],
+	chop = [-1.6, -2.7, 1.0, 5.5, 0.9],
+	sweep = [-0.8, -2.4, 1.5, 7.0, 0.5],
+}
+
+
+## Weapon angle (relative to the aim) through an attack, t in 0..1: wind up,
+## whip through, follow through, then return to the ready pose.
+static func grip_angle(grip: String, t: float) -> float:
+	var g: Array = GRIPS.get(grip, GRIPS.swing)
+	if t < 0.3:
+		return lerpf(g[0], g[1], t / 0.3)
+	if t < 0.55:
+		return lerpf(g[1], g[2], ease((t - 0.3) / 0.25, 0.5))
+	if t < 0.7:
+		return g[2]
+	return lerpf(g[2], g[0], (t - 0.7) / 0.3)
+
+
+## Knife thrust, t in 0..1: 0 = held back by the hip, 1 = arm fully out.
+static func stab_reach(t: float) -> float:
+	if t < 0.3:
+		return lerpf(0.0, -0.4, t / 0.3)  # draw back
+	if t < 0.5:
+		return lerpf(-0.4, 1.0, ease((t - 0.3) / 0.2, 0.4))
+	if t < 0.65:
+		return 1.0
+	return lerpf(1.0, 0.0, (t - 0.65) / 0.35)
+
+
+## The weapon hand: holds the weapon ready, or moves it through its attack.
 static func _weapon_arm(d: Vector2, sh: Vector2, attack: int, t: float, weapon: Dictionary, behind: bool, dim: float) -> Dictionary:
+	var grip: String = weapon.get("grip", "swing")
 	var base := atan2(d.y, d.x)
-	var a := base + (Look.swing_angle(t) if attack == Look.SWING else -1.1)
-	var dv := Vector2.from_angle(a)
-	var hand := sh + Vector2(dv.x, dv.y * 0.8) * 6.5 + Vector2(0, 1.0)
 	var trail := PackedVector2Array()
-	if attack == Look.SWING and t > 0.3 and t < 0.62:
-		# Motion trail along the arc the weapon tip just travelled.
-		var reach: float = 6.5 + weapon.len
-		for k in 7:
-			var ak := lerpf(base - 2.3, a, k / 6.0)
-			trail.append(sh + Vector2(cos(ak), sin(ak) * 0.8) * reach)
+	var dv: Vector2
+	var hand: Vector2
+	if grip == "stab":
+		# Blade held low and forward, point toward the target; the thrust drives straight out.
+		var k := stab_reach(t) if attack == Look.SWING else 0.0
+		dv = Vector2.from_angle(base + 0.35 * (1.0 - maxf(k, 0.0)))
+		hand = sh + Vector2(d.x, d.y * 0.8) * (4.0 + 8.0 * k) + Vector2(0, 3.0 - 1.5 * maxf(k, 0.0))
+		if attack == Look.SWING and k > 0.5:
+			var tip: Vector2 = hand + dv * (weapon.len as float)
+			trail = PackedVector2Array([tip - dv * 6.0, tip])  # a short streak behind the point
+	else:
+		var g: Array = GRIPS.get(grip, GRIPS.swing)
+		var a := base + (grip_angle(grip, t) if attack == Look.SWING else (g[0] as float))
+		dv = Vector2.from_angle(a)
+		dv = Vector2(dv.x, dv.y * (1.0 if grip != "sweep" else 0.7)).normalized()
+		hand = sh + Vector2(dv.x, dv.y * (g[4] as float)) * (g[3] as float) + Vector2(0, 1.0)
+		if attack == Look.SWING and t > 0.3 and t < 0.62:
+			# Motion trail along the arc the weapon tip just travelled.
+			var reach: float = (g[3] as float) + weapon.len
+			for k in 7:
+				var ak := lerpf(base + (g[1] as float), a, k / 6.0)
+				trail.append(sh + Vector2(cos(ak), sin(ak) * (g[4] as float)) * reach)
 	return _arm(sh, sh.lerp(hand, 0.5) + Vector2(0, 1.4), hand, behind,
 			{fist = true, dim = dim, sleeve_dark = 0.05 + dim, sleeve_dim = 0.0, weapon = {dir = dv, draw = weapon, trail = trail}})
 
