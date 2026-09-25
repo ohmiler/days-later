@@ -1,10 +1,25 @@
 class_name Sfx
-## Sound effects synthesised in code (no audio files), cached on first use.
+## Sound effects. Real recordings live in res://audio/sfx as <name>_<n>.ogg and
+## one variant is picked at random each time; names with no files fall back to
+## a sound synthesised here in code. See audio/CREDITS.md for where they came from.
 ## Sfx.play(parent, "hit", position) plays one positioned in the world.
 
 const RATE := 22050
+const DIR := "res://audio/sfx/"
+## Names that share another name's recordings.
+const ALIASES := {"break": "crunch"}
 
-static var _cache := {}
+static var _cache := {}  # name -> Array of streams
+
+
+## Mixer buses, so the pause menu can turn music, ambience and effects up or down on their own.
+static func setup_buses() -> void:
+	for bus in ["SFX", "Ambience", "Music"]:
+		if AudioServer.get_bus_index(bus) < 0:
+			AudioServer.add_bus()
+			var i := AudioServer.bus_count - 1
+			AudioServer.set_bus_name(i, bus)
+			AudioServer.set_bus_send(i, "Master")
 
 
 static func play(parent: Node, name: String, pos: Vector2, volume_db := 0.0, pitch := 1.0) -> void:
@@ -17,15 +32,39 @@ static func play(parent: Node, name: String, pos: Vector2, volume_db := 0.0, pit
 	p.pitch_scale = pitch * randf_range(0.92, 1.08)
 	p.max_distance = 700
 	p.attenuation = 1.5
+	p.bus = "SFX"
 	parent.add_child(p)
 	p.play()
 	p.finished.connect(p.queue_free)
 
 
-static func stream(name: String) -> AudioStreamWAV:
+## A sound with no place in the world (menu clicks).
+static func play_ui(parent: Node, name: String, volume_db := -6.0) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var p := AudioStreamPlayer.new()
+	p.stream = stream(name)
+	p.volume_db = volume_db
+	p.bus = "SFX"
+	parent.add_child(p)
+	p.play()
+	p.finished.connect(p.queue_free)
+
+
+static func stream(name: String) -> AudioStream:
 	if not _cache.has(name):
-		_cache[name] = _build(name)
-	return _cache[name]
+		var files := []
+		var base: String = ALIASES.get(name, name)
+		for i in 40:
+			var path := DIR + "%s_%d.ogg" % [base, i]
+			if ResourceLoader.exists(path):
+				files.append(load(path))
+		if ResourceLoader.exists(DIR + base + ".ogg"):
+			files.append(load(DIR + base + ".ogg"))
+		if files.is_empty():
+			files.append(_build(name))
+		_cache[name] = files
+	return _cache[name].pick_random()
 
 
 static func _build(name: String) -> AudioStreamWAV:

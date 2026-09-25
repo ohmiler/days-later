@@ -34,6 +34,10 @@ var dmg_numbers: Array = []  # [pos, text, crit, age]
 const MAX_GIBS := 40  # loose heads and arms; the oldest fade out first
 const SEVER_CHANCE := 0.2  # a blade hit that does not kill takes an arm this often
 var gibs: Array = []
+var map_t := 0.0
+var raining := false  # the server rolls the weather; clients get it in every snapshot
+var rain_t := 120.0  # server: time until the weather next changes
+var rain_fx: Control
 var bar_click := false  # a mouse button went down on the hotbar: do not punch until it is let go
 var outfits := {}  # zid -> [shirt, pants, hair] for zombies that were players
 const AUTOSAVE_EVERY := 60.0
@@ -115,6 +119,19 @@ func _ready() -> void:
 	post.add_child(grade)
 	ui = GameUI.new()
 	add_child(ui)
+	var sounds := Soundscape.new()
+	sounds.main = self
+	add_child(sounds)
+	# Rain streaks over the world, under the HUD.
+	var rain_layer := CanvasLayer.new()
+	rain_layer.layer = 1
+	add_child(rain_layer)
+	rain_fx = Control.new()
+	rain_fx.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rain_fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rain_fx.visible = false
+	rain_fx.draw.connect(_draw_rain)
+	rain_layer.add_child(rain_fx)
 	ui.host_requested.connect(func(n: String, resume: bool):
 		player_name = n
 		_host(false, resume))
@@ -123,6 +140,9 @@ func _ready() -> void:
 	ui.gear.split_requested.connect(func(ref: Array): _request(&"req_split", [ref]))
 	ui.gear.drop_requested.connect(func(ref: Array): _request(&"req_move", [ref, ["ground", -1]]))
 	ui.gear.box_closed.connect(func(): _request(&"req_close_box", []))
+	ui.chat_sent.connect(func(t: String): _request(&"req_chat", [t]))
+	ui.leave_requested.connect(func(): _leave(false))
+	ui.quit_requested.connect(func(): _leave(true))
 	ui.join_requested.connect(func(addr: String, n: String):
 		player_name = n
 		_join(addr))
@@ -296,6 +316,7 @@ func _make_world(seed_val: int) -> void:
 	add_child(world)
 	move_child(world, 0)
 	world.generate(seed_val)
+	ui.city_map.setup(world, ui.cfg, seed_val)
 	decals = Node2D.new()
 	decals.draw.connect(_draw_decals)
 	add_child(decals)
@@ -372,7 +393,37 @@ func _notification(what: int) -> void:
 		_save_all()
 
 
+## Weather: dry spells and downpours of a few minutes, more often at night.
+func _tick_weather(delta: float) -> void:
+	rain_t -= delta
+	if rain_t > 0.0:
+		return
+	var start := not raining and randf() < (0.45 if world.is_night else 0.3)
+	_set_rain(start)
+	rain_t = randf_range(90.0, 200.0) if start else randf_range(150.0, 400.0)
+
+
+func _set_rain(on: bool) -> void:
+	if on == raining:
+		return
+	raining = on
+	rain_fx.visible = on
+	if in_game:
+		ui.push_feed("ฝนตก · เสียงฝนกลบเสียงฝีเท้าคุณ" if on else "ฝนหยุดแล้ว")
+
+
+func _draw_rain() -> void:
+	var sz := rain_fx.size
+	var t := Time.get_ticks_msec() / 1000.0
+	for i in 170:
+		var x := fmod(World.hash01(i, 1, 60) * sz.x + t * 90.0, sz.x + 40.0) - 20.0
+		var y := fmod(World.hash01(i, 2, 61) * sz.y + t * (600.0 + World.hash01(i, 3, 62) * 250.0), sz.y + 40.0) - 20.0
+		rain_fx.draw_line(Vector2(x, y), Vector2(x - 3, y + 14), Color(0.75, 0.8, 0.9, 0.22), 1.0)
+	rain_fx.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.1, 0.12, 0.16, 0.12))
+
+
 func _server_tick(delta: float) -> void:
+	_tick_weather(delta)
 	autosave_t -= delta
 	if autosave_t <= 0.0:
 		autosave_t = AUTOSAVE_EVERY
@@ -433,7 +484,7 @@ func _server_tick(delta: float) -> void:
 		var zs := []
 		for z: Zombie in zombies.values():
 			zs.append([z.zid, z.position, z.hp, z.state, z.flags, z.missing])
-		snapshot.rpc(ps, zs, time, day)
+		snapshot.rpc(ps, zs, time, day, raining)
 
 
 ## Keep bodies from stacking: zombies push each other and get pushed off players.
@@ -684,7 +735,7 @@ func _toggle_door(p: Player, id: int) -> void:
 	if world.is_window(id):
 		if d.closed and d.boards == 0:
 			door_state.rpc(id, false, 0.0, 0, true)
-			fx_sound.rpc("break", world.to_pos(d.cell))
+			fx_sound.rpc("glass", world.to_pos(d.cell))
 			_make_noise(world.to_pos(d.cell), NOISE_BREAK)
 			_toast(p, "ทุบกระจกแล้ว ปีนผ่านได้ (ช้า)")
 		elif d.closed:
@@ -711,11 +762,13 @@ func _toggle_door(p: Player, id: int) -> void:
 			if world.door_overlap(id, z.position) == 1:
 				z.position = world.nudge_out_of_door(id, z.position)
 	door_state.rpc(id, not d.closed, d.hp, d.boards, false)
-	fx_sound.rpc("door", world.to_pos(d.cell))
+	fx_sound.rpc("door_close" if d.closed else "door_open", world.to_pos(d.cell))
 
 
 ## Every zombie within `radius` goes to look.
 func _make_noise(pos: Vector2, radius: float) -> void:
+	if raining:
+		radius *= 0.65  # the rain covers a lot
 	for z: Zombie in zombies.values():
 		if z.position.distance_to(pos) < radius:
 			z.hear(pos)
@@ -1103,6 +1156,44 @@ func req_split(ref: Array) -> void:
 	it.n -= half
 	p.inv[free] = {id = it.id, n = half, hp = it.get("hp", 0)}
 	_send_inv(p)
+
+
+# --- Chat and leaving --------------------------------------------------------
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_chat(text: String) -> void:
+	var p := _sender()
+	if p == null:
+		return
+	var msg := text.strip_edges().left(120)
+	if msg != "":
+		chat_msg.rpc(p.peer_id, p.pname, msg)
+
+
+@rpc("authority", "call_local", "reliable")
+func chat_msg(peer_id: int, who: String, text: String) -> void:
+	ui.show_chat(who, text)
+	var p: Player = players.get(peer_id)
+	if p:
+		p.say = text
+		p.say_t = 5.0 + text.length() * 0.05
+
+
+## Back to the title screen, or out of the game. Saves first when this is the server.
+func _leave(quit: bool) -> void:
+	if in_game and multiplayer.is_server() and multiplayer.multiplayer_peer is WebSocketMultiplayerPeer:
+		_save_all()
+	in_game = false
+	set_process(false)  # nothing may touch the network once it is gone
+	set_physics_process(false)
+	set_process_unhandled_input(false)
+	if multiplayer.multiplayer_peer:
+		multiplayer.multiplayer_peer.close()
+	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()  # so anything still asking gets an answer
+	if quit:
+		get_tree().quit()
+	else:
+		get_tree().reload_current_scene()
 
 
 ## Put on the clothing in hotbar slot `idx`; whatever was worn there goes into
@@ -1538,11 +1629,12 @@ func _spawn_zombie() -> void:
 # --- Client side ------------------------------------------------------------
 
 @rpc("authority", "call_remote", "unreliable_ordered")
-func snapshot(ps: Array, zs: Array, t: float, d: int) -> void:
+func snapshot(ps: Array, zs: Array, t: float, d: int, rain := false) -> void:
 	if world == null or not in_game:
 		return
 	time = t
 	day = d
+	_set_rain(rain)
 	var seen := {}
 	for e in ps:
 		var id: int = e[0]
@@ -1764,6 +1856,19 @@ func _process(delta: float) -> void:
 			get_tree().call_group("street_lights", "set_visible", true)
 		return
 	var me: Player = players.get(multiplayer.get_unique_id())
+	map_t -= delta
+	if me and map_t <= 0.0:
+		map_t = 0.3
+		if me.alive():
+			ui.city_map.reveal(me.position)
+		ui.city_map.me = me
+		var others := []
+		for p: Player in players.values():
+			if p != me and p.alive():
+				others.append([p.position, p.pname])
+		ui.city_map.others = others
+	for p: Player in players.values():
+		p.say_t = maxf(0.0, p.say_t - delta)
 	if me:
 		var move := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
 		move += Vector2(float(Input.is_key_pressed(KEY_D)) - float(Input.is_key_pressed(KEY_A)),
@@ -1788,8 +1893,11 @@ func _process(delta: float) -> void:
 		var over_bar := ui.hotbar.hover >= 0 or bar_click
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 			bar_click = false
-		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.wheel.visible and not over_gear and not over_bar
-		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not over_bar and not over_gear
+		var blocked := ui.typing() or ui.pause.visible or ui.city_map.visible
+		if blocked:
+			move = Vector2.ZERO
+		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.wheel.visible and not over_gear and not over_bar and not blocked
+		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not over_bar and not over_gear and not blocked
 		me.sneak = sneak_toggle or Input.is_key_pressed(KEY_CTRL)
 		me.sprint = Input.is_key_pressed(KEY_SHIFT) and not me.sneak
 		me.aim = aim
@@ -1819,7 +1927,9 @@ func _process(delta: float) -> void:
 	if multiplayer.is_server():
 		_server_tick(delta)
 
-	var light := lerpf(0.12, 1.0, clampf((0.5 - absf(time - 0.4)) * 4.0, 0.0, 1.0))
+	var light := lerpf(0.12, 1.0, clampf((0.5 - absf(time - 0.4)) * 4.0, 0.0, 1.0)) * (0.8 if raining else 1.0)
+	if raining:
+		rain_fx.queue_redraw()
 	shade.color = Color(light * 0.85, light * 0.92, minf(1.0, light * 1.4))
 	_update_roof_view(me, delta)
 	var night := light < 0.6
@@ -1972,6 +2082,15 @@ func _draw_fx() -> void:
 			var r := Rect2(p.position + Vector2(-w / 2, -41 - p.lift), Vector2(w, 7))
 			fx.draw_rect(r, Color(0, 0, 0, 0.45))
 			fx.draw_string(font, r.position + Vector2(0, 5.6), p.pname, HORIZONTAL_ALIGNMENT_CENTER, w, 5, UiTheme.PAPER)
+			if p.say_t > 0.0:
+				# What they just said, in a bubble that fades at the end.
+				var a := clampf(p.say_t / 0.6, 0.0, 1.0)
+				var bw := minf(font.get_string_size(p.say, HORIZONTAL_ALIGNMENT_LEFT, -1, 6).x + 8, 110.0)
+				var br := Rect2(p.position + Vector2(-bw / 2, -53 - p.lift), Vector2(bw, 10))
+				fx.draw_rect(br, Color(0.95, 0.93, 0.88, 0.92 * a))
+				fx.draw_colored_polygon(PackedVector2Array([br.get_center() + Vector2(-2, 5), br.get_center() + Vector2(2, 5),
+						br.get_center() + Vector2(0, 8)]), Color(0.95, 0.93, 0.88, 0.92 * a))
+				fx.draw_string(font, br.position + Vector2(4, 7.6), p.say, HORIZONTAL_ALIGNMENT_LEFT, bw - 8, 6, Color(0.1, 0.1, 0.1, a))
 	for dn in dmg_numbers:
 		var k: float = dn[3] / 0.9
 		var pos: Vector2 = dn[0] + Vector2(0, -12 * ease(k, 0.4))
@@ -2083,10 +2202,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if world and in_game and event is InputEventKey and event.pressed and not event.echo:
 		var k: int = event.keycode
+		if k == KEY_ESCAPE:
+			ui.escape()
+			return
+		if ui.pause.visible:
+			return  # the pause menu takes the keys
 		if k == KEY_H:
 			ui.toggle_help()
-		elif k == KEY_ESCAPE and ui.help.visible:
-			ui.toggle_help()
+		elif k == KEY_ENTER or k == KEY_KP_ENTER:
+			ui.open_chat()
+			get_viewport().set_input_as_handled()
+		elif k == KEY_M:
+			ui.toggle_map()
 		elif k == KEY_C:
 			sneak_toggle = not sneak_toggle
 			ui.push_feed("ย่อง: เงียบ ช้า มองเห็นยาก" if sneak_toggle else "เลิกย่อง")
@@ -2100,8 +2227,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			_request(&"req_drop", [])
 		elif k >= KEY_1 and k <= KEY_8:
 			_request(&"req_select", [k - KEY_1])
-		elif k == KEY_ESCAPE and ui.gear.visible:
-			ui.toggle_gear()
 		elif k == KEY_TAB:
 			ui.toggle_gear()
 		elif k == KEY_Q:

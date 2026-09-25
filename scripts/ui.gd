@@ -5,6 +5,9 @@ extends CanvasLayer
 
 signal host_requested(player_name: String, resume: bool)
 signal join_requested(address: String, player_name: String)
+signal leave_requested  # back to the title screen (saves first)
+signal quit_requested
+signal chat_sent(text: String)
 
 const TUTORIAL := [
 	["move", "เดินด้วย [W][A][S][D]"],
@@ -29,6 +32,11 @@ var hotbar: InventoryBar
 var help: Control
 var gear: BagScreen
 var fs_button: Button
+var pause: Control
+var pause_fs: Button
+var pause_gore: Button
+var city_map: CityMap
+var chat: LineEdit
 var wheel: ActionWheel
 var banner: Label
 var banner_t := 0.0
@@ -44,6 +52,9 @@ func _ready() -> void:
 	layer = 2
 	cfg.load(SETTINGS)
 	Look.low_gore = cfg.get_value("video", "low_gore", false)
+	set_volume(cfg.get_value("video", "volume", 0.8), false)
+	for bus in ["Music", "Ambience"]:
+		set_bus_volume(bus, cfg.get_value("video", "vol_" + bus, 1.0), false)
 	# Full screen unless turned off; left alone for test runs, servers and the browser.
 	if Engine.get_main_loop().get_script() == null and DisplayServer.get_name() != "headless" and not OS.has_feature("web"):
 		set_fullscreen(cfg.get_value("video", "fullscreen", true), false)
@@ -54,6 +65,11 @@ func _ready() -> void:
 	gear = BagScreen.new()
 	gear.visible = false
 	add_child(gear)
+	city_map = CityMap.new()
+	city_map.visible = false
+	add_child(city_map)
+	_build_chat()
+	_build_pause()
 	_build_death()
 	_build_menu()
 	show_menu(true)
@@ -87,6 +103,180 @@ func set_inventory(inv: Array, sel: int) -> void:
 func set_worn(worn: Dictionary) -> void:
 	gear.worn = worn
 	gear.queue_redraw()
+
+
+func toggle_gore() -> void:
+	Look.low_gore = not Look.low_gore
+	cfg.set_value("video", "low_gore", Look.low_gore)
+	cfg.save(SETTINGS)
+	if pause_gore:
+		pause_gore.text = "เลือดและชิ้นส่วน: " + ("น้อย" if Look.low_gore else "เต็ม")
+
+
+func set_bus_volume(bus: String, v: float, remember := true) -> void:
+	Sfx.setup_buses()
+	var i := AudioServer.get_bus_index(bus)
+	AudioServer.set_bus_volume_db(i, linear_to_db(maxf(v, 0.0001)))
+	AudioServer.set_bus_mute(i, v <= 0.01)
+	if remember:
+		cfg.set_value("video", "vol_" + bus, v)
+		cfg.save(SETTINGS)
+
+
+func set_volume(v: float, remember := true) -> void:
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(v, 0.0001)))
+	AudioServer.set_bus_mute(0, v <= 0.01)
+	if remember:
+		cfg.set_value("video", "volume", v)
+		cfg.save(SETTINGS)
+
+
+## Something that takes the keyboard or the whole screen is open.
+func typing() -> bool:
+	return chat.visible
+
+
+func overlay_open() -> bool:
+	return pause.visible or city_map.visible or gear.visible or help.visible
+
+
+func toggle_map() -> void:
+	city_map.visible = not city_map.visible and not menu.visible and city_map.world != null
+
+
+func toggle_pause() -> void:
+	pause.visible = not pause.visible and not menu.visible
+	if pause.visible:
+		pause_fs.text = "เต็มจอ: " + ("เปิด" if is_fullscreen() else "ปิด") + "  (F11)"
+
+
+## The Esc key: close whatever is open, or bring up the pause menu.
+func escape() -> void:
+	if chat.visible:
+		close_chat()
+	elif city_map.visible:
+		city_map.visible = false
+	elif gear.visible:
+		toggle_gear()
+	elif help.visible:
+		toggle_help()
+	else:
+		toggle_pause()
+
+
+func open_chat() -> void:
+	chat.visible = true
+	chat.text = ""
+	chat.grab_focus()
+
+
+func close_chat() -> void:
+	chat.release_focus()
+	chat.visible = false
+
+
+func show_chat(who: String, text: String) -> void:
+	push_feed("%s: %s" % [who, text], "chat")
+
+
+func _build_chat() -> void:
+	chat = _line_edit("", "พิมพ์ข้อความ แล้วกด Enter · Esc ยกเลิก")
+	chat.anchor_top = 1.0
+	chat.anchor_bottom = 1.0
+	chat.offset_left = 24
+	chat.offset_right = 24 + 420
+	chat.offset_top = -210
+	chat.offset_bottom = -174
+	chat.max_length = 120
+	chat.visible = false
+	chat.text_submitted.connect(func(t: String):
+		var msg := t.strip_edges()
+		if msg != "":
+			chat_sent.emit(msg)
+		close_chat())
+	chat.gui_input.connect(func(e: InputEvent):
+		if e is InputEventKey and e.pressed and e.keycode == KEY_ESCAPE:
+			close_chat()
+			chat.accept_event())
+	add_child(chat)
+
+
+## Esc menu. The world keeps going while it is open: this is an online game.
+func _build_pause() -> void:
+	pause = Control.new()
+	pause.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pause.visible = false
+	add_child(pause)
+	var dim := ColorRect.new()
+	dim.color = Color(0.03, 0.03, 0.02, 0.85)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pause.add_child(dim)
+	var box := VBoxContainer.new()
+	box.set_anchors_preset(Control.PRESET_CENTER)
+	box.offset_left = -200
+	box.offset_right = 200
+	box.offset_top = -270
+	box.offset_bottom = 270
+	box.add_theme_constant_override("separation", 12)
+	pause.add_child(box)
+	var title := _label("หยุดพัก", UiTheme.heavy(), 44, UiTheme.PAPER)
+	title.custom_minimum_size = Vector2(0, 64)
+	box.add_child(title)
+	box.add_child(_label("โลกยังเดินต่อระหว่างเปิดเมนูนี้ ระวังตัวด้วย", UiTheme.body(), 15, Color(UiTheme.WARN, 0.9)))
+	var resume := _button("เล่นต่อ", true)
+	resume.pressed.connect(toggle_pause)
+	box.add_child(resume)
+	var vol_row := HBoxContainer.new()
+	vol_row.add_theme_constant_override("separation", 12)
+	var vl := _label("ระดับเสียง", UiTheme.body(), 16, UiTheme.PAPER)
+	vl.custom_minimum_size = Vector2(90, 0)
+	vol_row.add_child(vl)
+	var vol := HSlider.new()
+	vol.min_value = 0.0
+	vol.max_value = 1.0
+	vol.step = 0.05
+	vol.value = cfg.get_value("video", "volume", 0.8)
+	vol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vol.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	vol.value_changed.connect(func(v: float): set_volume(v))
+	vol_row.add_child(vol)
+	box.add_child(vol_row)
+	for pair in [["Music", "เพลง"], ["Ambience", "บรรยากาศ"]]:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 12)
+		var l := _label(pair[1], UiTheme.body(), 16, UiTheme.PAPER)
+		l.custom_minimum_size = Vector2(90, 0)
+		row.add_child(l)
+		var sl := HSlider.new()
+		sl.min_value = 0.0
+		sl.max_value = 1.0
+		sl.step = 0.05
+		sl.value = cfg.get_value("video", "vol_" + pair[0], 1.0)
+		sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var bus: String = pair[0]
+		sl.value_changed.connect(func(v: float): set_bus_volume(bus, v))
+		row.add_child(sl)
+		box.add_child(row)
+	pause_fs = _button("", false)
+	pause_fs.pressed.connect(func():
+		set_fullscreen(not is_fullscreen())
+		pause_fs.text = "เต็มจอ: " + ("เปิด" if is_fullscreen() else "ปิด") + "  (F11)")
+	box.add_child(pause_fs)
+	pause_gore = _button("เลือดและชิ้นส่วน: " + ("น้อย" if Look.low_gore else "เต็ม"), false)
+	pause_gore.pressed.connect(toggle_gore)
+	box.add_child(pause_gore)
+	var keys := _button("วิธีเล่น (H)", false)
+	keys.pressed.connect(func():
+		toggle_pause()
+		toggle_help())
+	box.add_child(keys)
+	var leave := _button("กลับเมนูหลัก (บันทึกให้)", false)
+	leave.pressed.connect(func(): leave_requested.emit())
+	box.add_child(leave)
+	var quit := _button("ออกจากเกม (บันทึกให้)", false)
+	quit.pressed.connect(func(): quit_requested.emit())
+	box.add_child(quit)
 
 
 func is_fullscreen() -> bool:
@@ -148,7 +338,7 @@ func push_feed(text: String, kind := "info") -> void:
 	var p := PanelContainer.new()
 	var sb := UiTheme.box(UiTheme.CARD, 4)
 	sb.border_width_left = 3
-	sb.border_color = UiTheme.BLOOD if kind == "kill" else UiTheme.WARN
+	sb.border_color = UiTheme.BLOOD if kind == "kill" else (Color("5a9ad8") if kind == "chat" else UiTheme.WARN)
 	sb.content_margin_top = 6
 	sb.content_margin_bottom = 6
 	sb.content_margin_left = 12
@@ -472,9 +662,7 @@ func _build_menu() -> void:
 	show_gore.call()
 	gore.add_theme_font_size_override("font_size", 16)
 	gore.pressed.connect(func():
-		Look.low_gore = not Look.low_gore
-		cfg.set_value("video", "low_gore", Look.low_gore)
-		cfg.save(SETTINGS)
+		toggle_gore()
 		show_gore.call())
 	fs_button = _button("", false)
 	fs_button.add_theme_font_size_override("font_size", 16)
@@ -606,6 +794,7 @@ func _line_edit(text: String, placeholder: String) -> LineEdit:
 
 func _button(text: String, primary: bool) -> Button:
 	var b := Button.new()
+	b.pressed.connect(func(): Sfx.play_ui(self, "ui_click"))
 	b.text = text
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_font_override("font", UiTheme.heading())
@@ -825,7 +1014,8 @@ class HelpSheet extends Control:
 		["[Shift]", "วิ่ง (เร็ว แต่เสียงดัง)"], ["[Ctrl]/[C]", "ย่อง (เงียบ ซอมบี้เห็นยาก)"],
 		["[R]", "ตอกไม้เสริม / ซ่อมประตู"], ["[E] ที่บันได", "ขึ้น / ลงดาดฟ้า"],
 		["[E] ค้าง", "เลือกสิ่งที่จะทำกับของตรงหน้า"], ["[H]", "เปิด / ปิดหน้านี้"],
-		["[Tab]", "ดูของที่สวม · คลิกเพื่อถอด"], ["[Q]", "รักษาด่วน (ห้ามเลือดก่อน)"], ["เสื้อผ้า", "กันกัด ลดโอกาสติดเชื้อ แต่ขาดได้"],
+		["[Tab]", "กระเป๋า · ลากของ / เก็บในตู้"], ["[Q]", "รักษาด่วน (ห้ามเลือดก่อน)"],
+		["[M]", "แผนที่ · คลิกขวาปักหมุด"], ["[Enter]", "แชท · [Esc] เมนู"], ["เสื้อผ้า", "กันกัด ลดโอกาสติดเชื้อ แต่ขาดได้"],
 	]
 
 	func _draw() -> void:

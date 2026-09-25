@@ -63,6 +63,8 @@ var look := {}  # colours and shapes to draw with, from app_code
 # the ids (slot -> id, from snapshots), which is all drawing and speed need.
 var worn := {}
 var wear_ids := {}
+var say := ""  # last thing said in chat, shown over their head for say_t seconds
+var say_t := 0.0
 var open_box := -1  # server: the container this player has open in the bag screen
 var torn := ""  # server: name of something a bite just tore apart, for main to report
 var phase := 0.0
@@ -184,6 +186,19 @@ func bite(dmg: float) -> void:
 		refresh_wear()
 
 
+func _footstep() -> void:
+	var t := world.get_tile(world.to_cell(position))
+	var surface := "concrete"
+	if on_roof:
+		surface = "concrete"
+	elif t in [World.GRASS, World.DIRT, World.TREE]:
+		surface = "grass"
+	elif t in [World.FLOOR, World.DOOR, World.IWALL]:
+		surface = "wood"
+	var vol := -20.0 if sneak else (-6.0 if sprint else -12.0)
+	Sfx.play(get_parent(), "step_" + surface, position, vol, 1.1 if sprint else 1.0)
+
+
 func set_appearance(code: int) -> void:
 	app_code = code
 	look = Look.look_of(Look.unpack(code))
@@ -223,7 +238,10 @@ func _process(delta: float) -> void:
 	var step := position.distance_to(last_pos)
 	last_pos = position
 	moving = step > 0.05
+	var before := phase
 	phase = phase + step * 0.3 if moving else 0.0  # longer strides
+	if moving and floor(phase / PI) != floor(before / PI) and alive() and get_parent().get("in_game"):
+		_footstep()
 	flashlight.rotation = aim.angle()
 	lift = lerpf(lift, world.roof_height(position) if on_roof else 0.0, minf(1.0, 12.0 * delta))
 	flashlight.position = Look.CHEST + Vector2(0, -lift)
