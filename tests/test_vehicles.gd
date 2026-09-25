@@ -76,8 +76,13 @@ func run() -> void:
 	# Off at the other end: the bike stays there.
 	me.move = Vector2.ZERO
 	simulate(1.5)
-	main.actions.req_interact()
-	check(me.riding < 0 and v.rider == 0, "E gets you off")
+	# Tapping E, the way a player does (key down, key up), not calling the server directly.
+	for down in [true, false]:
+		var e := InputEventKey.new()
+		e.keycode = KEY_E
+		e.pressed = down
+		main._unhandled_input(e)
+	check(me.riding < 0 and v.rider == 0, "tapping E gets you off")
 	var left_at: Vector2 = v.pos
 	check(me.position.distance_to(left_at) < 16.0, "you step off beside it")
 

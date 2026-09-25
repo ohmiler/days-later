@@ -9,7 +9,12 @@ class_name Rig
 
 ## `st` keys (all optional except view): view [view, flip], angle, phase,
 ## moving, zombie, attack, ext, guard, weapon (draw dict), fall, fall_dir,
-## girth, recoil, crouch.
+## girth, recoil, crouch, anchors.
+## `anchors` poses the body by where it touches something instead of by an
+## action: {seat, hands: [far, near], feet: [far, near]}, in the same space
+## (facing +x side-on). The hips sit on `seat`, and elbows and knees bend to
+## put the hands and feet where they're asked (see _reach). A bike, a chair,
+## a jerrycan held in both hands: each just says where its handholds are.
 ## Zombies also take: breed ("normal", "runner", "fat", "screamer"), bite
 ## (0..1 through a lunge, or absent), scream (0..1), hit (head snap offset),
 ## and vary: {tilt, arm_y, droop, limp} so no two shamble quite the same.
@@ -57,7 +62,9 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 		bob += maxf(0.0, sin(phase * 0.5)) * 0.8 * vary.get("limp", 1.0)  # limp
 
 	var r := {view = view, sx = sx, girth = girth, base = base, tip = tip, fall_dir = fall_dir,
-			zombie = zombie, closed = fall >= 1.0}
+			zombie = zombie, closed = fall >= 1.0, hips = Vector2.ZERO}
+	if st.has("anchors") and fall <= 0.0:
+		return _anchored(r, st.anchors, view)
 	r.legs = _legs(view, s, angle, sx, attack, ext)
 
 	# The upper body bobs with the walk, leans in (zombies), lunges into punches,
@@ -108,6 +115,60 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 		if scream > 0.0:
 			r.head += (Vector2(-1.2, -0.9) if view == Look.SIDE else Vector2(0, -1.0)) * sin(clampf(scream, 0, 1) * PI)
 	r.front_kick = _front_kick(angle, sx, ext) if attack == Look.KICK and view == Look.FRONT else {}
+	return r
+
+
+# --- Anchored poses ------------------------------------------------------------------
+
+const THIGH := 5.2
+const SHIN := 5.2
+const UPPER_ARM := 4.4
+const FOREARM := 4.2
+
+
+## Where the middle joint of a two-part limb goes for its end to reach `target`
+## from `root`: the elbow or knee, bent to the `bend` side (+1 or -1). Out of
+## reach, the limb points straight at the target.
+static func _reach(root: Vector2, target: Vector2, l1: float, l2: float, bend: float) -> Array:
+	var to := target - root
+	var d := clampf(to.length(), 0.5, l1 + l2 - 0.01)
+	var dir := to.normalized() if to.length() > 0.01 else Vector2.DOWN
+	var a := acos(clampf((l1 * l1 + d * d - l2 * l2) / (2.0 * l1 * d), -1.0, 1.0))
+	var mid := root + dir.rotated(a * bend) * l1
+	var end := root + dir * d
+	return [mid, end]
+
+
+## Sat on something with hands and feet on its holds (see build's `anchors`).
+static func _anchored(r: Dictionary, an: Dictionary, view: int) -> Dictionary:
+	var seat: Vector2 = an.get("seat", Vector2(0, -10))
+	var up := seat - Vector2(0, -10)  # hips normally sit at y -10
+	r.upper = Vector2(up.x * r.sx, up.y)  # (the body is placed unmirrored; its parts are drawn mirrored)
+	r.hips = up
+	var feet: Array = an.get("feet", [])
+	var hands: Array = an.get("hands", [])
+	var side := view == Look.SIDE
+	# Legs: from each hip down to its foothold, knees forward (side-on) or out.
+	r.legs = []
+	for i in 2:
+		var hip := up + (Vector2(-0.3 + 0.6 * i, -10) if side else Vector2(-1.7 + 3.4 * i, -10))
+		var foot: Vector2 = feet[i] if i < feet.size() else hip + Vector2(0, 10)
+		var bend := -1.0 if side else (1.0 if i == 0 else -1.0)
+		var k := _reach(hip, foot, THIGH, SHIN, bend)
+		r.legs.append({type = "limb", hip = hip, knee = k[0], foot = k[1], far = side and i == 0, shoe = "rect", e = 0.0})
+	# Arms: from the shoulders (which ride with the upper body) to each hold.
+	var arms := []
+	var shs := shoulders(view)
+	for i in 2:
+		var sh: Vector2 = shs[i]
+		var hand: Vector2 = (hands[i] if i < hands.size() else up + sh + Vector2(0, 8)) - up
+		var bend := 1.0 if side else (-1.0 if i == 0 else 1.0)  # elbows down, or out
+		var k := _reach(sh, hand, UPPER_ARM, FOREARM, bend)
+		arms.append(_arm(sh, k[0], k[1], side and i == 0, {dim = 0.25 if side and i == 0 else 0.0, fist = true, idx = i}))
+	r.arms_back = arms.filter(func(a): return a.behind)
+	r.arms_front = arms.filter(func(a): return not a.behind)
+	r.head = Look.HEAD
+	r.front_kick = {}
 	return r
 
 

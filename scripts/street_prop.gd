@@ -195,6 +195,26 @@ const BIKE_COLORS := {
 }
 
 
+## Where a rider's hips, hands and feet go on each model, facing +x from the
+## bike's ground point (see Rig anchors). Sports bikes put the feet back and
+## the bars low; trail bikes sit tall.
+const BIKE_SEATS := {
+	wave = {seat = Vector2(-7, -15.5), bars = Vector2(7.5, -20.5), pegs = Vector2(0, -9.5)},
+	click = {seat = Vector2(-7, -16), bars = Vector2(8, -22), pegs = Vector2(0.5, -10.5)},
+	ev = {seat = Vector2(-7, -16), bars = Vector2(8, -22), pegs = Vector2(0.5, -10.5)},
+	scoopy = {seat = Vector2(-8, -15.5), bars = Vector2(7.5, -21), pegs = Vector2(0, -10.5)},
+	pcx = {seat = Vector2(-6, -17), bars = Vector2(7, -22.5), pegs = Vector2(1, -10.5)},
+	sport = {seat = Vector2(-6.5, -16), bars = Vector2(6, -18.5), pegs = Vector2(-3, -9)},
+	trail = {seat = Vector2(-5, -19), bars = Vector2(5, -23), pegs = Vector2(-1, -10)},
+}
+
+
+## A rider's anchors on a bike of this model, side-on (see Rig.build).
+static func rider_anchors(model: String) -> Dictionary:
+	var b: Dictionary = BIKE_SEATS.get(model, BIKE_SEATS.wave)
+	return {seat = b.seat, hands = [b.bars + Vector2(-0.8, 0.3), b.bars], feet = [b.pegs + Vector2(-0.6, 0), b.pegs]}
+
+
 static func bike_model(seed_val: int) -> String:
 	var r := (seed_val >> 4) % 100
 	for m in BIKE_MODELS:
@@ -214,9 +234,10 @@ func _motorbike() -> void:
 	var s: float = data.get("dir", 1.0 if data.seed % 2 else -1.0)  # (a ridden bike faces where it went)
 	var fallen: bool = not data.get("upright", data.seed % 7 != 3)
 	var extra: int = (data.seed >> 12) % 10
-	_shadow(Vector2(15, 3) if not fallen else Vector2(16, 5))
-	# Fallen over: seen from above it lies flat, so squash it and tip it.
-	draw_set_transform(Vector2(0, -2) if fallen else Vector2.ZERO, -0.12 * s if fallen else 0.0, Vector2(s, 0.5 if fallen else 1.0))
+	_shadow(Vector2(15, 3))
+	# (Knocked-over bikes are drawn standing for now: lying flat needs the bike
+	# drawn from any angle, and squashing the side view just looked broken.)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, 1.0))
 	match model:
 		"wave":
 			_bike_wave(col)

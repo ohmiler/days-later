@@ -135,7 +135,7 @@ static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
 	_xf(ci, Vector2.ZERO, Vector2(sx, 1))
 	for leg in r.legs:
 		_draw_leg(ci, leg, lk)
-	_rect(ci, Rect2(-3.3, -11.5, 6.6, 2.6), pants.darkened(0.06))  # hips join the legs to the body
+	_rect(ci, Rect2(Vector2(-3.3, -11.5) + r.get("hips", Vector2.ZERO), Vector2(6.6, 2.6)), pants.darkened(0.06))  # hips join the legs to the body
 
 	_xf(ci, r.upper, Vector2(sx, 1))
 	var pack: Dictionary = wear.get("back", {})
