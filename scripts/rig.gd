@@ -18,6 +18,7 @@ class_name Rig
 ## a jerrycan held in both hands: each just says where its handholds are.
 ## Zombies also take: breed ("normal", "runner", "fat", "screamer"), bite
 ## (0..1 through a lunge, or absent), scream (0..1), hit (head snap offset),
+## rise (0..1 getting up off the ground, with fall_dir: the side it lay on),
 ## and vary: {tilt, arm_y, droop, limp} so no two shamble quite the same.
 
 
@@ -70,7 +71,18 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 			zombie = zombie, closed = fall >= 1.0, hips = Vector2.ZERO, shadow = st.get("shadow", true)}
 	if st.has("anchors") and fall <= 0.0:
 		return _anchored(r, st.anchors, view)
-	r.legs = _legs(view, s, angle, sx, attack, ext)
+	if st.get("rise", -1.0) >= 0.0 and fall <= 0.0:
+		r.view = Look.SIDE
+		r.sx = -1.0 if fall_dir > 0 else 1.0  # (seen side-on, the way it fell)
+		return _rising(r, st.rise, girth, zombie)
+	var walk := {}
+	if zombie and breed != "runner":
+		# A shamble: short steps, and some drag one foot along the ground.
+		var drag := -1
+		if vary.get("limp", 1.0) > 1.1:
+			drag = 1 if vary.get("arm_y", 0.0) > 0.0 else 0
+		walk = {stride = 3.0, drag = drag}
+	r.legs = _legs(view, s, angle, sx, attack, ext, walk)
 
 	# The upper body bobs with the walk, leans in (zombies), lunges into punches,
 	# rocks back from kicks and hits, and drops when crouching.
@@ -196,6 +208,51 @@ static func _leg(hip: Vector2, foot: Vector2, far: bool, pref := Vector2.RIGHT, 
 	return leg
 
 
+# --- Getting up ----------------------------------------------------------------------
+
+## Getting up off the ground, u in 0..1, from lying on its back (as `fall`
+## leaves it): sit up propped on the hands, draw the legs in to a crouch, then
+## stand. The upper body turns about the hips (`torso`, see Look.draw_rig).
+static func _rising(r: Dictionary, u: float, girth: float, zombie: bool) -> Dictionary:
+	var fd: float = r.fall_dir
+	var lie := fd * PI * 0.5  # the body's turn lying flat
+	var a := smoothstep(0.0, 1.0, clampf(u / 0.4, 0, 1))  # sitting up
+	var b := smoothstep(0.0, 1.0, clampf((u - 0.4) / 0.4, 0, 1))  # legs under it
+	var c := smoothstep(0.0, 1.0, clampf((u - 0.8) / 0.2, 0, 1))  # standing
+	var turn := lie * (1.0 - b)
+	var sink := 4.5 * b * (1.0 - c)  # how low the hips are, crouched
+	r.base = Transform2D(turn, Vector2.ZERO)
+	r.tip = 1.0 - b
+	r.torso = -lie * a if b <= 0.0 else -turn  # sitting up, then kept upright
+	var torso: float = r.torso
+	r.upper = Vector2(0, sink)
+	r.hips = Vector2(0, sink)
+	r.closed = false
+	r.legs = [_leg(Vector2(-0.3, HIP_Y + sink), Vector2(-0.3, 0), true), _leg(Vector2(0.3, HIP_Y + sink), Vector2(0.3, 0), false)]
+	# Hands on the ground behind the hips while it pushes up, then back to reaching.
+	var hips_w: Vector2 = (r.base as Transform2D) * Vector2(0, HIP_Y + sink)
+	var ground := Vector2(hips_w.x + fd * 3.0, 0.0)
+	var pivot := Vector2(0, HIP_Y + sink)
+	var to_world: Transform2D = (r.base as Transform2D) * (Transform2D(0, pivot) * Transform2D(r.torso, Vector2.ZERO) * Transform2D(0, -pivot)) 			* Transform2D(0, Vector2(r.sx, 1), 0, r.upper as Vector2)
+	var on_ground: Vector2 = to_world.affine_inverse() * ground
+	var shs := shoulders(Look.SIDE, girth)
+	var z := {sleeve_dark = 0.1, skin_dark = 0.1} if zombie else {}
+	var reach := _zombie_arms(Look.SIDE, 0.0, girth) if zombie else _idle_arms(Look.SIDE, 0.0, girth)
+	var limp := _idle_arms(Look.SIDE, 0.0, girth)  # (how the arms lay, fallen)
+	var arms := []
+	for i in 2:
+		var hand: Vector2 = (limp[i].hand as Vector2).lerp(on_ground + Vector2(0.8 * i, 0), clampf(u / 0.15, 0, 1)).lerp(reach[i].hand, c)
+		var extra := z.duplicate()
+		extra.dim = 0.25 if i == 0 else 0.0
+		extra.idx = i
+		arms.append(_reach_arm(shs[i], hand, Vector2(-0.4, 1.0), i == 0, extra))
+	r.arms_back = arms.filter(func(x): return x.behind)
+	r.arms_front = arms.filter(func(x): return not x.behind)
+	r.head = Look.HEAD + (Vector2(0.7, 0.4) if zombie else Vector2.ZERO)
+	r.front_kick = {}
+	return r
+
+
 # --- Anchored poses ------------------------------------------------------------------
 
 ## Sat on something with hands and feet on its holds (see build's `anchors`).
@@ -251,14 +308,26 @@ static func shoulders(view: int, girth := 1.0) -> Array:
 #   "line"  side view, bent at the knee
 #   "limb"  kicking or sat on something (plus shoe, e)
 
-static func _legs(view: int, s: float, angle: float, sx: float, attack: int, ext: float) -> Array:
+## `walk` changes the gait: {stride, drag}; drag is the leg (0 far/left, 1
+## near/right) that scrapes along the ground instead of stepping, or -1.
+static func _legs(view: int, s: float, angle: float, sx: float, attack: int, ext: float, walk := {}) -> Array:
 	if attack == Look.KICK:
 		return _kick_legs(view, angle, sx, ext)
+	var stride: float = walk.get("stride", 4.0)
+	var drag: int = walk.get("drag", -1)
 	if view == Look.SIDE:
 		# Pendulum legs from the hip; whichever foot swings forward lifts a little.
-		return [_leg(Vector2(-0.3, HIP_Y), Vector2(-0.3 - s * 4.0, -maxf(0.0, -s) * 1.5), true),
-				_leg(Vector2(0.3, HIP_Y), Vector2(0.3 + s * 4.0, -maxf(0.0, s) * 1.5), false)]
-	return [_rect_leg(-3.1, maxf(0.0, s) * 2.2), _rect_leg(0.3, maxf(0.0, -s) * 2.2)]
+		# A dragged foot swings half as far and never leaves the ground.
+		var legs := []
+		for i in 2:
+			var sw := s if i == 1 else -s
+			var hip := Vector2(-0.3 + 0.6 * i, HIP_Y)
+			var foot := hip + Vector2(sw * stride, 10.0 - maxf(0.0, sw) * 1.5)
+			if i == drag:
+				foot = hip + Vector2(sw * stride * 0.5 - 0.8, 10.0)
+			legs.append(_leg(hip, foot, i == 0))
+		return legs
+	return [_rect_leg(-3.1, 0.0 if drag == 0 else maxf(0.0, s) * 2.2), _rect_leg(0.3, 0.0 if drag == 1 else maxf(0.0, -s) * 2.2)]
 
 
 ## A front/back leg: a column from the hip down, its foot lifted by `lift`.
@@ -533,7 +602,25 @@ static func _zombie_arms(view: int, phase: float, girth: float, breed := "normal
 				extra.big_hand = big and howl < 0.5
 				out.append(_reach_arm(sh, hand, Vector2(s, 0.2), false, extra, _elbow_bend(view)))
 			return out
-	return []  # from behind, the arms reach away from the camera, hidden by the body
+		Look.BACK:
+			# Reaching away from the camera: the arms go up past the shoulders,
+			# hands out either side of the head (behind the body), unless they hang.
+			var out := []
+			for i in 2:
+				var s := -1.0 if i == 0 else 1.0
+				var sh: Vector2 = shs[i]
+				var hand := Vector2(5.0 * s * girth, -20.4 + sway * s * 0.4 + arm_y * 0.3)
+				var behind := true
+				if breed == "fat" or droop == i:
+					hand = Vector2(5.2 * s * girth, -11.0)
+					behind = false
+				hand += Vector2(2.0 * s * grab, -0.8 * maxf(grab, 0.0))
+				hand = hand.lerp(Vector2(6.5 * s * girth, -12.0), howl)  # thrown back to howl: toward the camera
+				if howl > 0.5:
+					behind = false
+				out.append(_reach_arm(sh, hand, Vector2(s, 0.2), behind, z.duplicate(), _elbow_bend(view)))
+			return out
+	return []
 
 
 # --- Easing between poses ------------------------------------------------------------
