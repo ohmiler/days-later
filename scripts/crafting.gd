@@ -9,6 +9,8 @@ const DATA := "res://data/recipes.cfg"  # (exports must include *.cfg, like data
 const SALVAGE_TIME := 1.5
 const REPAIR_TIME := 2.0
 const REPAIR_SHARE := 0.5  # a repair gives back this share of full durability
+const STRIP_TIME := 5.0  # pulling a cupboard apart by hand
+const STRIP_TOOLS := ["hammer", "axe", "pipe", "machete"]  # ...twice as fast with one of these in hand
 
 ## id -> {name, needs, makes, count, time}, read the first time Crafting is used.
 static var RECIPES: Dictionary = _load()
@@ -124,6 +126,23 @@ func req_repair(ref: Array) -> void:
 	_start(p, {kind = "repair", ref = ref, id = it.id}, REPAIR_TIME)
 
 
+## Pull a piece of furniture apart for its wood, nails and metal. Loud.
+func start_strip(p: Player, id: int) -> void:
+	var f: FurnitureProp = main.world.container_nodes[id]
+	if f.stripped:
+		return
+	var tool := p.held_weapon() in STRIP_TOOLS
+	_start(p, {kind = "strip", id = id}, STRIP_TIME * (0.5 if tool else 1.0))
+	main._make_noise(f.position, main.NOISE_HIT)
+	if not tool:
+		main._toast(p, "รื้อด้วยมือเปล่า · ถือค้อนหรือขวานจะเร็วกว่า")
+
+
+@rpc("authority", "call_local", "reliable")
+func container_stripped(id: int) -> void:
+	main.world.container_nodes[id].set_stripped(true)
+
+
 func _at(p: Player, ref: Array):
 	if ref.size() == 2 and ref[0] == "inv" and ref[1] is int and ref[1] >= 0 and ref[1] < p.inv.size():
 		return p.inv[ref[1]]
@@ -160,6 +179,8 @@ func server_tick(p: Player, delta: float) -> void:
 			_finish_salvage(p, job)
 		"repair":
 			_finish_repair(p, job)
+		"strip":
+			_finish_strip(p, job.id)
 	main.inventory._send_inv(p)
 
 
@@ -200,6 +221,22 @@ func _finish_repair(p: Player, job: Dictionary) -> void:
 	var full: int = Items.def(it.id).hp
 	it.hp = mini(full, it.hp + ceili(full * REPAIR_SHARE))
 	main._toast(p, "ซ่อม%s (%d/%d)" % [Items.display_name(it.id), it.hp, full])
+
+
+func _finish_strip(p: Player, id: int) -> void:
+	var f: FurnitureProp = main.world.container_nodes[id]
+	if f.stripped or p.position.distance_to(f.position) > Interact.CONTAINER_REACH + 8.0:
+		return
+	container_stripped.rpc(id)
+	main._make_noise(f.position, main.NOISE_BREAK)
+	main.fx_sound.rpc("kick", f.position)
+	var parts: Dictionary = FurnitureProp.STRIP.get(f.data.kind, {wood = 1})
+	var got := []
+	for part in parts:
+		for i in parts[part]:
+			_give_or_drop(p, part)
+		got.append("%s ×%d" % [Items.display_name(part), parts[part]])
+	main._toast(p, "รื้อได้ %s" % ", ".join(got))
 
 
 ## Use up `n` of what fits `need` from the bag.

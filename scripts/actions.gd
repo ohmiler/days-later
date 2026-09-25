@@ -117,6 +117,8 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			p.kills += 1
 		"sleep":
 			main.survival.start_sleep(p, t.id)
+		"strip":
+			main.crafting.start_strip(p, t.id)
 		"claim":
 			p.bed = t.id
 			main.fx_sound.rpc("rustle", p.position)

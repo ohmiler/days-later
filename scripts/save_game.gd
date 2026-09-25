@@ -13,7 +13,7 @@ class_name SaveGame
 ## (world.save.v1 and so on). A save that cannot be read, or that comes from a
 ## newer game, is never written over: the game says so and leaves it alone.
 
-const VERSION := 6
+const VERSION := 7
 const GAME_VERSION := "0.4"  # shown to people; not used for compatibility
 
 ## [kind, from version] -> the function that upgrades it one step.
@@ -25,6 +25,7 @@ const MIGRATIONS := {
 	"player:4": "_player_4_to_5",
 	"player:5": "_player_5_to_6",
 	"world:5": "_world_5_to_6",
+	"world:6": "_world_6_to_7",
 }
 
 
@@ -65,10 +66,13 @@ static func save_world(main: Node) -> void:
 	for d in world.doors:
 		doors.append([d.id, d.closed, d.hp, d.boards, d.broken, d.kind if world.is_built(d.id) else "", d.cell])
 	var searched := []
+	var stripped := []
 	var boxes := {}  # container id -> slots, for any that hold something
 	for f: FurnitureProp in world.container_nodes:
 		if f.searched:
 			searched.append(f.data.id)
+		if f.stripped:
+			stripped.append(f.data.id)
 		if f.items.any(func(x): return x != null):
 			boxes[f.data.id] = f.items
 	var items := []
@@ -83,7 +87,7 @@ static func save_world(main: Node) -> void:
 		version = VERSION, game = GAME_VERSION, saved_at = int(Time.get_unix_time_from_system()),
 		seed = main.world_seed, day = main.day, time = main.time,
 		next_zid = main.next_zid, next_pickup = main.next_pickup,
-		doors = doors, searched = searched, boxes = boxes, pickups = items, zombies = zs,
+		doors = doors, searched = searched, stripped = stripped, boxes = boxes, pickups = items, zombies = zs,
 		things = main.things.changed(),
 	})
 
@@ -117,6 +121,9 @@ static func load_world_into(main: Node, w: Dictionary) -> bool:
 	for id in w.searched:
 		if id < world.container_nodes.size():
 			world.container_nodes[id].set_searched(true)
+	for id in w.stripped:
+		if id < world.container_nodes.size():
+			world.container_nodes[id].set_stripped(true)
 	for e in w.pickups:
 		main.pickups[e[0]] = {pos = e[1], item = e[2]}
 	for e in w.zombies:
@@ -246,6 +253,12 @@ static func _world_5_to_6(d: Dictionary) -> Dictionary:
 		if e[3] is Array and e[3].size() > 3 and e[3][3].get("body", "") in _OVER:
 			e[3][3].over = e[3][3].body
 			e[3][3].erase("body")
+	return d
+
+
+## v7 remembers furniture pulled apart for materials.
+static func _world_6_to_7(d: Dictionary) -> Dictionary:
+	d.merge({stripped = []}, false)
 	return d
 
 

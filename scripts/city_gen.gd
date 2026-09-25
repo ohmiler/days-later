@@ -27,7 +27,7 @@ const DECOR := {
 	"store": ["boxes", "litter", "litter"],
 	"home": ["mattress", "fan", "tv", "shrine", "litter"],
 }
-## What a shop sells decides what you can find inside it (see Items.LOOT).
+## What a shop sells decides what you can find inside it (see Items.roll).
 const SIGN_LOOT := {
 	"ร้านขายยา": "med", "คลินิก": "med",
 	"ข้าวมันไก่": "food", "ก๋วยเตี๋ยวเรือ": "food", "กาแฟโบราณ": "food", "ส้มตำ ไก่ย่าง": "food",
