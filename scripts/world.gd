@@ -14,6 +14,16 @@ const WINDOW_HP := 15.0  # glass: one good hit
 const WINDOW_SLOW := 0.35  # climbing through a smashed window
 const BOARD_HP := 60.0  # each board nailed across a door
 const MAX_BOARDS := 3
+## Things players can build (B). solid ones block like a shut door and get
+## bashed; the others are traps you walk over. cost is in wood planks.
+const BUILDS := {
+	"fence": {name = "รั้วไม้", cost = 2, hp = 80.0, solid = true},
+	"wall": {name = "กำแพงไม้", cost = 4, hp = 220.0, solid = true},
+	"wire": {name = "ลวดหนาม", cost = 2, hp = 60.0, solid = false},
+	"spikes": {name = "กับดักตะปู", cost = 1, hp = 5.0, solid = false},
+}
+const BUILD_ORDER := ["fence", "wall", "wire", "spikes"]
+const WIRE_SLOW := 0.4
 enum { GRASS, DIRT, WATER, TREE, WALL, ROAD, SIDEWALK, SOI, BUILDING, PLAZA, FLOOR, IWALL, DOOR }
 const COLORS := {
 	GRASS: Color("4a5733"),
@@ -206,6 +216,39 @@ func is_solid(c: Vector2i) -> bool:
 	return get_tile(c) in [WATER, TREE, WALL, BUILDING, IWALL] or blocked.has(c)
 
 
+func is_built(id: int) -> bool:
+	return BUILDS.has(doors[id].get("kind", "door"))
+
+
+## Add or rebuild a player-made structure (every peer, from the server).
+func add_structure(id: int, cell: Vector2i, kind: String, hp: float) -> void:
+	var d := {id = id, cell = cell, kind = kind, closed = BUILDS[kind].solid, hp = hp, boards = 0, broken = false}
+	if id < doors.size():
+		doors[id] = d
+		door_nodes[id].door = d
+		door_nodes[id].queue_redraw()
+	else:
+		doors.append(d)
+		var n := DoorProp.new()
+		n.door = d
+		n.position = Vector2(cell.x * TILE, (cell.y + 1) * TILE)
+		n.z_index = 0 if not BUILDS[kind].solid else 1
+		prop_parent.add_child(n)
+		door_nodes.append(n)
+	door_at[cell] = id
+	astar.set_point_solid(cell, d.closed)
+
+
+## Can a structure go here? (ignores who is standing on it; the server checks that)
+func can_build(cell: Vector2i) -> bool:
+	if not in_bounds(cell) or stairs.has(cell):
+		return false
+	var id: int = door_at.get(cell, -1)
+	if id >= 0:
+		return is_built(id) and doors[id].broken  # rebuild on the wreck of your own
+	return get_tile(cell) not in [WATER, TREE, WALL, BUILDING, IWALL] and not blocked.has(cell)
+
+
 func is_window(id: int) -> bool:
 	return doors[id].get("kind", "door") == "window"
 
@@ -213,7 +256,11 @@ func is_window(id: int) -> bool:
 ## Movement multiplier at a position: climbing through a smashed window is slow.
 func slow_at(pos: Vector2) -> float:
 	var id: int = door_at.get(to_cell(pos), -1)
-	return WINDOW_SLOW if id >= 0 and is_window(id) and not doors[id].closed else 1.0
+	if id < 0 or doors[id].closed or doors[id].broken and is_built(id):
+		return 1.0
+	if is_window(id):
+		return WINDOW_SLOW
+	return WIRE_SLOW if doors[id].kind == "wire" else 1.0
 
 
 ## Update a door from the server's state.
@@ -223,7 +270,9 @@ func set_door(id: int, closed: bool, hp: float, boards: int, broken: bool) -> vo
 	d.hp = hp
 	d.boards = boards
 	d.broken = broken
-	astar.set_point_solid(d.cell, closed)
+	if is_built(id) and broken:
+		d.closed = false  # a smashed fence is just debris
+	astar.set_point_solid(d.cell, d.closed)
 	door_nodes[id].queue_redraw()
 
 

@@ -7,8 +7,12 @@ var door: Dictionary
 
 
 func _draw() -> void:
-	if door.get("kind", "door") == "window":
+	var kind: String = door.get("kind", "door")
+	if kind == "window":
 		_draw_window()
+		return
+	if World.BUILDS.has(kind):
+		_draw_structure(kind)
 		return
 	var T := World.TILE
 	var wood := Color("7a5634")
@@ -66,3 +70,51 @@ func _draw_window() -> void:
 		var y: float = -12.0 + i * 3.5
 		draw_line(Vector2(-1, y), Vector2(T + 1, y + (1.2 if i % 2 else -1.2)), Color("a8885a"), 2.6)
 		draw_line(Vector2(-1, y - 1), Vector2(T + 1, y - 1 + (1.2 if i % 2 else -1.2)), Color("c8a878"), 0.5)
+
+
+func _draw_structure(kind: String) -> void:
+	var T := World.TILE
+	var wood := Color("9a7650")
+	if door.broken:
+		for i in 4:  # wreckage
+			var x := 2.0 + i * 3.5
+			draw_line(Vector2(x, -1), Vector2(x + 3, -3 - (i % 2) * 2), wood.darkened(0.3), 1.2)
+		return
+	var dmg: float = 1.0 - door.hp / World.BUILDS[kind].hp
+	match kind:
+		"fence":
+			draw_rect(Rect2(0, -2, T, 2), Color(0, 0, 0, 0.25))
+			for x in [1.0, 7.0, 13.0]:
+				draw_rect(Rect2(x, -13, 2.2, 13), wood.darkened(0.15))
+				draw_colored_polygon(PackedVector2Array([Vector2(x, -13), Vector2(x + 2.2, -13), Vector2(x + 1.1, -15)]), wood.darkened(0.15))
+			draw_rect(Rect2(0, -10, T, 2), wood)
+			draw_rect(Rect2(0, -5, T, 2), wood)
+		"wall":
+			draw_rect(Rect2(-0.5, -2, T + 1, 2), Color(0, 0, 0, 0.3))
+			for i in 4:
+				var y := -4.0 - i * 3.6
+				draw_rect(Rect2(-0.5, y, T + 1, 3.4), wood.darkened(0.05 * (i % 2)))
+				draw_rect(Rect2(-0.5, y, T + 1, 0.7), wood.lightened(0.15))
+			draw_line(Vector2(1, -2), Vector2(T - 1, -15), wood.darkened(0.3), 1.6)  # brace
+			draw_circle(Vector2(2, -9), 0.5, Color("6a6a6a"))
+			draw_circle(Vector2(T - 2, -9), 0.5, Color("6a6a6a"))
+		"wire":
+			for i in 3:
+				var x := 3.0 + i * 5.0
+				draw_set_transform(Vector2(x, -4), 0, Vector2(1, 0.8))
+				draw_arc(Vector2.ZERO, 3.2, 0, TAU, 12, Color("8a8e90"), 0.6)
+				draw_set_transform(Vector2.ZERO)
+				for k in 4:  # barbs
+					var a := k * TAU / 4 + i
+					var p := Vector2(x, -4) + Vector2.from_angle(a) * Vector2(3.2, 2.6)
+					draw_line(p, p + Vector2.from_angle(a + 0.8) * 1.2, Color("6a6e70"), 0.5)
+			draw_line(Vector2(0, -1), Vector2(0, -8), wood.darkened(0.2), 1.2)
+			draw_line(Vector2(T, -1), Vector2(T, -8), wood.darkened(0.2), 1.2)
+		"spikes":
+			draw_rect(Rect2(1, -6, T - 2, 5), wood.darkened(0.2))
+			draw_rect(Rect2(1, -6, T - 2, 1), wood)
+			for i in 6:
+				var p := Vector2(3 + (i % 3) * 5, -5 + (i / 3) * 2.5)
+				draw_line(p, p + Vector2(0.3, -2.5), Color("b8bcc0"), 0.5)
+	if dmg > 0.5 and kind in ["fence", "wall"]:
+		draw_line(Vector2(3, -12), Vector2(8, -6), Color(0, 0, 0, 0.5), 0.6)

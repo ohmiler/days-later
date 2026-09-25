@@ -20,6 +20,7 @@ var speed := 38.0
 var max_hp := 60.0
 var hp := 60.0
 var scream_cd := 0.0
+var trap_cd := 0.0  # server: time until spikes can hurt it again
 var net_pos := Vector2.ZERO
 var path: Array[Vector2i] = []
 var target: Player
