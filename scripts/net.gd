@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 6
+const PROTOCOL := 7
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -111,6 +111,7 @@ func _welcome(id: int) -> void:
 		doors.append([d.id, d.closed, d.hp, d.boards, d.broken, d.kind if main.world.is_built(d.id) else "", d.cell])
 	sync_state.rpc_id(id, searched, items, doors, stripped)
 	main.things.send_all(id)
+	main.vehicles.send_all(id)
 	main._add_player(id)
 	print("Player %d joined (%d online)" % [id, main.players.size()])
 
@@ -118,6 +119,7 @@ func _welcome(id: int) -> void:
 func _on_peer_disconnected(id: int) -> void:
 	pending.erase(id)
 	if main.players.has(id):
+		main.vehicles.dismount(main.players[id])
 		SaveGame.save_player(main.players[id])
 		main.players[id].queue_free()
 		main.players.erase(id)
@@ -224,6 +226,18 @@ func snapshot(ps: Array, zs: Array, t: float, d: int, rain := false) -> void:
 		p.sleeping = n[9]
 		p.bed = n[10]
 		p.sleep_bed = n[11]
+		if n[12] != p.riding and not (p.is_local and n[12] >= 0 and p.riding >= 0):
+			p.riding = n[12]
+			p.ride_vel = Vector2.ZERO
+		if p.riding >= 0:
+			var v: Dictionary = main.world.vehicles[p.riding]
+			v.fuel = n[13]
+			if not p.is_local:  # someone else riding by: the bike goes with them
+				if absf(e[1].x - v.pos.x) > 0.5:
+					v.dir = signf(e[1].x - v.pos.x)
+				v.pos = e[1]
+				v.upright = true
+				Vehicles._place(v)
 	for id in main.players.keys():
 		if not seen.has(id):
 			main.players[id].queue_free()

@@ -26,6 +26,7 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | `test_city` | The building plans (data/prefabs) are drawn correctly, the city from a seed is exactly the same as before (saved cities depend on it), every door and cupboard can be walked to |
 | `test_combat` | Punch/kick/weapon hits, clicking the body, knock-downs, cut-off arms, weapon wear, death styles |
 | `test_things` | Taps run dry, radios draw zombies, vending machines break open; only changes are saved, they survive a reload, joiners get them |
+| `test_vehicles` | Every bike model has ride data; riding is fast, burns fuel, is loud, knocks zombies down, can't go indoors; hotwiring, refuelling, and bikes stay where left after a reload |
 | `test_zombie` | The telegraphed bite, interrupting it, armour, chasing, getting back up |
 | `test_inventory` | Stack sizes, quick heal, drag/merge/split/drop, clothes slots, backpack size |
 | `test_crafting` | The recipe table has no typos, taking apart, making (standing still), mending, worn clothes never used up, pulling furniture apart |

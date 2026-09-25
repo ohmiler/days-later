@@ -12,6 +12,9 @@ func req_interact() -> void:
 	var p := main._sender()
 	if p == null or not p.alive() or p.sleeping:
 		return
+	if p.riding >= 0:
+		main.vehicles.dismount(p)  # E on a bike: get off
+		return
 	var t := Interact.target(main, p)
 	var a := Interact.primary(Interact.actions(main, p, t))
 	if a.is_empty():
@@ -117,6 +120,14 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			p.kills += 1
 		"sleep":
 			main.survival.start_sleep(p, t.id)
+		"ride":
+			main.vehicles.mount(p, t.id)
+		"hotwire":
+			main.crafting._start(p, {kind = "hotwire", id = t.id}, Vehicles.HOTWIRE_TIME)
+			main._make_noise(p.position, main.NOISE_SEARCH)
+			main._toast(p, "กำลังต่อสายตรง · ยืนนิ่งๆ")
+		"refuel":
+			main.vehicles.refuel(p, t.id)
 		"strip":
 			main.crafting.start_strip(p, t.id)
 		"claim":

@@ -211,8 +211,8 @@ func _motorbike() -> void:
 	var model := bike_model(data.seed)
 	var cols: Array = BIKE_COLORS[model]
 	var col: Color = cols[(data.seed >> 8) % cols.size()]
-	var s := 1.0 if data.seed % 2 else -1.0
-	var fallen: bool = data.seed % 7 == 3
+	var s: float = data.get("dir", 1.0 if data.seed % 2 else -1.0)  # (a ridden bike faces where it went)
+	var fallen: bool = not data.get("upright", data.seed % 7 != 3)
 	var extra: int = (data.seed >> 12) % 10
 	_shadow(Vector2(15, 3) if not fallen else Vector2(16, 5))
 	# Fallen over: seen from above it lies flat, so squash it and tip it.

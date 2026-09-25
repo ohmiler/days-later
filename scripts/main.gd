@@ -20,6 +20,7 @@ var net: Net
 var actions: Actions
 var things: Things
 var crafting: Crafting
+var vehicles: Vehicles
 var port := PORT  # override with -- --port=N
 var world: World
 var camera: Camera2D
@@ -90,6 +91,7 @@ func _ready() -> void:
 	actions = _module(Actions.new(), "Actions")
 	things = _module(Things.new(), "Things")
 	crafting = _module(Crafting.new(), "Crafting")
+	vehicles = _module(Vehicles.new(), "Vehicles")
 	y_sort_enabled = true  # characters and trees are drawn back-to-front by their feet
 	shade = CanvasModulate.new()
 	add_child(shade)
@@ -346,12 +348,13 @@ func _server_tick(delta: float) -> void:
 		day += 1
 	for p: Player in players.values():
 		p.server_tick(delta)
+		vehicles.server_tick(p, delta)
 		if p.pending_kind != Look.NONE:
 			p.pending_t -= delta
 			if p.pending_t <= 0:
 				combat._resolve_melee(p, p.pending_kind, p.pending_stats)
 				p.pending_kind = Look.NONE
-		if p.alive() and p.shoot_cd <= 0:
+		if p.alive() and p.shoot_cd <= 0 and p.riding < 0:
 			if p.kicking:
 				combat._melee(p, Look.KICK, combat.KICK)
 			elif p.punching:
@@ -392,7 +395,7 @@ func _server_tick(delta: float) -> void:
 		var ps := []
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed],
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0],
 					p.app_code, p.wear_ids])
 		var zs := []
 		for z: Zombie in zombies.values():
@@ -465,7 +468,7 @@ func _module(m: Node, node_name: String) -> Node:
 func _handler(method: StringName) -> Node:
 	if has_method(method):
 		return self
-	for m in [combat, inventory, doors, survival, net, actions, things, crafting]:
+	for m in [combat, inventory, doors, survival, net, actions, things, crafting, vehicles]:
 		if m.has_method(method):
 			return m
 	push_error("No handler for %s" % method)
@@ -624,7 +627,9 @@ func _process(delta: float) -> void:
 			me.kicking = kick
 		else:
 			net.send_input.rpc_id(1, move, aim, punch, kick, me.sprint, me.sneak)
-			if me.alive() and not me.sleeping:
+			if me.riding >= 0 and me.alive():
+				Vehicles.step(me, world.vehicles[me.riding], move, delta, world)
+			elif me.alive() and not me.sleeping:
 				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof)
 		camera.position = me.position + Look.CHEST + Vector2(0, -me.lift)
 		camera.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake
@@ -745,6 +750,9 @@ func _update_prompt(me: Player) -> void:
 		return
 	if me.sleeping:
 		prompt = "หลับอยู่ · เดินเพื่อลุกขึ้น"
+		return
+	if me.riding >= 0:
+		prompt = "[E] ลงจากรถ · " + Vehicles.title_of(world.vehicles[me.riding])
 		return
 	var t := Interact.target(self, me)
 	var list := Interact.actions(self, me, t)
