@@ -738,7 +738,8 @@ func _body_rows() -> Array:
 			if inv[k] != null and inv[k].id == "antibiotic":
 				slot = k
 		out.append({i = out.size(), wound = -1, icon = "fever", level = 2 if stage >= 2 else 1,
-				title = "ติดเชื้อ · ระยะ %d จาก 4: %s" % [stage + 1, Body.STAGES[stage][1]], sub = Body.STAGES[stage][2],
+				title = "ติดเชื้อ · ระยะ %d จาก 4: %s" % [stage + 1, Body.STAGES[stage][1]],
+				sub = Body.STAGES[stage][2] + (" · มียาปฏิชีวนะในกระเป๋า" if slot >= 0 else " · ต้องใช้ยาปฏิชีวนะ หาได้ที่ร้านขายยา"),
 				button = "cure" if slot >= 0 else "", slot = slot, infection = me.infection})
 	return out
 
