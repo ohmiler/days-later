@@ -77,7 +77,11 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			p.take_damage(10)
 			main.fx_sound.rpc("kick", drop)
 			main._make_noise(drop, main.NOISE_RUN)
-			main._toast(p, "กระโดดลงมา! เจ็บขา")
+			if randf() < 0.6:
+				Body.add(p, "sprain", "legs")
+				main._toast(p, "กระโดดลงมา! ข้อเท้าแพลง · วิ่งไม่ได้สักพัก")
+			else:
+				main._toast(p, "กระโดดลงมา! เจ็บขา")
 		"take":
 			var item: Dictionary = main.pickups[t.id].item
 			var took := false

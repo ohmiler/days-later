@@ -401,14 +401,46 @@ func _use_selected(p: Player) -> void:
 		p.infection = maxf(0.0, p.infection - d.cure)
 		if p.infection <= 0.0:
 			main._toast(p, "หายจากการติดเชื้อแล้ว")
-	if d.get("stop_bleed", false) and p.bleeding:
-		p.bleeding = false
-		main._toast(p, "ห้ามเลือดแล้ว")
+	if d.get("stop_bleed", false):
+		# A bandage goes on the worst open wound; a first-aid kit dresses them all.
+		var done := 0
+		while Body.bandage(p):
+			done += 1
+			if d.get("heal", 0.0) < 50.0:
+				break
+		p.bleeding = p.wounds.any(func(w): return w.bleeding and not w.bandaged)
+		if done > 0:
+			main._toast(p, "พันแผลแล้ว")
 	it.n -= 1
 	if it.n <= 0:
 		p.inv[p.sel] = null
 	main.fx_sound.rpc("eat", p.position)
 	main._toast(p, "ใช้ %s" % Items.display_name(it.id))
+	_send_inv(p)
+
+
+## Bandage one particular wound (from the body screen), with a bandage from the bag.
+@rpc("any_peer", "call_remote", "reliable")
+func req_treat(i: int) -> void:
+	var p := main._sender()
+	if p == null or not p.alive() or i < 0 or i >= p.wounds.size():
+		return
+	var slot := -1
+	for id in ["bandage", "firstaid"]:
+		for k in p.inv.size():
+			if slot < 0 and p.inv[k] != null and p.inv[k].id == id:
+				slot = k
+	if slot < 0:
+		main._toast(p, "ไม่มีผ้าพันแผล")
+		return
+	if not Body.bandage(p, i):
+		return
+	p.inv[slot].n -= 1
+	if p.inv[slot].n <= 0:
+		p.inv[slot] = null
+	p.bleeding = p.wounds.any(func(w): return w.bleeding and not w.bandaged)
+	main.fx_sound.rpc("rustle", p.position)
+	main._toast(p, "พันแผลที่%sแล้ว" % Body.where(p.wounds[i]))
 	_send_inv(p)
 
 

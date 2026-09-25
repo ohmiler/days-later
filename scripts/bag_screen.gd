@@ -24,6 +24,7 @@ signal drop_requested(ref: Array)
 signal craft_requested(id: String)
 signal salvage_requested(idx: int)
 signal repair_requested(ref: Array)
+signal treat_requested(i: int)  # bandage wound i
 signal box_closed
 
 const SLOT := 52.0
@@ -53,6 +54,7 @@ var box_id := -1  # a cupboard opened to take from or put in
 var box_items: Array = []
 var box_title := ""
 var doll_look := {}  # how you look (set by main while this is open)
+var me: Player  # you, for your wounds and how you are (set by main)
 var hover: Array = []  # ref under the mouse
 var drag: Array = []  # ref being dragged
 var drag_from := Vector2.ZERO
@@ -60,7 +62,7 @@ var picked: Array = []  # ref clicked: its card stays while the mouse moves on
 var menu_ref: Array = []
 var menu_pos := Vector2.ZERO
 var menu_items: Array = []  # [label, action]
-var tab := "ground"  # the right-hand column: "ground", "box" or "craft"
+var tab := "ground"  # the right-hand column: "ground", "box", "craft" or "body"
 var crafting := false  # (tab == "craft", for anyone asking)
 var doll_view := 0  # 0 front, 1 side, 2 back, 3 other side: click the doll to turn it
 var _last_box := -1
@@ -140,6 +142,8 @@ func _ref_at(p: Vector2) -> Array:
 			if _recipe_rect(i).has_point(p):
 				return ["recipe", Crafting.RECIPES.keys()[i]]
 		return []
+	if tab == "body":
+		return []
 	if Rect2(X_FAR - 10, 50, W - X_FAR, CARD_Y - 60).has_point(p):
 		return _far()  # anywhere over the far column: into the cupboard, or onto the ground
 	return []
@@ -150,11 +154,12 @@ func _tabs() -> Array:
 	if box_id >= 0:
 		out.append(["box", box_title])
 	out.append(["craft", "ทำของ"])
+	out.append(["body", "ร่างกาย"])
 	return out
 
 
 func _tab_rect(i: int) -> Rect2:
-	return Rect2(X_FAR + i * 98, 18, 92, 28)
+	return Rect2(X_FAR + i * 74, 18, 70, 28)
 
 
 func _doll_rect() -> Rect2:
@@ -319,6 +324,15 @@ func _input(e: InputEvent) -> void:
 				craft_requested.emit(h[1])
 			get_viewport().set_input_as_handled()
 			return
+	if tab == "body":
+		for row in _body_rows():
+			if row.button != "" and _body_button(row.i).has_point(m):
+				if row.button == "treat":
+					treat_requested.emit(row.wound)
+				elif row.button == "cure":
+					use_requested.emit(["inv", row.slot])
+				get_viewport().set_input_as_handled()
+				return
 	var shown := _shown()
 	var it = _item(shown)
 	if it != null:
@@ -400,6 +414,13 @@ func _draw_worn_side(head: Font, body: Font) -> void:
 		Look.draw(self, {view = views[doll_view], angle = angles[doll_view]}, doll_look)
 		Look.body_xf = Transform2D.IDENTITY
 		draw_set_transform(Vector2.ZERO)
+		# Wounds where they are: red still open, pale once bandaged.
+		if me:
+			for w in me.wounds:
+				var at: Vector2 = DOLL_AT + Body.marker(w, views[doll_view][0]) * DOLL_SCALE
+				var col: Color = Color("e8e2d4") if w.bandaged else (Body.LEVEL_COLORS[1] if w.kind in ["sprain", "bruise"] else Body.LEVEL_COLORS[2])
+				draw_circle(at, 7, Color(0, 0, 0, 0.5))
+				draw_circle(at, 5, col)
 	# How well each part is guarded, as a strip of coloured pips with the numbers.
 	var ids := []
 	for k in worn:
@@ -459,9 +480,14 @@ func _draw_far_side(head: Font, body: Font) -> void:
 		var lit := r.has_point(get_local_mouse_position())
 		draw_style_box(UiTheme.box(UiTheme.WARN if on else Color(0.91, 0.88, 0.81, 0.12 if lit else 0.05), 6), r)
 		_tab_icon(Vector2(r.position.x + 14, r.position.y + 14), tabs[i][0], UiTheme.INK if on else UiTheme.PAPER)
-		draw_string(head, r.position + Vector2(24, 19), tabs[i][1], HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 28, 12,
+		draw_string(head, r.position + Vector2(24, 19), _fit(tabs[i][1], head, 12, r.size.x - 28), HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
 				UiTheme.INK if on else UiTheme.PAPER)
+		if tabs[i][0] == "body" and me and not Body.statuses(me).filter(func(s): return s.level == 2).is_empty():
+			draw_circle(r.position + Vector2(r.size.x - 6, 6), 4, Body.LEVEL_COLORS[2])  # something needs seeing to
 	var hint := {ground = "ลากของมาวางที่นี่เพื่อทิ้ง", box = "ลากของมาเก็บไว้ในนี้ได้", craft = "ใช้ของในกระเป๋า · ต้องยืนนิ่ง"}
+	if tab == "body":
+		_draw_body(head, body)
+		return
 	if tab == "craft":
 		_draw_recipes(head, body)
 		return
@@ -652,6 +678,9 @@ func _mark(c: Vector2, kind: String) -> void:
 ## The icon on each tab.
 func _tab_icon(c: Vector2, kind: String, col: Color) -> void:
 	match kind:
+		"body":  # a cross
+			draw_rect(Rect2(c + Vector2(-1.5, -5), Vector2(3, 10)), col)
+			draw_rect(Rect2(c + Vector2(-5, -1.5), Vector2(10, 3)), col)
 		"ground":  # a pin on the ground
 			draw_circle(c + Vector2(0, -2), 4, col)
 			draw_colored_polygon(PackedVector2Array([c + Vector2(-3, 0), c + Vector2(3, 0), c + Vector2(0, 6)]), col)
@@ -671,6 +700,81 @@ func _recipe_line(id: String) -> String:
 		var nm: String = ("อะไรก็ได้ที่เป็น" + need.substr(1)) if need.begins_with("#") else Items.display_name(need)
 		parts.append("%s %d/%d" % [nm, Crafting.count_in(inv, need), r.needs[need]])
 	return " · ".join(parts)
+
+
+# --- The body tab --------------------------------------------------------------------
+
+## A row for each wound, and one for an infection: {i, wound, icon, level, title, sub, button, slot}.
+func _body_rows() -> Array:
+	var out := []
+	if me == null:
+		return out
+	var has_bandage := inv.any(func(x): return x != null and x.id in ["bandage", "firstaid"])
+	for k in me.wounds.size():
+		var w: Dictionary = me.wounds[k]
+		var sub := ""
+		var button := ""
+		var level := 1
+		match w.kind:
+			"bite", "scratch":
+				if w.bandaged:
+					sub = "พันแผลแล้ว · กำลังหาย"
+					level = 0
+				else:
+					sub = ("เลือดออก · " if w.bleeding else "") + ("ยังไม่พันแผล · เสี่ยงติดเชื้อ" if w.kind == "bite" else "ยังไม่พันแผล")
+					level = 2 if w.kind == "bite" or w.bleeding else 1
+					button = "treat" if has_bandage else ""
+			"sprain":
+				sub = "วิ่งไม่ได้ เดินช้าลง · หายเอง นอนแล้วหายเร็วขึ้น"
+			"bruise":
+				sub = "ของที่ใส่กันไว้ได้ · หายเอง"
+				level = 0
+		out.append({i = out.size(), wound = k, icon = "bandaged" if w.bandaged else w.kind, level = level, title = Body.title(w),
+				sub = sub, button = button, slot = -1})
+	if me.infection > 0.0:
+		var stage := Body.infection_stage(me.infection)
+		var slot := -1
+		for k in inv.size():
+			if inv[k] != null and inv[k].id == "antibiotic":
+				slot = k
+		out.append({i = out.size(), wound = -1, icon = "fever", level = 2 if stage >= 2 else 1,
+				title = "ติดเชื้อ · ระยะ %d จาก 4: %s" % [stage + 1, Body.STAGES[stage][1]], sub = Body.STAGES[stage][2],
+				button = "cure" if slot >= 0 else "", slot = slot, infection = me.infection})
+	return out
+
+
+func _body_row_rect(i: int) -> Rect2:
+	return Rect2(X_FAR, 58 + i * 48, W - X_FAR - 24, 44)
+
+
+func _body_button(i: int) -> Rect2:
+	var r := _body_row_rect(i)
+	return Rect2(r.end.x - 74, r.position.y + 8, 66, 28)
+
+
+func _draw_body(head: Font, body: Font) -> void:
+	var rows := _body_rows()
+	if rows.is_empty():
+		draw_string(body, Vector2(X_FAR, 80), "ร่างกายปกติดี ไม่มีบาดแผล", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
+		return
+	for row in rows:
+		var r := _body_row_rect(row.i)
+		if r.end.y > CARD_Y - 14:
+			break
+		var col: Color = Body.LEVEL_COLORS[row.level]
+		draw_style_box(UiTheme.box(Color(0.91, 0.88, 0.81, 0.05), 6, Color(col, 0.6) if row.level > 0 else SLOT_EDGE, 1), r)
+		Body.draw_icon(self, r.position + Vector2(20, 22), row.icon, col, 1.1)
+		var tw := r.size.x - 44 - (80 if row.button != "" else 0)
+		draw_string(head, r.position + Vector2(40, 19), _fit(row.title, head, 13, tw), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UiTheme.PAPER)
+		draw_string(body, r.position + Vector2(40, 36), _fit(row.sub, body, 11, tw), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, DIM)
+		if row.has("infection"):
+			_bar(Rect2(r.position.x + 40, r.end.y - 4, tw, 3), row.infection / 100.0, col)
+		if row.button != "":
+			var br := _body_button(row.i)
+			var lit := br.has_point(get_local_mouse_position())
+			draw_style_box(UiTheme.box(UiTheme.WARN if lit else Color(0.91, 0.88, 0.81, 0.1), 6), br)
+			draw_string(head, br.position + Vector2(0, 19), "พันแผล" if row.button == "treat" else "ใช้ยา", HORIZONTAL_ALIGNMENT_CENTER,
+					br.size.x, 12, UiTheme.INK if lit else UiTheme.PAPER)
 
 
 func _recipe_rect(i: int) -> Rect2:

@@ -138,6 +138,7 @@ func _ready() -> void:
 	ui.gear.craft_requested.connect(func(id: String): _request(&"req_craft", [id]))
 	ui.gear.salvage_requested.connect(func(idx: int): _request(&"req_salvage", [idx]))
 	ui.gear.repair_requested.connect(func(ref: Array): _request(&"req_repair", [ref]))
+	ui.gear.treat_requested.connect(func(i: int): _request(&"req_treat", [i]))
 	ui.gear.drop_requested.connect(func(ref: Array): _request(&"req_move", [ref, ["ground", -1]]))
 	ui.gear.box_closed.connect(func(): _request(&"req_close_box", []))
 	ui.chat_sent.connect(func(t: String): _request(&"req_chat", [t]))
@@ -612,6 +613,7 @@ func _process(delta: float) -> void:
 					near.append([pid, pickups[pid].item])
 			ui.gear.ground = near
 			ui.gear.doll_look = me.look  # the bag screen shows you as you are
+			ui.gear.me = me
 		# Clicks on the hotbar are for the hotbar, not for punching.
 		var over_bar := ui.hotbar.hover >= 0 or bar_click
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):

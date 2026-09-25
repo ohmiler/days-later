@@ -13,7 +13,7 @@ class_name SaveGame
 ## (world.save.v1 and so on). A save that cannot be read, or that comes from a
 ## newer game, is never written over: the game says so and leaves it alone.
 
-const VERSION := 9
+const VERSION := 10
 const GAME_VERSION := "0.4"  # shown to people; not used for compatibility
 
 ## [kind, from version] -> the function that upgrades it one step.
@@ -29,6 +29,7 @@ const MIGRATIONS := {
 	"world:7": "_world_7_to_8",
 	"player:7": "_player_7_to_8",
 	"world:8": "_world_8_to_9",
+	"player:9": "_player_9_to_10",
 }
 
 
@@ -173,7 +174,7 @@ static func save_player(p: Player) -> void:
 		version = VERSION, name = p.pname, alive = p.alive(),
 		pos = p.position, on_roof = p.on_roof, hp = p.hp, kills = p.kills,
 		hunger = p.hunger, thirst = p.thirst, infection = p.infection, bleeding = p.bleeding, stamina = p.stamina,
-		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash, bed = p.bed,
+		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash, bed = p.bed, wounds = p.wounds,
 		city = p.world.city_seed if p.world else 0,
 	})
 
@@ -204,6 +205,7 @@ static func load_player_into(p: Player, name: String) -> bool:
 	p.thirst = d.thirst
 	p.infection = d.infection
 	p.bleeding = d.bleeding
+	p.wounds = d.wounds
 	p.stamina = d.stamina
 	p.worn = d.worn
 	p.refresh_wear()
@@ -303,6 +305,12 @@ static func _player_7_to_8(d: Dictionary) -> Dictionary:
 ## v9 remembers bikes that were ridden, fuelled or hotwired.
 static func _world_8_to_9(d: Dictionary) -> Dictionary:
 	d.merge({vehicles = {}}, false)
+	return d
+
+
+## v10 remembers wounds (see Body).
+static func _player_9_to_10(d: Dictionary) -> Dictionary:
+	d.merge({wounds = []}, false)
 	return d
 
 

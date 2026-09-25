@@ -23,6 +23,7 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 |---|---|
 | `test_actions` | What E does through the real path: doors, searching and reopening furniture, stomping, picking up, nothing out of reach |
 | `test_beds` | Sleeping heals (faster shut in), the night speeds up when everyone sleeps, moving or a zombie wakes you, a claimed bed is where you wake after dying |
+| `test_body` | Bites leave wounds where they land (bruises under armour), bleeding until bandaged, one bandage per wound, open bites festering, healing (faster asleep), sprains stop running, wounds saved |
 | `test_city` | The building plans (data/prefabs) are drawn correctly, the city from a seed is exactly the same as before (saved cities depend on it), every door and cupboard can be walked to |
 | `test_combat` | Punch/kick/weapon hits, clicking the body, knock-downs, cut-off arms, weapon wear, death styles |
 | `test_things` | Taps run dry, radios draw zombies, vending machines break open; only changes are saved, they survive a reload, joiners get them |

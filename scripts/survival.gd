@@ -137,6 +137,18 @@ func _tick_sleep(p: Player, delta: float) -> void:
 	p.exhausted = false
 
 
+## The owner's copy of their wounds (for the status icons and the body screen).
+func send_body(p: Player) -> void:
+	main._notify(p.peer_id, &"body_sync", [p.wounds])
+
+
+@rpc("authority", "call_remote", "reliable")
+func body_sync(wounds: Array) -> void:
+	var me: Player = main.players.get(multiplayer.get_unique_id())
+	if me:
+		me.wounds = wounds
+
+
 ## Hunger, thirst, infection, bleeding and stamina (server).
 func _tick_needs(p: Player, delta: float) -> void:
 	if not p.alive():
@@ -144,7 +156,8 @@ func _tick_needs(p: Player, delta: float) -> void:
 		return
 	if p.sleeping:
 		_tick_sleep(p, delta)
-	var running := p.sprint and not p.sneak and p.move.length() > 0.1 and not p.exhausted and p.stamina > 0.0 and p.riding < 0
+	var running := p.sprint and not p.sneak and p.move.length() > 0.1 and not p.exhausted and p.stamina > 0.0 and p.riding < 0 \
+			and not Body.sprained(p.wounds)
 	# Footsteps: quiet walking, loud running, silent sneaking.
 	p.step_t -= delta
 	if p.move.length() > 0.1 and not p.sneak and p.step_t <= 0.0 and p.riding < 0:  # (a bike makes its own noise)
@@ -181,12 +194,34 @@ func _tick_needs(p: Player, delta: float) -> void:
 			main.inventory._send_inv(p)
 		elif not p.worn.is_empty():
 			main.inventory._send_inv(p)  # clothes wore down
-		if p.infection <= 0.0 and randf() < BITE_INFECT_CHANCE * guard:
-			p.infection = 12.0
-			main._toast(p, "โดนกัด! ติดเชื้อแล้ว หายาปฏิชีวนะ")
-		if not p.bleeding and randf() < BITE_BLEED_CHANCE * guard:
-			p.bleeding = true
-			main._toast(p, "เลือดออก! ใช้ผ้าพันแผลห้ามเลือด")
+		# It leaves a wound there: a bruise if the clothes took most of it, else a bite.
+		if p.bite_guard >= 0.5 and randf() < p.bite_guard:
+			Body.add(p, "bruise", p.bite_where)
+		else:
+			var w := Body.add(p, "bite", p.bite_where)
+			if p.infection <= 0.0 and randf() < BITE_INFECT_CHANCE * guard:
+				p.infection = 12.0
+				main._toast(p, "โดนกัด! ติดเชื้อแล้ว หายาปฏิชีวนะ")
+			if randf() < BITE_BLEED_CHANCE * guard:
+				w.bleeding = true
+				p.bleeding = true
+				main._toast(p, "เลือดออก! ใช้ผ้าพันแผลห้ามเลือด")
+	# Smashed glass cuts whoever climbs through it.
+	var win: int = main.world.door_at.get(main.world.to_cell(p.position), -1)
+	if win >= 0 and main.world.is_window(win) and main.world.doors[win].broken and not main.world.doors[win].closed:
+		if p.last_window != win:
+			p.last_window = win
+			if randf() < 0.35:
+				Body.add(p, "scratch", "arms")
+				main._toast(p, "เศษกระจกบาดแขน")
+	else:
+		p.last_window = -1
+	var said := Body.tick(p, delta)
+	if said != "":
+		main._toast(p, said)
+	if p.body_dirty:
+		p.body_dirty = false
+		send_body(p)
 	var dmg := 0.0
 	if p.hunger <= 0.0:
 		dmg += STARVE_DAMAGE
