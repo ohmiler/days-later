@@ -29,7 +29,7 @@ func run() -> void:
 		for key in ["name", "speed", "accel", "fuel", "use", "noise", "hp"]:
 			if not Vehicles.MODELS[id].has(key):
 				bad.append("%s: no %s" % [id, key])
-	for m in StreetProp.BIKE_MODELS:
+	for m in BikeArt.BIKE_MODELS:
 		if not Vehicles.MODELS.has(m[0]):
 			bad.append("no ride data for %s" % m[0])
 	check(bad.is_empty(), "every bike model has ride data" + ("" if bad.is_empty() else ": " + "; ".join(bad)))

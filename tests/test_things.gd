@@ -36,9 +36,17 @@ func _near(th: Dictionary) -> Vector2:
 
 
 func run() -> void:
-	SaveGame.wipe()
-	seed(6649746)  # always the same city, one with every kind of thing (some cities have no radio)
-	await host(9350)
+	# Radios are rare enough that some cities have none: find one that has all three.
+	for attempt in 12:
+		SaveGame.wipe()
+		seed(6649746 + attempt)
+		await host(9350)
+		var kinds := {}
+		for th in main.world.things:
+			kinds[th.kind] = true
+		if kinds.size() >= 3:
+			break
+		await close_game()
 	var w: World = main.world
 	var counts := {}
 	for th in w.things:
