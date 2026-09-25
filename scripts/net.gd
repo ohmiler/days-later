@@ -88,6 +88,7 @@ func _claim_name(p: Player, wanted: String, secret: String) -> void:
 		main._toast(p, "ชื่อ %s มีเจ้าของแล้ว · ใช้ชื่อ %s แทน" % [asked, wanted])
 	elif SaveGame.load_player_into(p, wanted):
 		main._toast(p, "ยินดีต้อนรับกลับ %s" % wanted)
+		p.body_dirty = true  # (their wounds came back with them)
 	elif p.bed >= 0:
 		p.position = p.home_spawn()  # died last time: the new survivor starts at the old bed
 		main._toast(p, "ตื่นขึ้นที่เตียงประจำ")

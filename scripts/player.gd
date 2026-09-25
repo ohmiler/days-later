@@ -69,6 +69,9 @@ var say := ""  # last thing said in chat, shown over their head for say_t second
 var say_t := 0.0
 var open_box := -1  # server: the container this player has open in the bag screen
 var torn := ""  # server: name of something a bite just tore apart, for main to report
+var wounds: Array = []  # see Body (server; the owner's machine gets a copy)
+var body_dirty := false  # server: wounds changed, send them to the owner
+var last_window := -1  # server: the smashed window being climbed through (glass cuts)
 var bite_where := ""  # server: where the last bite landed, and how much of it was stopped
 var bite_guard := 0.0
 var phase := 0.0
@@ -141,6 +144,8 @@ func server_tick(delta: float) -> void:
 			stamina = 100.0
 			turned = false
 			warned.clear()
+			wounds.clear()  # a new survivor, unhurt
+			body_dirty = true
 			refresh_wear()  # the clothes stayed on the body; the new survivor starts in their own
 			inv.resize(bag_size())
 			position = home_spawn()
@@ -160,10 +165,12 @@ func speed_mult() -> float:
 	var m := 1.0
 	if sneak:
 		m = 0.5
-	elif sprint and not exhausted and stamina > 0.0:
+	elif sprint and not exhausted and stamina > 0.0 and not Body.sprained(wounds):
 		m = 1.75
 	if infection > 60.0:
 		m *= 0.85
+	if Body.sprained(wounds):
+		m *= 0.8  # limping
 	for slot in wear_ids:
 		m *= Items.def(wear_ids[slot]).get("speed", 1.0)
 	return m * load_speed()

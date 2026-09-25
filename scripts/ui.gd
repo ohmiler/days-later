@@ -24,6 +24,7 @@ var name_edit: LineEdit
 var address_edit: LineEdit
 var status: Label
 var hud: Control
+var statuses: StatusRow
 var vitals: Vitals
 var clock: Clock
 var tut: TutorialCard
@@ -415,6 +416,11 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	vitals.hint = _hint(me) if me.alive() else ""
 	vitals.offset_top = vitals.offset_bottom - (150 if vitals.hint != "" else 126)
 	vitals.queue_redraw()
+	statuses.items = Body.statuses(me) if me.alive() else []
+	statuses.t = vitals.t
+	statuses.offset_bottom = vitals.offset_bottom - (vitals.offset_bottom - vitals.offset_top) - 6
+	statuses.offset_top = statuses.offset_bottom - 30
+	statuses.queue_redraw()
 
 	banner_t = maxf(0.0, banner_t - delta)
 	banner.modulate.a = clampf(banner_t, 0.0, 1.0)
@@ -509,6 +515,14 @@ func _build_hud() -> void:
 	vitals.offset_bottom = -24
 	vitals.offset_top = -24 - 126
 	hud.add_child(vitals)
+
+	statuses = StatusRow.new()
+	statuses.anchor_top = 1.0
+	statuses.anchor_bottom = 1.0
+	statuses.offset_left = 24
+	statuses.offset_right = 24 + 600
+	statuses.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(statuses)
 
 	clock = Clock.new()
 	clock.anchor_left = 1.0
@@ -946,6 +960,32 @@ class Vitals extends Control:
 			draw_string(UiTheme.body(), Vector2(x, 100), "%d" % n[1], HORIZONTAL_ALIGNMENT_RIGHT, cw, 12, Color(UiTheme.PAPER, 0.55))
 		if hint != "":
 			UiTheme.draw_rich(self, Vector2(16, 138), hint, UiTheme.body_bold(), 14, Color(1, 0.8, 0.75))
+
+
+## Icons for what's wrong with you (see Body.statuses): red means deal with it
+## now, yellow means watch out. Point at one for what it is.
+class StatusRow extends Control:
+	var items: Array = []
+	var t := 0.0
+
+	func _draw() -> void:
+		var m := get_local_mouse_position()
+		var tip := ""
+		for i in items.size():
+			var it: Dictionary = items[i]
+			var r := Rect2(i * 34, 0, 30, 30)
+			var col: Color = Body.LEVEL_COLORS[it.level]
+			var pulse := 0.5 + 0.5 * sin(t * 6.0) if it.level == 2 else 1.0
+			draw_style_box(UiTheme.box(Color(0.08, 0.07, 0.06, 0.85), 7, Color(col, 0.5 + 0.5 * pulse), 2), r)
+			Body.draw_icon(self, r.get_center(), it.icon, col, 1.1)
+			if r.has_point(m):
+				tip = it.text
+		if tip != "":
+			var f := UiTheme.body()
+			var w := f.get_string_size(tip, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 16
+			var tr := Rect2(0, -30, w, 24)
+			draw_style_box(UiTheme.box(Color(0.08, 0.07, 0.06, 0.95), 6, UiTheme.LINE, 1), tr)
+			draw_string(f, Vector2(8, -13), tip, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UiTheme.PAPER)
 
 
 class Clock extends Control:
