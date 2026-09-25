@@ -37,7 +37,6 @@ var snap_timer := 0.0
 var tracers: Array = []  # [from, to, ttl]
 var decals: Node2D
 var blood: Array = []  # [pos, radius, colour] - stays on the ground
-var corpses: Array = []  # [pos, angle, skin, shirt, ttl]
 var sparks: Array = []  # [pos, ttl, strong]
 var shake := 0.0
 const INTERACT_RANGE := 20.0
@@ -52,6 +51,10 @@ var search_total := 1.0
 var hidden_building: BuildingProp  # the roof we lifted off because we are inside
 var prompt := ""  # "press E" hint drawn above whatever is in reach
 var prompt_pos := Vector2.ZERO
+var grade_mat: ShaderMaterial
+var death_label: Label
+var death_sub: Label
+var play_zoom := Vector2(4, 4)  # zoom to go back to after the death close-up
 
 
 func _ready() -> void:
@@ -71,8 +74,9 @@ func _ready() -> void:
 	var grade := ColorRect.new()
 	grade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	grade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	grade.material = ShaderMaterial.new()
-	grade.material.shader = load("res://shaders/post.gdshader")
+	grade_mat = ShaderMaterial.new()
+	grade_mat.shader = load("res://shaders/post.gdshader")
+	grade.material = grade_mat
 	post.add_child(grade)
 	var layer := CanvasLayer.new()
 	layer.layer = 2
@@ -96,6 +100,11 @@ func _ready() -> void:
 	toast.add_theme_constant_override("outline_size", 6)
 	toast.add_theme_color_override("font_outline_color", Color.BLACK)
 	layer.add_child(toast)
+	death_label = _center_label(-60, 64, Color("d8342a"))
+	death_label.text = "คุณตายแล้ว"
+	layer.add_child(death_label)
+	death_sub = _center_label(20, 22, Color(1, 1, 1, 0.9))
+	layer.add_child(death_sub)
 	_build_menu(layer)
 
 	for arg in OS.get_cmdline_user_args():
@@ -107,6 +116,23 @@ func _ready() -> void:
 		elif arg.begins_with("--join="):
 			address.text = arg.trim_prefix("--join=")
 			_join()
+
+
+func _center_label(y: float, size: int, col: Color) -> Label:
+	var l := Label.new()
+	l.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	l.offset_left = -400
+	l.offset_right = 400
+	l.offset_top = y - size
+	l.offset_bottom = y + size
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_override("font", Look.thai_font())
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", col)
+	l.add_theme_constant_override("outline_size", 10)
+	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	l.modulate.a = 0.0
+	return l
 
 
 func _build_menu(layer: CanvasLayer) -> void:
@@ -387,7 +413,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		z.position = world.slide(z.position, dir * stats[4], Zombie.RADIUS)
 		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""))
 		if z.hp <= 0:
-			fx_death.rpc(z.position, z.facing, z.skin, z.shirt)
+			fx_death.rpc(z.position, 1.0 if dir.x >= 0 else -1.0, z.skin, z.shirt, z.pants, z.hair)
 			zombies.erase(z.zid)
 			z.queue_free()
 			p.kills += 1
@@ -592,7 +618,7 @@ func _fire(p: Player) -> void:
 	if hit:
 		hit.hp -= GUN_DAMAGE
 		if hit.hp <= 0:
-			fx_death.rpc(hit.position, hit.facing, hit.skin, hit.shirt)
+			fx_death.rpc(hit.position, 1.0 if dir.x >= 0 else -1.0, hit.skin, hit.shirt, hit.pants, hit.hair)
 			zombies.erase(hit.zid)
 			hit.queue_free()
 			p.kills += 1
@@ -737,11 +763,23 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, w
 
 
 @rpc("authority", "call_local", "reliable")
-func fx_death(pos: Vector2, ang: float, skin: Color, shirt: Color) -> void:
-	corpses.append([pos, ang, skin, shirt, 30.0])
-	for i in 6:
-		blood.append([pos + Vector2(randf_range(-5, 5), randf_range(-5, 5)), randf_range(1.5, 4.0),
-				Color(0.32, 0.02, 0.02, 0.8)])
+func fx_death(pos: Vector2, fall_dir: float, skin: Color, shirt: Color, pants: Color, hair: Color) -> void:
+	leave_corpse(pos, fall_dir, skin, shirt, pants, hair, true, 0.0)
+
+
+## A fallen body on the ground; `age` lets a respawned player's body carry on where it was.
+func leave_corpse(pos: Vector2, fall_dir: float, skin: Color, shirt: Color, pants: Color, hair: Color,
+		zombie: bool, age: float) -> void:
+	var c := Corpse.new()
+	c.position = pos
+	c.skin = skin
+	c.shirt = shirt
+	c.pants = pants
+	c.hair = hair
+	c.zombie = zombie
+	c.fall_dir = fall_dir
+	c.t = age
+	add_child(c)
 
 
 func _process(delta: float) -> void:
@@ -790,11 +828,7 @@ func _process(delta: float) -> void:
 		sp[1] -= delta
 	sparks = sparks.filter(func(sp): return sp[1] > 0)
 	fx.queue_redraw()
-	if not corpses.is_empty():
-		for c in corpses:
-			c[4] -= delta
-		corpses = corpses.filter(func(c): return c[4] > 0)
-		decals.queue_redraw()
+
 
 	toast_t -= delta
 	toast.modulate.a = clampf(toast_t, 0.0, 1.0)
@@ -803,12 +837,26 @@ func _process(delta: float) -> void:
 		"NIGHT" if world.is_night else "Day", players.size(), zombies.size()]
 	if me:
 		hud.text = "HP %d   Kills %d   " % [me.hp, me.kills] + hud.text
-		if not me.alive():
-			hud.text += "\n\nYOU DIED - respawning in %d..." % ceili(me.respawn)
+	_update_death_screen(me, delta)
 	hud.text += "\nWASD move | mouse aim | LMB attack | RMB kick | E search/pick up | 1-8 slot | F use | G drop"
 
 
 var faded: Array = []
+
+
+## Colour drains to red, the camera leans in on the body, and a message fades up.
+func _update_death_screen(me: Player, delta: float) -> void:
+	var dead := me != null and not me.alive()
+	var k := clampf((me.death_t - 0.6) / 1.2, 0.0, 1.0) if dead else 0.0
+	var cur: float = grade_mat.get_shader_parameter("death") if grade_mat.get_shader_parameter("death") != null else 0.0
+	grade_mat.set_shader_parameter("death", move_toward(cur, k, delta * (1.0 if dead else 2.5)))
+	death_label.modulate.a = k
+	death_sub.modulate.a = k
+	if dead:
+		death_sub.text = "ของที่ถืออยู่ร่วงอยู่ข้างศพ  ·  เกิดใหม่ใน %d วินาที" % ceili(me.respawn if multiplayer.is_server() else maxf(0.0, Player.RESPAWN_TIME - me.death_t))
+		camera.zoom = camera.zoom.lerp(play_zoom * 1.35, delta * 0.8)
+	elif me:
+		camera.zoom = camera.zoom.lerp(play_zoom, delta * 3.0) if camera.zoom.distance_to(play_zoom) > 0.01 else play_zoom
 
 
 ## Walking into a building lifts its roof and front wall off so you can see inside.
@@ -916,8 +964,7 @@ func _draw_decals() -> void:
 		decals.draw_circle(Vector2.ZERO, 5, Color(0, 0, 0, 0.35))
 		decals.draw_set_transform(Vector2.ZERO)
 		Items.draw_icon(decals, Rect2(pu.pos + Vector2(-6, -9), Vector2(12, 12)), pu.item.id)
-	for c in corpses:
-		Look.draw_corpse(decals, c[1], c[2], c[3], minf(1.0, c[4] / 5.0))
+
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -933,6 +980,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_request(&"req_select", [k - KEY_1])
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			camera.zoom = (camera.zoom * 1.1).clamp(Vector2(1, 1), Vector2(6, 6))
+			play_zoom = (play_zoom * 1.1).clamp(Vector2(1, 1), Vector2(6, 6))
+			camera.zoom = play_zoom
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			camera.zoom = (camera.zoom / 1.1).clamp(Vector2(1, 1), Vector2(6, 6))
+			play_zoom = (play_zoom / 1.1).clamp(Vector2(1, 1), Vector2(6, 6))
+			camera.zoom = play_zoom

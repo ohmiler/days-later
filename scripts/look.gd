@@ -18,6 +18,7 @@ enum { FRONT, BACK, SIDE }
 enum { NONE, PUNCH_L, PUNCH_R, KICK, SWING }  # attack poses
 
 static var _cone: Texture2D
+static var _base := Transform2D.IDENTITY  # whole-body transform (used to topple a falling body)
 static var _font: Font
 
 
@@ -44,7 +45,23 @@ static func pick_view(angle: float, prev: Array) -> Array:
 static func draw_human(ci: CanvasItem, vf: Array, angle: float, phase: float, moving: bool,
 		skin: Color, shirt: Color, pants: Color, hair: Color, zombie: bool,
 		attack: int = NONE, ext: float = 0.0, armed: bool = false, guard: bool = false,
-		recoil := Vector2.ZERO, weapon: Dictionary = {}) -> void:
+		recoil := Vector2.ZERO, weapon: Dictionary = {}, fall := 0.0, fall_dir := 1.0) -> void:
+	# Dying: knees buckle, then the body topples like a plank around the feet
+	# (accelerating as it goes) and settles with a small bounce.
+	var sink := 0.0
+	var tip := 0.0
+	if fall > 0.0:
+		vf = [SIDE, fall_dir > 0]  # seen side-on, falling backwards
+		moving = false
+		attack = NONE
+		weapon = {}
+		sink = 3.0 * clampf(fall / 0.25, 0, 1)
+		var u := clampf((fall - 0.25) / 0.75, 0, 1)
+		tip = u * u
+		var bounce := sin(clampf((u - 0.85) / 0.15, 0, 1) * PI) * 0.08
+		_base = Transform2D(fall_dir * PI * 0.5 * (tip - bounce), Vector2(0, -2.0 * tip))
+	else:
+		_base = Transform2D.IDENTITY
 	var view: int = vf[0]
 	var sx := -1.0 if vf[1] else 1.0
 	var s := sin(phase) if moving else 0.0  # walk cycle, -1..1
@@ -52,12 +69,12 @@ static func draw_human(ci: CanvasItem, vf: Array, angle: float, phase: float, mo
 	if zombie and moving:
 		bob += maxf(0.0, sin(phase * 0.5)) * 0.8  # limp
 
-	# Contact shadow.
-	ci.draw_set_transform(Vector2.ZERO, 0, Vector2(1, 0.38))
+	# Contact shadow, stretching out under the body as it falls.
+	ci.draw_set_transform(Vector2(fall_dir * 12.0 * tip, 0), 0, Vector2(1 + 1.6 * tip, 0.38))
 	ci.draw_circle(Vector2.ZERO, 7.5, Color(0, 0, 0, 0.35))
 
 	# Legs stay planted; everything above them bobs.
-	ci.draw_set_transform(Vector2.ZERO, 0, Vector2(sx, 1))
+	_xf(ci, Vector2.ZERO, Vector2(sx, 1))
 	_legs(ci, view, s, angle, sx, pants, attack, ext)
 
 	var lean := 1.2 if zombie and view == SIDE else 0.0
@@ -66,30 +83,45 @@ static func draw_human(ci: CanvasItem, vf: Array, angle: float, phase: float, mo
 	if attack == KICK:
 		var k := kick_pose(ext)
 		lunge = -Vector2.from_angle(angle) * Vector2(1.4, 0.7) * k.y + Vector2(0, 0.7 * k.x)
-	ci.draw_set_transform(Vector2(lean * sx, -bob) + lunge + recoil, 0, Vector2(sx, 1))
+	_xf(ci, Vector2(lean * sx, -bob + sink * (1.0 - tip)) + lunge + recoil, Vector2(sx, 1))
 	# Fists come up when fighting; otherwise arms hang and swing with the walk.
 	var fists := not zombie and (attack != NONE or guard or armed or not weapon.is_empty())
-	if zombie:
+	# A falling body's arms go limp, even a zombie's.
+	var reaching := zombie and fall <= 0.0
+	if reaching:
 		_zombie_arms(ci, view, skin, shirt, phase, true)
 	elif fists:
 		_player_arms(ci, view, angle, sx, skin, shirt, attack, ext, armed, true, weapon)
 	else:
 		_idle_arms(ci, view, s, skin, shirt, true)
 	_torso(ci, view, shirt, pants, zombie)
-	_head(ci, view, skin, hair, zombie)
-	if zombie:
+	_head(ci, view, skin, hair, zombie, fall >= 1.0)
+	if reaching:
 		_zombie_arms(ci, view, skin, shirt, phase, false)
 	elif fists:
 		_player_arms(ci, view, angle, sx, skin, shirt, attack, ext, armed, false, weapon)
 	else:
 		_idle_arms(ci, view, s, skin, shirt, false)
 	if attack == KICK and view == FRONT:
-		ci.draw_set_transform(Vector2.ZERO, 0, Vector2(sx, 1))
+		_xf(ci, Vector2.ZERO, Vector2(sx, 1))
 		_front_kick_leg(ci, angle, sx, pants, ext)
 	ci.draw_set_transform(Vector2.ZERO)
 
 
 const SHOE := Color("1e1a16")
+
+
+## Set the drawing transform for a body part, on top of the whole-body transform.
+static func _xf(ci: CanvasItem, pos: Vector2, scale: Vector2) -> void:
+	ci.draw_set_transform_matrix(_base * Transform2D(0.0, scale, 0.0, pos))
+
+
+## Pool of blood spreading from a body lying toward `dir` (k grows 0..1 over time).
+static func draw_blood_pool(ci: CanvasItem, dir: float, k: float) -> void:
+	ci.draw_set_transform(Vector2(dir * 12.0, -0.5), 0, Vector2(1.3, 0.45))
+	ci.draw_circle(Vector2.ZERO, 3.0 + 9.0 * k, Color(0.28, 0.02, 0.02, 0.75))
+	ci.draw_circle(Vector2(dir * 3.0, 0), 2.0 + 5.0 * k, Color(0.2, 0.01, 0.01, 0.8))
+	ci.draw_set_transform(Vector2.ZERO)
 
 
 static func _legs(ci: CanvasItem, view: int, s: float, angle: float, sx: float, pants: Color,
@@ -256,12 +288,14 @@ static func _torso(ci: CanvasItem, view: int, shirt: Color, pants: Color, zombie
 			ci.draw_circle(p, 0.9, Color(0.33, 0.05, 0.04, 0.8))  # dried blood
 
 
-static func _head(ci: CanvasItem, view: int, skin: Color, hair: Color, zombie: bool) -> void:
+static func _head(ci: CanvasItem, view: int, skin: Color, hair: Color, zombie: bool, closed := false) -> void:
 	var c := HEAD + (Vector2(0.7, 0.4) if zombie else Vector2.ZERO)  # zombies tilt their head
 	ci.draw_rect(Rect2(-1.2, -21, 2.4, 2), skin.darkened(0.25))  # neck
 	ci.draw_circle(c, 4.2, skin.darkened(0.18))
 	ci.draw_circle(c + Vector2(-0.4, -0.4), 3.7, skin)
 	var eye := Color("e6e2c8") if zombie else Color("1c1612")
+	if closed:
+		eye = skin.darkened(0.45)  # eyes shut
 	var dark := skin.darkened(0.4)
 	match view:
 		FRONT:
@@ -474,18 +508,6 @@ static func draw_hp(ci: CanvasItem, frac: float) -> void:
 		return
 	ci.draw_rect(Rect2(-6, -33, 12, 2), Color(0.3, 0, 0, 0.8))
 	ci.draw_rect(Rect2(-6, -33, 12 * frac, 2), Color("7ad15a"))
-
-
-## A body lying on the ground, seen from above-ish.
-static func draw_corpse(ci: CanvasItem, ang: float, skin: Color, shirt: Color, alpha: float) -> void:
-	ci.draw_set_transform(Vector2(2, 1), ang, Vector2(1.4, 0.7))
-	ci.draw_circle(Vector2.ZERO, 8, Color(0.3, 0.02, 0.02, 0.6 * alpha))
-	ci.draw_set_transform(Vector2.ZERO, ang, Vector2(1, 0.6))
-	ci.draw_rect(Rect2(-7, -2.5, 11, 5), Color(shirt.darkened(0.2), alpha))
-	ci.draw_rect(Rect2(-12, -2, 5, 1.8), Color(0.18, 0.18, 0.2, alpha))
-	ci.draw_rect(Rect2(-12, 0.4, 5, 1.8), Color(0.18, 0.18, 0.2, alpha))
-	ci.draw_circle(Vector2(6.5, 0), 3.4, Color(skin, alpha))
-	ci.draw_set_transform(Vector2.ZERO)
 
 
 ## A soft cone plus a small halo, used as the flashlight's light texture.

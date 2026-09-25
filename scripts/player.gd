@@ -31,6 +31,9 @@ var weapon_id := ""  # what everyone sees in this player's hand
 var search_id := -1  # server only: container being searched
 var search_t := 0.0
 var dropped := false  # server only: death bag already dropped this life
+var death_t := 0.0  # seconds since dying (every peer, drives the fall)
+var fall_dir := 1.0
+var last_death_pos := Vector2.ZERO
 var shoot_cd := 0.0
 var respawn := 0.0
 var net_pos := Vector2.ZERO
@@ -124,6 +127,17 @@ func _process(delta: float) -> void:
 	flashlight.rotation = aim.angle()
 	view = Look.pick_view(aim.angle(), view)
 	anim_t += delta
+	if alive():
+		if death_t > 0.0:
+			# Respawned: leave the old body where it fell.
+			if get_parent().has_method("leave_corpse"):
+				get_parent().leave_corpse(last_death_pos, fall_dir, skin, shirt, pants, hair, false, death_t)
+			death_t = 0.0
+	else:
+		if death_t == 0.0:
+			fall_dir = -1.0 if aim.x > 0 else 1.0  # topple backwards, away from where we faced
+			last_death_pos = position
+		death_t += delta
 	flashlight.energy = move_toward(flashlight.energy, 1.1 if world.is_night and alive() else 0.0, delta)
 	flashlight.visible = flashlight.energy > 0.01
 	queue_redraw()
@@ -131,7 +145,9 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	if not alive():
-		Look.draw_corpse(self, aim.angle(), skin, shirt, 1.0)
+		Look.draw_blood_pool(self, fall_dir, clampf((death_t - 0.5) / 3.0, 0.0, 1.0))
+		Look.draw_human(self, [Look.SIDE, fall_dir > 0], 0.0, 0.0, false, skin, shirt, pants, hair, false,
+				Look.NONE, 0.0, false, false, Vector2.ZERO, {}, clampf(death_t / 0.75, 0.001, 1.0), fall_dir)
 		return
 	var wdef := Items.def(weapon_id)
 	var dur := 0.22
