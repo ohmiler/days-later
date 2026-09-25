@@ -28,6 +28,7 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | `test_things` | Taps run dry, radios draw zombies, vending machines break open; only changes are saved, they survive a reload, joiners get them |
 | `test_zombie` | The telegraphed bite, interrupting it, armour, chasing, getting back up |
 | `test_inventory` | Stack sizes, quick heal, drag/merge/split/drop, clothes slots, backpack size |
+| `test_crafting` | The recipe table has no typos, taking apart, making (standing still), mending, worn clothes never used up |
 | `test_doors` | Opening, not shutting on someone, boarding, smashing windows |
 | `test_save` | Save and resume: doors, furniture contents, day/time, player, bag, clothes |
 | `test_items` | The item table in data/items.cfg has no typos, rare finds are rarer, tags, carrying too much slows you |
@@ -36,6 +37,11 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | `test_net` | A second process joins over the network: names, looks, chat, snapshots, opening a cupboard |
 
 ## Writing a new one
+
+A new `class_name` file is only known to Godot after an import: run the game
+once from the editor, or `... --headless --path . --import`. (Until then a
+test that uses it cannot load and the run waits forever.)
+
 
 Make `tests/test_something.gd`:
 

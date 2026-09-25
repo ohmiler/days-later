@@ -12,6 +12,9 @@ signal move_requested(from: Array, to: Array)
 signal use_requested(ref: Array)
 signal split_requested(ref: Array)
 signal drop_requested(ref: Array)
+signal craft_requested(id: String)
+signal salvage_requested(idx: int)
+signal repair_requested(ref: Array)
 signal box_closed
 
 const SLOT := 52.0
@@ -32,6 +35,7 @@ var drag_from := Vector2.ZERO
 var menu_ref: Array = []
 var menu_pos := Vector2.ZERO
 var menu_items: Array = []  # [label, action]
+var crafting := false  # the far column shows what can be made instead of the ground
 
 
 func _ready() -> void:
@@ -57,6 +61,8 @@ func _slots() -> Array:
 		var y := 64.0 + row * (SLOT + GAP) + (14.0 if i >= Items.INV_SIZE else 0.0)
 		out.append([["inv", i], Rect2(x0 + col * (SLOT + GAP), y, SLOT, SLOT)])
 	var x1 := 480.0
+	if crafting and box_id < 0:
+		return out
 	if box_id >= 0:
 		for i in box_items.size():
 			out.append([["box", box_id, i], Rect2(x1 + (i % 4) * (SLOT + GAP), 64 + (i / 4) * (SLOT + GAP), SLOT, SLOT)])
@@ -74,6 +80,8 @@ func _far(i := -1) -> Array:
 
 func _far_items() -> Array:
 	var out := []
+	if crafting and box_id < 0:
+		return out
 	if box_id >= 0:
 		for i in box_items.size():
 			if box_items[i] != null:
@@ -103,6 +111,11 @@ func _ref_at(p: Vector2) -> Array:
 	for s in _slots():
 		if (s[1] as Rect2).has_point(p):
 			return s[0]
+	if crafting and box_id < 0:
+		for i in Crafting.RECIPES.size():
+			if _recipe_rect(i).has_point(p):
+				return ["recipe", Crafting.RECIPES.keys()[i]]
+		return []
 	if Rect2(470, 40, 260, 250).has_point(p):
 		return _far()  # anywhere over the far column: into the container, or onto the ground
 	return []
@@ -168,11 +181,17 @@ func _open_menu(ref: Array, it: Dictionary, at: Vector2) -> void:
 					menu_items.append(["สวม", "use"])
 				"trap":
 					menu_items.append(["วางกับดัก", "use"])
+			if not d.get("salvage", {}).is_empty():
+				menu_items.append(["แยกชิ้นส่วน", "salvage"])
+			if Crafting.repair_with(it) != "":
+				menu_items.append(["ซ่อม (ใช้%s)" % Items.display_name(Crafting.repair_with(it)), "repair"])
 			if it.get("n", 1) > 1:
 				menu_items.append(["แบ่งครึ่ง", "split"])
 			menu_items.append(["ทิ้งลงพื้น", "drop"])
 		"worn":
 			menu_items.append(["ถอด", "use"])
+			if Crafting.repair_with(it) != "":
+				menu_items.append(["ซ่อม (ใช้%s)" % Items.display_name(Crafting.repair_with(it)), "repair"])
 			menu_items.append(["ทิ้งลงพื้น", "drop"])
 		"ground", "box":
 			menu_items.append(["เก็บ", "take"])
@@ -183,7 +202,7 @@ func _open_menu(ref: Array, it: Dictionary, at: Vector2) -> void:
 
 
 func _menu_rect(i: int) -> Rect2:
-	return Rect2(menu_pos + Vector2(0, i * 26), Vector2(120, 26))
+	return Rect2(menu_pos + Vector2(0, i * 26), Vector2(150, 26))
 
 
 func _menu_click(p: Vector2) -> void:
@@ -194,6 +213,10 @@ func _menu_click(p: Vector2) -> void:
 					use_requested.emit(menu_ref)
 				"split":
 					split_requested.emit(menu_ref)
+				"salvage":
+					salvage_requested.emit(menu_ref[1])
+				"repair":
+					repair_requested.emit(menu_ref)
 				"drop":
 					drop_requested.emit(menu_ref)
 				"take":
@@ -233,9 +256,18 @@ func _draw() -> void:
 		load_line += " · หนักเกิน เดินช้าลง"
 	draw_string(body, Vector2(200, 56), load_line, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
 			UiTheme.WARN if kg > limit else Color(UiTheme.PAPER, 0.5))
-	draw_string(head, Vector2(480, 40), box_title if box_id >= 0 else "พื้นใกล้ตัว", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.PAPER)
-	draw_string(body, Vector2(480, 56), "ลากของมาเก็บไว้ในนี้ได้" if box_id >= 0 else "ลากของมาวางที่นี่เพื่อทิ้ง",
+	var making := crafting and box_id < 0
+	draw_string(head, Vector2(480, 40), box_title if box_id >= 0 else ("ทำของ" if making else "พื้นใกล้ตัว"), HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.PAPER)
+	draw_string(body, Vector2(480, 56), "ลากของมาเก็บไว้ในนี้ได้" if box_id >= 0 else ("ใช้ของในกระเป๋า · ต้องยืนนิ่ง" if making else "ลากของมาวางที่นี่เพื่อทิ้ง"),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(UiTheme.PAPER, 0.5))
+	if box_id < 0:
+		var tr := _tab_rect()
+		var lit := tr.has_point(get_local_mouse_position())
+		draw_style_box(UiTheme.box(UiTheme.WARN if lit else Color(0.91, 0.88, 0.81, 0.08), 6), tr)
+		draw_string(head, tr.position + Vector2(0, 18), "พื้น" if making else "ทำของ", HORIZONTAL_ALIGNMENT_CENTER, tr.size.x, 13,
+				UiTheme.INK if lit else UiTheme.PAPER)
+	if making:
+		_draw_recipes(head, body)
 	if inv.size() > Items.INV_SIZE:
 		var y := 64.0 + 2 * (SLOT + GAP) + 2
 		draw_string(body, Vector2(200, y + 9), "ในเป้", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(UiTheme.PAPER, 0.45))
@@ -268,8 +300,10 @@ func _draw() -> void:
 		draw_string(head, br.position + Vector2(0, 19), "เก็บทั้งหมด", HORIZONTAL_ALIGNMENT_CENTER, br.size.x, 14,
 				UiTheme.INK if hover == ["take_all"] else UiTheme.PAPER)
 	# What the mouse is over.
-	var info := "ลากเพื่อย้าย · คลิกขวาเพื่อใช้ / ทิ้ง · Shift+คลิกส่งข้ามฝั่ง · [Tab] ปิด"
-	var hit = _item(hover) if not hover.is_empty() and hover[0] != "take_all" else null
+	var info := "ลากเพื่อย้าย · คลิกขวาเพื่อใช้ / แยก / ซ่อม / ทิ้ง · Shift+คลิกส่งข้ามฝั่ง · [Tab] ปิด"
+	if not hover.is_empty() and hover[0] == "recipe":
+		info = _recipe_line(hover[1])
+	var hit = _item(hover) if not hover.is_empty() and hover[0] not in ["take_all", "recipe"] else null
 	if hit != null:
 		var d := Items.def(hit.id)
 		var line := Items.display_name(hit.id)
@@ -302,6 +336,39 @@ func _draw() -> void:
 		draw_string(body, r.position + Vector2(10, 18), menu_items[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UiTheme.PAPER)
 	if not menu_items.is_empty():
 		draw_rect(Rect2(menu_pos, Vector2(120, 26 * menu_items.size())), UiTheme.LINE, false, 1)
+
+
+func _tab_rect() -> Rect2:
+	return Rect2(W - 104, 26, 80, 26)
+
+
+func _recipe_rect(i: int) -> Rect2:
+	return Rect2(480, 66 + i * 36, 236, 32)
+
+
+## What a recipe uses, with how many of each you have: "เศษผ้า 1/2 · ...".
+func _recipe_line(id: String) -> String:
+	var r: Dictionary = Crafting.RECIPES[id]
+	var parts := []
+	for need in r.needs:
+		var nm: String = ("อะไรก็ได้ที่เป็น" + need.substr(1)) if need.begins_with("#") else Items.display_name(need)
+		parts.append("%s %d/%d" % [nm, Crafting.count_in(inv, need), r.needs[need]])
+	return " · ".join(parts)
+
+
+func _draw_recipes(head: Font, body: Font) -> void:
+	var ids := Crafting.RECIPES.keys()
+	for i in ids.size():
+		var r: Dictionary = Crafting.RECIPES[ids[i]]
+		var rr := _recipe_rect(i)
+		var ok := Crafting.can_make(inv, ids[i])
+		var lit: bool = hover == ["recipe", ids[i]]
+		draw_style_box(UiTheme.box(Color(0.91, 0.88, 0.81, 0.12 if lit else 0.04), 6, UiTheme.WARN if lit and ok else Color(0.23, 0.2, 0.17), 1), rr)
+		Items.draw_icon(self, Rect2(rr.position + Vector2(4, 4), Vector2(24, 24)), r.makes)
+		draw_string(head, rr.position + Vector2(34, 14), r.name, HORIZONTAL_ALIGNMENT_LEFT, rr.size.x - 38, 13,
+				UiTheme.PAPER if ok else Color(UiTheme.PAPER, 0.4))
+		draw_string(body, rr.position + Vector2(34, 27), _recipe_line(ids[i]), HORIZONTAL_ALIGNMENT_LEFT, rr.size.x - 38, 10,
+				Color("8fc870") if ok else Color(UiTheme.PAPER, 0.35))
 
 
 func _take_all_rect() -> Rect2:
@@ -339,3 +406,15 @@ func _input(e: InputEvent) -> void:
 			and _take_all_rect().has_point(get_local_mouse_position()) and not _far_items().is_empty() and menu_items.is_empty():
 		take_all()
 		get_viewport().set_input_as_handled()
+	elif visible and e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT and menu_items.is_empty():
+		var m := get_local_mouse_position()
+		if box_id < 0 and _tab_rect().has_point(m):
+			crafting = not crafting
+			queue_redraw()
+			get_viewport().set_input_as_handled()
+		elif crafting and box_id < 0:
+			var h := _ref_at(m)
+			if not h.is_empty() and h[0] == "recipe":
+				if Crafting.can_make(inv, h[1]):
+					craft_requested.emit(h[1])
+				get_viewport().set_input_as_handled()

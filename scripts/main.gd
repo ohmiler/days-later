@@ -19,6 +19,7 @@ var survival: Survival
 var net: Net
 var actions: Actions
 var things: Things
+var crafting: Crafting
 var port := PORT  # override with -- --port=N
 var world: World
 var camera: Camera2D
@@ -88,6 +89,7 @@ func _ready() -> void:
 	net = _module(Net.new(), "Net")
 	actions = _module(Actions.new(), "Actions")
 	things = _module(Things.new(), "Things")
+	crafting = _module(Crafting.new(), "Crafting")
 	y_sort_enabled = true  # characters and trees are drawn back-to-front by their feet
 	shade = CanvasModulate.new()
 	add_child(shade)
@@ -129,6 +131,9 @@ func _ready() -> void:
 	ui.gear.move_requested.connect(func(a: Array, b: Array): _request(&"req_move", [a, b]))
 	ui.gear.use_requested.connect(func(ref: Array): _request(&"req_use_ref", [ref]))
 	ui.gear.split_requested.connect(func(ref: Array): _request(&"req_split", [ref]))
+	ui.gear.craft_requested.connect(func(id: String): _request(&"req_craft", [id]))
+	ui.gear.salvage_requested.connect(func(idx: int): _request(&"req_salvage", [idx]))
+	ui.gear.repair_requested.connect(func(ref: Array): _request(&"req_repair", [ref]))
 	ui.gear.drop_requested.connect(func(ref: Array): _request(&"req_move", [ref, ["ground", -1]]))
 	ui.gear.box_closed.connect(func(): _request(&"req_close_box", []))
 	ui.chat_sent.connect(func(t: String): _request(&"req_chat", [t]))
@@ -353,6 +358,7 @@ func _server_tick(delta: float) -> void:
 					var w := Items.def(wid)
 					combat._melee(p, Look.SWING, [w.range, w.dmg, w.cd, w.stun, w.knock], w.dur * 0.45)
 		inventory._tick_search(p, delta)
+		crafting.server_tick(p, delta)
 		survival._tick_needs(p, delta)
 		if p.open_box >= 0 and (not p.alive() or p.position.distance_to(world.container_nodes[p.open_box].position) > Interact.CONTAINER_REACH + 8.0):
 			p.open_box = -1
@@ -455,7 +461,7 @@ func _module(m: Node, node_name: String) -> Node:
 func _handler(method: StringName) -> Node:
 	if has_method(method):
 		return self
-	for m in [combat, inventory, doors, survival, net, actions, things]:
+	for m in [combat, inventory, doors, survival, net, actions, things, crafting]:
 		if m.has_method(method):
 			return m
 	push_error("No handler for %s" % method)
