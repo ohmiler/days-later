@@ -18,27 +18,27 @@ func run() -> void:
 	# Toggle it from just outside.
 	me.position = at + Vector2(0, 14)
 	var was: bool = dd.closed
-	main._toggle_door(me, door)
+	main.doors._toggle_door(me, door)
 	check(dd.closed != was, "E opens or shuts a door")
-	main._toggle_door(me, door)
+	main.doors._toggle_door(me, door)
 	check(dd.closed == was, "and back again")
 
 	# Standing in the doorway, it will not shut on you.
 	if dd.closed:
-		main._toggle_door(me, door)
+		main.doors._toggle_door(me, door)
 	me.position = at
-	main._toggle_door(me, door)
+	main.doors._toggle_door(me, door)
 	check(not dd.closed, "a door will not close on someone standing in it")
 
 	# Boarding needs wood.
 	me.position = at + Vector2(0, 14)
-	main._toggle_door(me, door)
+	main.doors._toggle_door(me, door)
 	me.inv.fill(null)
 	var b0: int = dd.boards
-	main._reinforce(me, door)
+	main.doors._reinforce(me, door)
 	check(dd.boards == b0, "no wood, no boards")
-	main._give(me, "wood")
-	main._reinforce(me, door)
+	main.inventory._give(me, "wood")
+	main.doors._reinforce(me, door)
 	check(dd.boards == b0 + 1, "a plank adds a board (%d)" % dd.boards)
 	check(count(me, "wood") == 0, "and uses the plank")
 
@@ -46,6 +46,6 @@ func run() -> void:
 	var wd: Dictionary = w.doors[window]
 	var z := zombie_at(w.to_pos(wd.cell) + Vector2(60, 40))
 	me.position = w.to_pos(wd.cell) + Vector2(0, 14)
-	main._toggle_door(me, window)
+	main.doors._toggle_door(me, window)
 	check(wd.broken and not wd.closed, "smashing a window breaks it open")
 	check(z.investigate_t > 0.0 or z.target != null, "the noise brings a zombie to look")

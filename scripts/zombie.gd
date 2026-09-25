@@ -116,9 +116,9 @@ func server_tick(delta: float) -> void:
 	var prev_state := state
 	state = 2 if target else (1 if investigate_t > 0.0 else 0)
 	scream_cd -= delta
-	if kind == "screamer" and state == 2 and prev_state != 2 and scream_cd <= 0.0 and get_parent().has_method("zombie_scream"):
+	if kind == "screamer" and state == 2 and prev_state != 2 and scream_cd <= 0.0 and get_parent() is Main:
 		scream_cd = 8.0
-		get_parent().zombie_scream(self)
+		get_parent().survival.zombie_scream(self)
 
 	if target == null or not target.alive():
 		if investigate_t > 0.0:
@@ -192,7 +192,7 @@ func _bash_door_ahead() -> bool:
 	facing = (world.to_pos(dc) - position).angle()
 	if attack_cd <= 0.0:
 		attack_cd = 1.1
-		get_parent().damage_door(id, 12.0 * KINDS[kind].door)
+		get_parent().doors.damage_door(id, 12.0 * KINDS[kind].door)
 	return true
 
 

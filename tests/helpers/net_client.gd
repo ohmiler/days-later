@@ -24,7 +24,7 @@ func _process(d: float) -> bool:
 				main.player_name = "Client"
 				main.ui.secret_override = "client-secret-0123456789abcdef0123"
 				if args.size() > 1 and args[1] == "old":
-					main.protocol = main.PROTOCOL - 1  # pretend to be an out-of-date copy
+					main.net.protocol = main.net.PROTOCOL - 1  # pretend to be an out-of-date copy
 					step = 10
 				main.ui.appearance = {skin = 2, hair = 3, style = 1, shirt = 4, pants = 2, build = 2}
 				main._join("127.0.0.1")

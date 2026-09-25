@@ -5,7 +5,7 @@ class_name Interact
 ##
 ## A target is {kind, id, pos, title}. An action is {verb, label, ok, why, key}.
 ## To make something new interactive, teach `target` to find it, list its
-## actions here, and handle the verb in main._do_action.
+## actions here, and handle the verb in main.actions._do_action.
 
 const NONE := Vector2i(-1, -1)
 const PICKUP_REACH := 14.0

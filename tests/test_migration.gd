@@ -31,7 +31,7 @@ func run() -> void:
 	main.next_zid = 500
 	var z := zombie_at(me.position + Vector2(200, 0))
 	var zid := z.zid
-	main._give(me, "water")
+	main.inventory._give(me, "water")
 	me.hunger = 44.0
 	main._save_all()
 	await close_game()

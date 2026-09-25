@@ -98,7 +98,7 @@ func _process(delta: float) -> void:
 	var want := "explore"
 	if not in_game:
 		want = "night"
-	elif danger_t > 0.0 or main.is_horde(main.day, main.time):
+	elif danger_t > 0.0 or main.survival.is_horde(main.day, main.time):
 		want = "danger"
 	elif night:
 		want = "night"

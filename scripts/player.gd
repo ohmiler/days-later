@@ -24,7 +24,7 @@ var punch_side := false
 var pending_kind := Look.NONE
 var pending_t := 0.0
 var pending_stats: Array = []
-# Inventory: server-authoritative; the owning client gets a copy via main.inv_sync.
+# Inventory: server-authoritative; the owning client gets a copy via main.inventory.inv_sync.
 var inv: Array = []  # INV_SIZE entries of null or {id, n, hp}
 var sel := 0
 var weapon_id := ""  # what everyone sees in this player's hand
@@ -98,7 +98,7 @@ func take_damage(amount: float) -> void:
 		respawn = RESPAWN_TIME
 
 
-## Start an attack animation (runs on every peer via main.fx_melee).
+## Start an attack animation (runs on every peer via main.combat.fx_melee).
 func play_attack(kind: int) -> void:
 	if kind in [Look.PUNCH_L, Look.PUNCH_R]:
 		punch_side = not punch_side

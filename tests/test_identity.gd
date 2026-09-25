@@ -18,16 +18,16 @@ func run() -> void:
 
 	# Somchai plays and leaves a save.
 	var a := _fake_player(501)
-	main._claim_name(a, "Somchai", "secret-A")
+	main.net._claim_name(a, "Somchai", "secret-A")
 	check(a.pname == "Somchai", "a new name is yours")
-	main._give(a, "machete")
+	main.inventory._give(a, "machete")
 	SaveGame.save_player(a)
 	main.players.erase(501)
 	a.queue_free()
 
 	# Someone else asks for Somchai: they get a different name, and not his bag.
 	var b := _fake_player(502)
-	main._claim_name(b, "Somchai", "secret-B")
+	main.net._claim_name(b, "Somchai", "secret-B")
 	check(b.pname != "Somchai" and b.pname.begins_with("Somchai"), "another person gets a variation (%s)" % b.pname)
 	check(count(b, "machete") == 0, "and none of the real Somchai's things")
 	main.players.erase(502)
@@ -35,7 +35,7 @@ func run() -> void:
 
 	# The real Somchai comes back with his secret and gets everything back.
 	var c := _fake_player(503)
-	main._claim_name(c, "Somchai", "secret-A")
+	main.net._claim_name(c, "Somchai", "secret-A")
 	check(c.pname == "Somchai" and count(c, "machete") == 1, "the owner comes back to his own survivor")
 	main.players.erase(503)
 	c.queue_free()
@@ -46,7 +46,7 @@ func run() -> void:
 			hp = 77.0, kills = 3, hunger = 50.0, thirst = 50.0, infection = 0.0, bleeding = false, stamina = 100.0,
 			inv = [], sel = 0, worn = {}})
 	var d := _fake_player(504)
-	main._claim_name(d, "Oldtimer", "secret-D")
+	main.net._claim_name(d, "Oldtimer", "secret-D")
 	check(d.pname == "Oldtimer" and absf(d.hp - 77.0) < 0.5, "an old save with no owner is claimed by the first to use it")
 	SaveGame.save_player(d)
 	check(SaveGame.owner_of("Oldtimer") == "secret-D".sha256_text(), "and from then on it is theirs")
@@ -57,8 +57,8 @@ func run() -> void:
 	# Two people online cannot be the same survivor even with the same secret.
 	var e1 := _fake_player(505)
 	var e2 := _fake_player(506)
-	main._claim_name(e1, "Twin", "same")
-	main._claim_name(e2, "Twin", "same")
+	main.net._claim_name(e1, "Twin", "same")
+	main.net._claim_name(e2, "Twin", "same")
 	check(e1.pname != e2.pname, "one name, one person online at a time")
 
 	# An out-of-date copy of the game is turned away with a message.

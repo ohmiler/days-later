@@ -21,20 +21,20 @@ func run() -> void:
 		if d.kind == "door" and not d.broken and not d.closed:
 			door = d.id
 			break
-	main.door_state(door, true, 140.0, 2, false)
+	main.doors.door_state(door, true, 140.0, 2, false)
 	var f := _nearest_container()
 	me.position = f.position + Vector2(0, 8)
-	main._do_action(me, {kind = "container", id = f.data.id}, "search")
-	simulate(main.SEARCH_TIME + 0.2)
+	main.actions._do_action(me, {kind = "container", id = f.data.id}, "search")
+	simulate(main.inventory.SEARCH_TIME + 0.2)
 	check(f.searched and me.open_box == f.data.id, "searching opens the furniture")
 	me.inv.fill(null)
-	main._give(me, "machete")
-	main._give(me, "water")
-	main.req_move(["inv", 0], ["box", f.data.id, 7])
+	main.inventory._give(me, "machete")
+	main.inventory._give(me, "water")
+	main.inventory.req_move(["inv", 0], ["box", f.data.id, 7])
 	check(f.items[7] != null and f.items[7].id == "machete", "a machete stashed in the furniture")
-	main._give(me, "jacket")
+	main.inventory._give(me, "jacket")
 	var j := me.inv.find(me.inv.filter(func(x): return x != null and x.id == "jacket")[0])
-	main.req_move(["inv", j], ["worn", "body"])
+	main.inventory.req_move(["inv", j], ["worn", "body"])
 	main.day = 4
 	main.time = 0.6
 	me.hp = 57.0

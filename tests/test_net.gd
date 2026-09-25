@@ -28,12 +28,12 @@ func run() -> void:
 	check(joined.app_code == want, "its chosen look arrived (%d)" % joined.app_code)
 	# Say something back, and open a cupboard for it.
 	await wait(2.2)
-	main.req_chat("hello from the host")
+	main.net.req_chat("hello from the host")
 	check(joined.say == "hello from the client", "its chat arrived here")
 	var f: FurnitureProp = main.world.container_nodes[0]
 	f.searched = true
 	joined.position = f.position + Vector2(0, 8)
-	main._do_action(joined, {kind = "container", id = 0}, "look")
+	main.actions._do_action(joined, {kind = "container", id = 0}, "look")
 	# Wait for its report.
 	var path := ProjectSettings.globalize_path("user://net_client.txt")
 	for i in 100:

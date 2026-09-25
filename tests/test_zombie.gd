@@ -29,9 +29,9 @@ func run() -> void:
 
 	# Armour soaks up bites.
 	for id in ["vest", "helmet"]:
-		main._give(me, id)
+		main.inventory._give(me, id)
 		me.sel = me.inv.find(me.inv.filter(func(x): return x != null and x.id == id)[0])
-		main._use_selected(me)
+		main.inventory._use_selected(me)
 	check(me.armor() > 0.3, "wearing vest and helmet (armor %.2f)" % me.armor())
 	me.hp = 100.0
 	me.bite(20.0)
