@@ -165,7 +165,25 @@ static func statuses(p: Player) -> Array:
 		out.append({icon = "heavy", level = 1, text = "แบกหนักเกิน · เดินช้าลง"})
 	if p.heat() >= 0.4:
 		out.append({icon = "heat", level = 0, text = "ใส่ของหนา · ร้อน กระหายน้ำเร็ว"})
+	if p.muffled():
+		out.append({icon = "muffled", level = 0, text = "ใส่หมวกเต็มใบ · ได้ยินเสียงรอบตัวไม่ชัด"})
+	# Where you are: hunted, or safe.
+	var main := p.get_parent()
+	if main and main.get("zombies") != null:
+		var hunted := 0
+		for z in main.zombies.values():
+			if z.state == 2 and z.position.distance_to(p.position) < CHASE_NEAR:
+				hunted += 1
+		if hunted > 0 and not p.on_roof:
+			out.push_front({icon = "chased", level = 2, text = "ซอมบี้เห็นแล้ว กำลังตามมา (%d ตัว)" % hunted})
+		elif p.on_roof:
+			out.append({icon = "safe", level = 0, text = "บนดาดฟ้า · ซอมบี้ขึ้นมาไม่ได้"})
+		elif main.world.building_at.has(main.world.to_cell(p.position)) and main.survival.spot_safe(p.position):
+			out.append({icon = "safe", level = 0, text = "ตึกนี้ปิดครบ ไม่มีซอมบี้ข้างใน · นอนตรงนี้ได้สนิท"})
 	return out
+
+
+const CHASE_NEAR := 220.0  # a zombie that sees someone this close is taken to be after you
 
 
 ## Where a wound shows on the doll (front view, the rig's space).
@@ -213,6 +231,17 @@ static func draw_icon(ci: CanvasItem, c: Vector2, kind: String, col: Color, s :=
 			for i in 8:
 				var d := Vector2.from_angle(i * TAU / 8)
 				ci.draw_line(c + d * 4.6 * s, c + d * 7 * s, col, 1.2 * s)
+		"chased":  # an eye
+			ci.draw_arc(c + Vector2(0, 3) * s, 7 * s, -PI * 0.85, -PI * 0.15, 10, col, 1.6 * s)
+			ci.draw_arc(c + Vector2(0, -3) * s, 7 * s, PI * 0.15, PI * 0.85, 10, col, 1.6 * s)
+			ci.draw_circle(c, 2.4 * s, col)
+		"safe":  # a house
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-6, -1) * s, c + Vector2(0, -7) * s, c + Vector2(6, -1) * s]), col)
+			ci.draw_rect(Rect2(c + Vector2(-4.5, -1) * s, Vector2(9, 7) * s), col)
+			ci.draw_rect(Rect2(c + Vector2(-1.2, 2) * s, Vector2(2.4, 4) * s), Color(0, 0, 0, 0.45))
+		"muffled":  # an ear, struck through
+			ci.draw_arc(c + Vector2(1, -1) * s, 5 * s, PI * 0.9, PI * 2.4, 10, col, 1.6 * s)
+			ci.draw_line(c + Vector2(-6, 6) * s, c + Vector2(6, -6) * s, col, 1.4 * s)
 		"sprain":  # a bent leg
 			ci.draw_polyline(PackedVector2Array([c + Vector2(-2, -7) * s, c + Vector2(1, 0) * s, c + Vector2(-1, 6) * s, c + Vector2(5, 6) * s]), col, 2.0 * s)
 			ci.draw_line(c + Vector2(3, -2) * s, c + Vector2(6, -4) * s, col, 1.2 * s)
