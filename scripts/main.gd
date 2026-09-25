@@ -611,6 +611,7 @@ func _process(delta: float) -> void:
 				if me.position.distance_to(pickups[pid].pos) < inventory.GROUND_REACH - 4.0:
 					near.append([pid, pickups[pid].item])
 			ui.gear.ground = near
+			ui.gear.doll_look = me.look  # the bag screen shows you as you are
 		# Clicks on the hotbar are for the hotbar, not for punching.
 		var over_bar := ui.hotbar.hover >= 0 or bar_click
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):

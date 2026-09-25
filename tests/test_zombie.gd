@@ -70,7 +70,9 @@ func run() -> void:
 	# building in the way would make this a test of path finding instead.)
 	var open_dir := Vector2.RIGHT
 	for dir in [Vector2.RIGHT, Vector2.LEFT, Vector2.DOWN, Vector2.UP]:
-		if main.world.ray_length(me.position + Vector2(0, -4), dir, 100.0) >= 100.0:
+		# (Clear at foot height and at eye height, where zombies look from: see Zombie._nearest_player.)
+		# ...and with room for the zombie to stand where it's put (not against a wall).
+		if main.world.ray_length(me.position + Vector2(0, -4), dir, 100.0) >= 100.0 				and main.world.ray_length(me.position + Vector2(0, -15), dir, 100.0) >= 100.0 				and main.world.can_stand(me.position + dir * 90.0, Zombie.RADIUS + 1.0):
 			open_dir = dir
 			break
 	var far := zombie_at(me.position + open_dir * 90.0)
