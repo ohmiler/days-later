@@ -50,19 +50,111 @@ func _draw_rain() -> void:
 	main.rain_fx.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.1, 0.12, 0.16, 0.12))
 
 
+# --- Sleeping ---------------------------------------------------------------
+
+const SLEEP_HEAL := 0.6  # health a second asleep, anywhere
+const SAFE_BONUS := 3.0  # ...times this in a building shut tight with no zombie inside
+const BED_BONUS := 1.5  # ...and times this in a bed
+const SLEEP_NEEDS := 0.5  # hunger and thirst go down this much slower
+const SLEEP_WAKE := 70.0  # a zombie this close wakes you
+const SLEEP_TOO_CLOSE := 120.0  # ...and this close you can't get to sleep
+const NIGHT_SPEED := 6.0  # how much faster time runs when everyone is asleep
+
+
+## Time runs faster when every living survivor is asleep, so a night can be
+## slept through. One person awake keeps it normal for everyone.
+func time_speed() -> float:
+	var any := false
+	for p: Player in main.players.values():
+		if p.alive() and p.pname != "":
+			if not p.sleeping:
+				return 1.0
+			any = true
+	return NIGHT_SPEED if any else 1.0
+
+
+## Nearest zombie to a spot, in pixels (INF with none about).
+func _nearest_zombie(at: Vector2) -> float:
+	var best := INF
+	for z: Zombie in main.zombies.values():
+		best = minf(best, z.position.distance_to(at))
+	return best
+
+
+## A spot is safe inside a building whose every door and window is shut (and
+## not smashed), with no zombie inside. Out in the street it never is.
+func spot_safe(pos: Vector2) -> bool:
+	var w: World = main.world
+	var b = w.building_at.get(w.to_cell(pos))
+	if b == null:
+		return false
+	for d in w.doors:
+		if w.is_built(d.id) or w.building_at.get(d.cell) != b:
+			continue
+		if not d.closed or d.broken:
+			return false
+	for z: Zombie in main.zombies.values():
+		if w.building_at.get(w.to_cell(z.position)) == b:
+			return false
+	return true
+
+
+func can_sleep(p: Player) -> String:
+	if _nearest_zombie(p.position) < SLEEP_TOO_CLOSE:
+		return "มีซอมบี้อยู่ใกล้ นอนไม่ลง"
+	return ""
+
+
+## Lie down: on a bed (container id) or, with bed -1, right where you stand.
+func start_sleep(p: Player, bed: int) -> void:
+	p.sleeping = true
+	if bed >= 0:
+		p.position = main.world.container_nodes[bed].position
+	p.sleep_check = 0.0
+	p.sleep_bed = bed
+	var where := "บนเตียง" if bed >= 0 else "บนพื้น"
+	if spot_safe(p.position):
+		main._toast(p, "นอน%s · ที่นี่ปิดแน่น หลับสนิท" % where)
+	elif main.world.building_at.has(main.world.to_cell(p.position)):
+		main._toast(p, "นอน%s · ประตูหน้าต่างยังเปิดอยู่ หลับไม่สนิท" % where)
+	else:
+		main._toast(p, "นอนกลางแจ้ง · อันตราย หลับไม่สนิท")
+
+
+func _tick_sleep(p: Player, delta: float) -> void:
+	p.sleep_check -= delta
+	if p.sleep_check <= 0.0:
+		p.sleep_check = 1.0
+		if _nearest_zombie(p.position) < SLEEP_WAKE:
+			p.sleeping = false
+			main._toast(p, "สะดุ้งตื่น! มีอะไรอยู่ใกล้ๆ")
+			return
+		p.sleep_safe = spot_safe(p.position)
+	if p.hunger > 20.0 and p.thirst > 20.0:
+		p.hp = minf(Player.MAX_HP, p.hp + SLEEP_HEAL * (SAFE_BONUS if p.sleep_safe else 1.0) * (BED_BONUS if p.sleep_bed >= 0 else 1.0) * delta)
+	p.stamina = minf(100.0, p.stamina + 40.0 * delta)
+	p.exhausted = false
+
+
 ## Hunger, thirst, infection, bleeding and stamina (server).
 func _tick_needs(p: Player, delta: float) -> void:
 	if not p.alive():
+		p.sleeping = false
 		return
+	if p.sleeping:
+		_tick_sleep(p, delta)
 	var running := p.sprint and not p.sneak and p.move.length() > 0.1 and not p.exhausted and p.stamina > 0.0
 	# Footsteps: quiet walking, loud running, silent sneaking.
 	p.step_t -= delta
 	if p.move.length() > 0.1 and not p.sneak and p.step_t <= 0.0:
 		p.step_t = 0.5
 		main._make_noise(p.position, main.NOISE_RUN if running else main.NOISE_WALK)
-	p.hunger = maxf(0.0, p.hunger - HUNGER_RATE * delta * (1.6 if running else 1.0))
-	p.thirst = maxf(0.0, p.thirst - THIRST_RATE * delta * (1.8 if running else 1.0))
-	if running:
+	var slow := SLEEP_NEEDS if p.sleeping else 1.0
+	p.hunger = maxf(0.0, p.hunger - HUNGER_RATE * delta * slow * (1.6 if running else 1.0))
+	p.thirst = maxf(0.0, p.thirst - THIRST_RATE * delta * slow * (1.8 if running else 1.0))
+	if p.sleeping:
+		pass  # (rested in _tick_sleep)
+	elif running:
 		p.stamina = maxf(0.0, p.stamina - 22.0 * delta / p.load_speed())  # heavier tires you faster
 		if p.stamina <= 0.0:
 			p.exhausted = true

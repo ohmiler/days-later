@@ -10,7 +10,7 @@ var main: Main
 @rpc("any_peer", "call_remote", "reliable")
 func req_interact() -> void:
 	var p := main._sender()
-	if p == null or not p.alive():
+	if p == null or not p.alive() or p.sleeping:
 		return
 	var t := Interact.target(main, p)
 	var a := Interact.primary(Interact.actions(main, p, t))
@@ -27,7 +27,7 @@ func req_interact() -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func req_act(kind: String, id: Variant, verb: String) -> void:
 	var p := main._sender()
-	if p == null or not p.alive():
+	if p == null or not p.alive() or p.sleeping:
 		return
 	var t := Interact.resolve(main, p, kind, id)
 	var a := Interact.find_action(Interact.actions(main, p, t), verb)
@@ -37,6 +37,22 @@ func req_act(kind: String, id: Variant, verb: String) -> void:
 		_do_action(p, t, verb)
 	else:
 		main._toast(p, a.why)
+
+
+## Z: lie down where you are (or get up again).
+@rpc("any_peer", "call_remote", "reliable")
+func req_sleep() -> void:
+	var p := main._sender()
+	if p == null or not p.alive():
+		return
+	if p.sleeping:
+		p.sleeping = false
+		return
+	var why: String = main.survival.can_sleep(p)
+	if why != "":
+		main._toast(p, why)
+		return
+	main.survival.start_sleep(p, -1)
 
 
 func _do_action(p: Player, t: Dictionary, verb: String) -> void:
@@ -99,6 +115,12 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			main.combat.fx_hit.rpc(z.zid, z.position, Vector2.DOWN, true, p.peer_id, "", z.hp)
 			main.combat._kill_zombie(z, 1.0 if z.position.x >= p.position.x else -1.0, "stomp")
 			p.kills += 1
+		"sleep":
+			main.survival.start_sleep(p, t.id)
+		"claim":
+			p.bed = t.id
+			main.fx_sound.rpc("rustle", p.position)
+			main._toast(p, "เตียงนี้เป็นของคุณแล้ว · ถ้าตาย คนใหม่จะตื่นที่นี่")
 		"look":
 			main.fx_sound.rpc("rustle", main.world.container_nodes[t.id].position)
 			main.inventory._open_box(p, t.id)

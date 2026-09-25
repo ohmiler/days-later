@@ -69,6 +69,11 @@ var say_t := 0.0
 var open_box := -1  # server: the container this player has open in the bag screen
 var torn := ""  # server: name of something a bite just tore apart, for main to report
 var phase := 0.0
+var sleeping := false  # lying on a bed: can't move, heals, the night goes faster
+var bed := -1  # the bed (container id) this survivor calls home: where they wake after dying
+var sleep_check := 0.0  # server: time to the next look around while asleep
+var sleep_bed := -1  # server: the bed slept in now
+var sleep_safe := false  # server: that bed's building is shut tight (checked each second)
 var view := [Look.FRONT, false]
 var moving := false
 var last_pos := Vector2.ZERO
@@ -93,6 +98,7 @@ func take_damage(amount: float) -> void:
 	if not alive():
 		return
 	hp -= amount
+	sleeping = false  # pain wakes you
 	if hp <= 0:
 		hp = 0
 		respawn = RESPAWN_TIME
@@ -124,8 +130,13 @@ func server_tick(delta: float) -> void:
 			warned.clear()
 			refresh_wear()  # the clothes stayed on the body; the new survivor starts in their own
 			inv.resize(bag_size())
-			position = world.spawn_point()
+			position = home_spawn()
 		return
+	if sleeping:
+		if move.length() > 0.1 or punching or kicking:
+			sleeping = false  # getting up
+		else:
+			return
 	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof)
 
 
@@ -172,6 +183,13 @@ func armor() -> float:
 	for slot in wear_ids:
 		a += Items.def(wear_ids[slot]).get("armor", 0.0)
 	return minf(a, Items.MAX_ARMOR)
+
+
+## Where this survivor comes back: beside their bed if they have one, else anywhere.
+func home_spawn() -> Vector2:
+	if bed >= 0 and bed < world.container_nodes.size():
+		return world.container_nodes[bed].position
+	return world.spawn_point()
 
 
 ## Hotbar slots: the base eight plus whatever the bag on your back holds.
@@ -294,6 +312,15 @@ func _draw() -> void:
 			return  # the body got up and walked off as a zombie
 		Look.draw_blood_pool(self, fall_dir, clampf((death_t - 0.5) / 3.0, 0.0, 1.0))
 		Look.draw(self, {view = [Look.SIDE, fall_dir > 0], fall = clampf(death_t / 0.75, 0.001, 1.0), fall_dir = fall_dir}, look)
+		return
+	if sleeping:  # lying down, as on the ground but breathing
+		Look.lift = Vector2(30, -3)  # head on the pillow, body along the bed
+		Look.draw(self, {view = [Look.SIDE, false], fall = 1.0, fall_dir = -1.0}, look)
+		Look.lift = Vector2.ZERO
+		var t := fmod(Time.get_ticks_msec() / 1000.0, 3.0)
+		draw_string(UiTheme.heading(), Vector2(4 + t * 3, -14 - t * 5), "z", HORIZONTAL_ALIGNMENT_LEFT, -1, 9,
+				Color(0.9, 0.9, 1.0, 0.8 * (1.0 - t / 3.0)))
+		queue_redraw()
 		return
 	var wdef := Items.def(weapon_id)
 	var dur := 0.22

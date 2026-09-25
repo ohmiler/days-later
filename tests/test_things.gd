@@ -19,7 +19,8 @@ func _stand_by(th: Dictionary) -> void:
 		if not w.is_solid(c) and w.building_at.get(c) == w.building_at.get(th.cell):
 			me.position = w.to_pos(c)
 			me.aim = w.to_pos(th.cell) - me.position
-			if Interact.target(main, me).get("id") == th.id:
+			var tt := Interact.target(main, me)
+			if tt.get("kind") == "thing" and tt.id == th.id:
 				return  # (not a side where stairs or a cupboard are nearer)
 
 
@@ -36,6 +37,7 @@ func _near(th: Dictionary) -> Vector2:
 
 func run() -> void:
 	SaveGame.wipe()
+	seed(6649746)  # always the same city, one with every kind of thing (some cities have no radio)
 	await host(9350)
 	var w: World = main.world
 	var counts := {}
