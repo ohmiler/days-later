@@ -5,6 +5,10 @@ extends Node2D
 ## Origin is where the object meets the ground, for y-sorting.
 
 static var _glow_tex: Texture2D
+## Vehicles are drawn this much bigger than their shapes below, so a car is
+## longer than a person is tall (see CityGen._size_vehicles for what they block).
+const VEHICLE_SCALE := 1.6
+const VEHICLES := ["car", "taxi", "tuktuk", "motorbike", "wreck", "army"]
 
 var data: Dictionary
 

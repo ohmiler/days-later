@@ -77,6 +77,7 @@ static func build(w: World, rng: RandomNumberGenerator) -> void:
 	# Last, so everything above comes out the same for a given seed as it always has.
 	_aftermath(w, rng)
 	Things.place_all(w, rng)
+	_size_vehicles(w)
 
 
 static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGenerator) -> void:
@@ -519,3 +520,28 @@ static func _checkpoint(w: World, rng: RandomNumberGenerator, spawn: Vector2) ->
 			w.blocked[cell] = true
 		w.street_props.append({kind = "army", pos = Vector2(truck[0].x * World.TILE, (y + 3) * World.TILE), seed = rng.randi()})
 	w.checkpoint = it
+
+
+## Vehicles are drawn at StreetProp.VEHICLE_SCALE, bigger than the cells they
+## were placed on. Block the extra road they cover. This draws no random
+## numbers, so the rest of the city (and saved cities) come out as before;
+## a cell that is not free is simply left, and the car overhangs it a little.
+static func _size_vehicles(w: World) -> void:
+	for p in w.street_props:
+		var extra := []
+		var base := Vector2i((p.pos / World.TILE).floor())
+		match p.kind:
+			"car", "taxi":
+				if p.horizontal:
+					extra = [Vector2i(base.x + 2, base.y - 1)]  # longer: one more cell ahead
+				else:
+					extra = [Vector2i(base.x, base.y - 3)]  # seen end-on it grows up the screen
+			"tuktuk":
+				extra = [Vector2i(base.x + 1, base.y - 1)]
+			"wreck":
+				extra = [Vector2i(base.x + 2, base.y - 1)] if p.horizontal else [Vector2i(base.x, base.y - 3)]
+			"army":
+				extra = [Vector2i(base.x + 3, base.y - 1), Vector2i(base.x + 4, base.y - 1)]
+		for c in extra:
+			if w.get_tile(c) in [World.ROAD, World.SOI] and not w.blocked.has(c) and not w.in_intersection(c) 					and not World.DIRS.any(func(d): return w.get_tile(c + d) == World.DOOR):
+				w.blocked[c] = true

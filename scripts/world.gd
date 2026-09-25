@@ -126,6 +126,9 @@ func _spawn_props() -> void:
 		n.door = d
 		# A hair below the building's front wall so it draws on top of the facade.
 		n.position = Vector2(d.cell.x * TILE, (d.cell.y + 1) * TILE + 0.2)
+		if not World.BUILDS.has(d.kind):
+			# Drawn at the old height, stretched to the storey: a door a person walks through upright.
+			n.scale = Vector2(1, DoorProp.DOOR_STRETCH if d.kind == "door" else DoorProp.WINDOW_STRETCH)
 		n.z_index = 1
 		prop_parent.add_child(n)
 		door_nodes.append(n)
@@ -175,6 +178,8 @@ func _spawn_props() -> void:
 		p.data = rec
 		p.position = rec.pos
 		p.z_index = 0 if rec.get("flat", false) else 1  # litter lies under everyone
+		if rec.kind in StreetProp.VEHICLES:
+			p.scale = Vector2.ONE * StreetProp.VEHICLE_SCALE  # vehicles the size of vehicles
 		prop_parent.add_child(p)
 	overhead = Overhead.new()
 	overhead.world = self
