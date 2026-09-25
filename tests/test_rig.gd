@@ -98,6 +98,10 @@ func run() -> void:
 	check(absf(pr.upper.x) <= 1.0 and _arm_by_idx(pr, 1).sh.x > sh_idle.x + 1.0,
 			"punching, the shoulder goes forward, not the whole body (body %.1f)" % pr.upper.x)
 
+	# A zombie throws itself by bending at the hips: the body stays on its legs.
+	var zl := Rig.build({view = [Look.SIDE, false], zombie = true, bite = 0.8}, {})
+	check(absf(zl.upper.x) <= 1.3 and zl.torso > 0.3, "a lunging zombie bends forward, not slides (body %.1f, bend %.2f)" % [zl.upper.x, zl.torso])
+
 	# Zombies from behind still have arms (reaching away, hands by the shoulders).
 	var zb := Rig.build({view = [Look.BACK, false], angle = -PI / 2, zombie = true}, {})
 	check((zb.arms_back + zb.arms_front).size() == 2, "a zombie seen from behind has both arms")
