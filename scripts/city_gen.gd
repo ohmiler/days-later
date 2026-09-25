@@ -117,40 +117,61 @@ static func _make_enterable(w: World, rec: Dictionary, rng: RandomNumberGenerato
 		if x != door and rng.randf() < 0.6:
 			_add_opening(w, Vector2i(x, r.end.y - 1), "window", rng)
 	rec.table = "store" if rec.kind == "store" else SIGN_LOOT.get(rec.sign, "home")
-	var kinds: Array = Items.FURNITURE[rec.table]
-	var n := mini(inner.size.x, kinds.size())
+	# Deep shophouses split like the real thing: the shop at the front, living
+	# quarters at the back, joined by an inner door you can shut and board up
+	# as a second line of defence.
+	var rooms := [inner]
+	var inner_door := -1
+	if inner.size.y >= 5:
+		var wall_y := inner.position.y + inner.size.y / 2
+		w.fill(Rect2i(inner.position.x, wall_y, inner.size.x, 1), World.IWALL)
+		inner_door = inner.position.x + rng.randi_range(0, inner.size.x - 1)
+		_add_opening(w, Vector2i(inner_door, wall_y), "door", rng)
+		w.doors[-1].closed = false
+		w.doors[-1].broken = false
+		rooms = [Rect2i(inner.position.x, wall_y + 1, inner.size.x, inner.end.y - wall_y - 1),
+				Rect2i(inner.position.x, inner.position.y, inner.size.x, wall_y - inner.position.y)]
+	var keep_clear := [door, back, inner_door]  # columns that stay walkable
+	_furnish(w, rooms[0], Items.FURNITURE[rec.table], rec.table, keep_clear)
+	if rooms.size() > 1:
+		_furnish(w, rooms[1], Items.FURNITURE["home"], "home", keep_clear)
+	_dress(w, rec, rooms, keep_clear, rng)
+
+
+## Searchable furniture spread along the rear wall of a room.
+static func _furnish(w: World, room: Rect2i, kinds: Array, table: String, keep_clear: Array) -> void:
+	var n := mini(room.size.x, kinds.size())
 	for i in n:
-		# Spread along the back wall; the row nearest the door stays clear to walk.
-		var x := inner.position.x + int(round(float(i) * (inner.size.x - 1) / maxf(1.0, n - 1.0))) if n > 1 else inner.position.x
-		var cell := Vector2i(x, inner.position.y)
-		if w.blocked.has(cell) or x == back:
-			continue  # never block the way to the back door
+		var x := room.position.x + int(round(float(i) * (room.size.x - 1) / maxf(1.0, n - 1.0))) if n > 1 else room.position.x
+		var cell := Vector2i(x, room.position.y)
+		if w.blocked.has(cell) or x in keep_clear:
+			continue
 		w.blocked[cell] = true
-		w.containers.append({id = w.containers.size(), kind = kinds[i], cell = cell, table = rec.table})
-	_dress(w, rec, inner, door, back, rng)
+		w.containers.append({id = w.containers.size(), kind = kinds[i], cell = cell, table = table})
 
 
-## Scatter decor over the free floor, keeping the walk between doors clear,
-## and hang a bulb in the middle.
-static func _dress(w: World, rec: Dictionary, inner: Rect2i, door: int, back: int, rng: RandomNumberGenerator) -> void:
-	var kinds: Array = DECOR.get(rec.table, DECOR.home)
-	var free := []
-	for y in range(inner.position.y, inner.end.y):
-		for x in range(inner.position.x, inner.end.x):
-			var c := Vector2i(x, y)
-			if x != door and x != back and not w.blocked.has(c):
-				free.append(c)
-	if not free.is_empty():
-		# A stairwell up to the roof, in a corner of the room.
-		free.sort_custom(func(a, b): return a.x + a.y * 0.1 < b.x + b.y * 0.1)
-		var st: Vector2i = free.pop_at(0 if rng.randf() < 0.5 else free.size() - 1)
-		rec.stairs = st
-		w.stairs[st] = true
-		w.decor.append({kind = "stairs", cell = st, seed = 0, building = rec})
-	for i in mini(free.size(), rng.randi_range(1, 3)):
-		var c: Vector2i = free.pop_at(rng.randi() % free.size())
-		w.decor.append({kind = kinds[rng.randi() % kinds.size()], cell = c, seed = rng.randi(), building = rec})
-	w.decor.append({kind = "bulb", cell = Vector2i(inner.get_center()), seed = 0, building = rec})
+## Scatter decor over free floor (never on the walk between doors), put the
+## stairs in a corner of the back room, and hang a bulb in each room.
+static func _dress(w: World, rec: Dictionary, rooms: Array, keep_clear: Array, rng: RandomNumberGenerator) -> void:
+	for idx in rooms.size():
+		var room: Rect2i = rooms[idx]
+		var kinds: Array = DECOR.get(rec.table, DECOR.home) if idx == 0 else DECOR.home
+		var free := []
+		for y in range(room.position.y, room.end.y):
+			for x in range(room.position.x, room.end.x):
+				var c := Vector2i(x, y)
+				if x not in keep_clear and not w.blocked.has(c) and w.get_tile(c) == World.FLOOR:
+					free.append(c)
+		if idx == rooms.size() - 1 and not free.is_empty():
+			free.sort_custom(func(a, b): return a.x + a.y * 0.1 < b.x + b.y * 0.1)
+			var st: Vector2i = free.pop_at(0 if rng.randf() < 0.5 else free.size() - 1)
+			rec.stairs = st
+			w.stairs[st] = true
+			w.decor.append({kind = "stairs", cell = st, seed = 0, building = rec})
+		for i in mini(free.size(), rng.randi_range(1, 3)):
+			var c: Vector2i = free.pop_at(rng.randi() % free.size())
+			w.decor.append({kind = kinds[rng.randi() % kinds.size()], cell = c, seed = rng.randi(), building = rec})
+		w.decor.append({kind = "bulb", cell = Vector2i(room.get_center()), seed = 0, building = rec})
 
 
 ## A door or window in a wall. Windows start intact (glass), some already smashed.
@@ -184,7 +205,7 @@ static func _shophouse_block(w: World, b: Rect2i, rng: RandomNumberGenerator) ->
 
 	var y := b.position.y
 	while y < b.end.y:
-		var depth := rng.randi_range(4, 5)
+		var depth := rng.randi_range(7, 9)
 		if y + depth > b.end.y:
 			break
 		for s in segs:
@@ -206,7 +227,7 @@ static func _shophouse_block(w: World, b: Rect2i, rng: RandomNumberGenerator) ->
 static func _row(w: World, x0: int, x1: int, y: int, depth: int, rng: RandomNumberGenerator) -> void:
 	var x := x0
 	while x1 - x >= 2:
-		var bw := rng.randi_range(3, 5)
+		var bw := rng.randi_range(4, 6)
 		if x1 - x - bw < 2:
 			bw = x1 - x  # absorb a leftover sliver
 		if rng.randf() < 0.07 and bw >= 3:

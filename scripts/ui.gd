@@ -150,6 +150,7 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int, bu
 			noise = 2 if me.sprint and not me.exhausted else 1
 	vitals.noise = noise
 	vitals.sneak = me.sneak
+	vitals.on_roof = me.on_roof
 	vitals.hint = _hint(me) if me.alive() else ""
 	vitals.offset_top = vitals.offset_bottom - (150 if vitals.hint != "" else 126)
 	vitals.queue_redraw()
@@ -469,6 +470,7 @@ class Vitals extends Control:
 	var exhausted := false
 	var noise := 0
 	var sneak := false
+	var on_roof := false
 
 	## Speaker with 0-3 bars and a word, right-aligned at `right`.
 	func _draw_noise(right: Vector2) -> void:
@@ -497,10 +499,12 @@ class Vitals extends Control:
 		# Next to the name: an urgent warning, if any.
 		var alert := "ใกล้ตาย!" if low else ("เลือดออก!" if bleeding else "")
 		low = low or bleeding
+		var nw := UiTheme.heading().get_string_size(pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
 		if alert != "":
-			var nw := UiTheme.heading().get_string_size(pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
 			draw_string(UiTheme.body_bold(), Vector2(16 + nw + 10, 31), alert, HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
 					Color(1, 0.42, 0.35, 0.55 + 0.45 * pulse))
+		elif on_roof:
+			draw_string(UiTheme.body_bold(), Vector2(16 + nw + 10, 31), "บนดาดฟ้า", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("8ad07a"))
 		_draw_noise(Vector2(size.x - 16, 31))
 		var hc := Color("ff3a2a") if low else UiTheme.BLOOD
 		UiTheme.heart(self, Vector2(27, 60), 12.0 + (1.8 * pulse if low else 0.0), hc)

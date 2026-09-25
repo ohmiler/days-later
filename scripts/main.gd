@@ -51,6 +51,8 @@ var sneak_toggle := false
 var build_mode := false
 var build_kind := "fence"
 var build_cell := Vector2i.ZERO
+var roof_k := 0.0  # 0 on the street .. 1 up on the roofs (eases, drives the rooftop view)
+const ROOF_DIM := 0.4  # how much the street below darkens while you're up top
 # Horde nights: every HORDE_EVERY days the whole city comes for you.
 const HORDE_EVERY := 3
 const HORDE_MAX_ZOMBIES := 160
@@ -1293,6 +1295,7 @@ func _process(delta: float) -> void:
 
 	var light := lerpf(0.12, 1.0, clampf((0.5 - absf(time - 0.4)) * 4.0, 0.0, 1.0))
 	shade.color = Color(light * 0.85, light * 0.92, minf(1.0, light * 1.4))
+	_update_roof_view(me, delta)
 	var night := light < 0.6
 	if night != world.is_night:
 		get_tree().call_group("night_glow", "set_visible", night)
@@ -1334,6 +1337,25 @@ func _process(delta: float) -> void:
 var faded: Array = []
 
 
+## Up on the roofs the street drops into shadow while the roofs you can walk on
+## (and anyone standing on them) stay bright, and the camera pulls back a little.
+func _update_roof_view(me: Player, delta: float) -> void:
+	var target := 1.0 if me and me.on_roof and me.alive() else 0.0
+	var before := roof_k
+	roof_k = move_toward(roof_k, target, delta * 3.0)
+	if roof_k <= 0.0 and before <= 0.0:
+		return
+	var dim := 1.0 - ROOF_DIM * roof_k
+	shade.color = Color(shade.color.r * dim, shade.color.g * dim, shade.color.b * dim)
+	var lift_col := 1.0 / dim
+	for b: BuildingProp in world.building_nodes:
+		var up: float = lift_col if b.data.kind in ["shop", "store"] else 1.0
+		b.modulate = Color(up, up, up, b.modulate.a)
+	for p: Player in players.values():
+		var up := lift_col if p.on_roof else 1.0
+		p.modulate = Color(up, up, up)
+
+
 ## Colour drains to red, the camera leans in on the body, and a message fades up.
 func _update_death_screen(me: Player, delta: float) -> void:
 	var dead := me != null and not me.alive()
@@ -1343,7 +1365,8 @@ func _update_death_screen(me: Player, delta: float) -> void:
 	if dead:
 		camera.zoom = camera.zoom.lerp(play_zoom * 1.35, delta * 0.8)
 	elif me:
-		camera.zoom = camera.zoom.lerp(play_zoom, delta * 3.0) if camera.zoom.distance_to(play_zoom) > 0.01 else play_zoom
+		var want := play_zoom * lerpf(1.0, 0.78, roof_k)
+		camera.zoom = camera.zoom.lerp(want, delta * 3.0) if camera.zoom.distance_to(want) > 0.01 else want
 
 
 ## Walking into a building lifts its roof and front wall off so you can see inside.
@@ -1458,6 +1481,8 @@ func _draw_fx() -> void:
 		var col := Color(UiTheme.WARN, 1.0 - k * k) if dn[2] else Color(1, 1, 1, 1.0 - k * k)
 		fx.draw_string_outline(font, pos - Vector2(20, 0), "-" + dn[1], HORIZONTAL_ALIGNMENT_CENTER, 40, size, 3, Color(0.45, 0.06, 0.04, 1.0 - k * k))
 		fx.draw_string(font, pos - Vector2(20, 0), "-" + dn[1], HORIZONTAL_ALIGNMENT_CENTER, 40, size, col)
+	if builder:
+		_draw_roof_guides(builder, font)
 	if prompt != "":
 		var sz := 5
 		var tw := UiTheme.draw_rich(fx, Vector2.ZERO, prompt, font, sz, UiTheme.PAPER, true)
@@ -1495,6 +1520,39 @@ func _request(method: StringName, args: Array) -> void:
 		callv(method, args)
 	else:
 		callv("rpc_id", [1, method] + args)
+
+
+## Outline the walkable roofs around you and mark every stairwell hatch; inside
+## a building, label its stairs.
+func _draw_roof_guides(me: Player, font: Font) -> void:
+	var c0 := world.to_cell(me.position)
+	var T := World.TILE
+	if roof_k > 0.01:
+		var edge := Color(1.0, 0.9, 0.6, 0.6 * roof_k)
+		for dy in range(-13, 14):
+			for dx in range(-18, 19):
+				var c := c0 + Vector2i(dx, dy)
+				if not world.is_roof(c):
+					continue
+				var o := Vector2(c) * T + Vector2(0, -world.roof_height(world.to_pos(c)))
+				for d in World.DIRS:
+					if not world.is_roof(c + d):
+						var a := o + Vector2(maxi(d.x, 0), maxi(d.y, 0)) * T
+						var b := a + (Vector2(0, T) if d.x != 0 else Vector2(T, 0))
+						fx.draw_line(a, b, edge, 1.0)
+		for st in world.stairs:
+			if Vector2(st - c0).length() < 20:
+				var p := world.to_pos(st) + Vector2(0, -world.roof_height(world.to_pos(st)))
+				var r := Rect2(p - Vector2(5, 5), Vector2(10, 10))
+				fx.draw_rect(r, Color(0.1, 0.09, 0.08, 0.9 * roof_k))
+				fx.draw_rect(r, Color(1, 0.85, 0.4, 0.8 * roof_k), false, 0.8)
+				for i in 3:
+					fx.draw_line(r.position + Vector2(2, 2.5 + i * 2.5), r.position + Vector2(8, 2.5 + i * 2.5), Color(1, 0.85, 0.4, 0.7 * roof_k), 0.6)
+				fx.draw_string(font, p + Vector2(-20, -7), "↓ บันได", HORIZONTAL_ALIGNMENT_CENTER, 40, 5, Color(1, 0.9, 0.6, roof_k))
+	elif hidden_building and hidden_building.data.has("stairs"):
+		var p := world.to_pos(hidden_building.data.stairs) + Vector2(0, -26)
+		fx.draw_string_outline(font, p + Vector2(-20, 0), "↑ ดาดฟ้า", HORIZONTAL_ALIGNMENT_CENTER, 40, 5, 2, Color(0, 0, 0, 0.7))
+		fx.draw_string(font, p + Vector2(-20, 0), "↑ ดาดฟ้า", HORIZONTAL_ALIGNMENT_CENTER, 40, 5, UiTheme.WARN)
 
 
 func _draw_decals() -> void:
