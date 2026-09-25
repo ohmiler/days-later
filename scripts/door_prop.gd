@@ -80,24 +80,7 @@ func _draw_structure(kind: String) -> void:
 			var x := 2.0 + i * 3.5
 			draw_line(Vector2(x, -1), Vector2(x + 3, -3 - (i % 2) * 2), wood.darkened(0.3), 1.2)
 		return
-	var dmg: float = 1.0 - door.hp / World.BUILDS[kind].hp
 	match kind:
-		"fence":
-			draw_rect(Rect2(0, -2, T, 2), Color(0, 0, 0, 0.25))
-			for x in [1.0, 7.0, 13.0]:
-				draw_rect(Rect2(x, -13, 2.2, 13), wood.darkened(0.15))
-				draw_colored_polygon(PackedVector2Array([Vector2(x, -13), Vector2(x + 2.2, -13), Vector2(x + 1.1, -15)]), wood.darkened(0.15))
-			draw_rect(Rect2(0, -10, T, 2), wood)
-			draw_rect(Rect2(0, -5, T, 2), wood)
-		"wall":
-			draw_rect(Rect2(-0.5, -2, T + 1, 2), Color(0, 0, 0, 0.3))
-			for i in 4:
-				var y := -4.0 - i * 3.6
-				draw_rect(Rect2(-0.5, y, T + 1, 3.4), wood.darkened(0.05 * (i % 2)))
-				draw_rect(Rect2(-0.5, y, T + 1, 0.7), wood.lightened(0.15))
-			draw_line(Vector2(1, -2), Vector2(T - 1, -15), wood.darkened(0.3), 1.6)  # brace
-			draw_circle(Vector2(2, -9), 0.5, Color("6a6a6a"))
-			draw_circle(Vector2(T - 2, -9), 0.5, Color("6a6a6a"))
 		"wire":
 			for i in 3:
 				var x := 3.0 + i * 5.0
@@ -116,5 +99,3 @@ func _draw_structure(kind: String) -> void:
 			for i in 6:
 				var p := Vector2(3 + (i % 3) * 5, -5 + (i / 3) * 2.5)
 				draw_line(p, p + Vector2(0.3, -2.5), Color("b8bcc0"), 0.5)
-	if dmg > 0.5 and kind in ["fence", "wall"]:
-		draw_line(Vector2(3, -12), Vector2(8, -6), Color(0, 0, 0, 0.5), 0.6)

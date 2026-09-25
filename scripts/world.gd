@@ -14,15 +14,12 @@ const WINDOW_HP := 15.0  # glass: one good hit
 const WINDOW_SLOW := 0.35  # climbing through a smashed window
 const BOARD_HP := 60.0  # each board nailed across a door
 const MAX_BOARDS := 3
-## Things players can build (B). solid ones block like a shut door and get
-## bashed; the others are traps you walk over. cost is in wood planks.
+## Traps players set down from their bag (F). You walk over them; zombies
+## that do get hurt. The key matches the trap item's id in Items.
 const BUILDS := {
-	"fence": {name = "รั้วไม้", cost = 2, hp = 80.0, solid = true},
-	"wall": {name = "กำแพงไม้", cost = 4, hp = 220.0, solid = true},
-	"wire": {name = "ลวดหนาม", cost = 2, hp = 60.0, solid = false},
-	"spikes": {name = "กับดักตะปู", cost = 1, hp = 5.0, solid = false},
+	"wire": {name = "ลวดหนาม", hp = 60.0, solid = false},
+	"spikes": {name = "กับดักตะปู", hp = 5.0, solid = false},
 }
-const BUILD_ORDER := ["fence", "wall", "wire", "spikes"]
 const WIRE_SLOW := 0.4
 enum { GRASS, DIRT, WATER, TREE, WALL, ROAD, SIDEWALK, SOI, BUILDING, PLAZA, FLOOR, IWALL, DOOR }
 const COLORS := {
@@ -220,7 +217,7 @@ func is_built(id: int) -> bool:
 	return BUILDS.has(doors[id].get("kind", "door"))
 
 
-## Add or rebuild a player-made structure (every peer, from the server).
+## Add or replace a trap someone set down (every peer, from the server).
 func add_structure(id: int, cell: Vector2i, kind: String, hp: float) -> void:
 	var d := {id = id, cell = cell, kind = kind, closed = BUILDS[kind].solid, hp = hp, boards = 0, broken = false}
 	if id < doors.size():
@@ -239,13 +236,13 @@ func add_structure(id: int, cell: Vector2i, kind: String, hp: float) -> void:
 	astar.set_point_solid(cell, d.closed)
 
 
-## Can a structure go here? (ignores who is standing on it; the server checks that)
+## Can a trap go here?
 func can_build(cell: Vector2i) -> bool:
 	if not in_bounds(cell) or stairs.has(cell):
 		return false
 	var id: int = door_at.get(cell, -1)
 	if id >= 0:
-		return is_built(id) and doors[id].broken  # rebuild on the wreck of your own
+		return is_built(id) and doors[id].broken  # over a trap that's worn out
 	return get_tile(cell) not in [WATER, TREE, WALL, BUILDING, IWALL] and not blocked.has(cell)
 
 

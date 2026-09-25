@@ -48,9 +48,6 @@ const NOISE_HIT := 130.0
 const NOISE_SEARCH := 60.0
 const NOISE_BREAK := 170.0
 var sneak_toggle := false
-var build_mode := false
-var build_kind := "fence"
-var build_cell := Vector2i.ZERO
 var roof_k := 0.0  # 0 on the street .. 1 up on the roofs (eases, drives the rooftop view)
 const ROOF_DIM := 0.4  # how much the street below darkens while you're up top
 # Horde nights: every HORDE_EVERY days the whole city comes for you.
@@ -551,14 +548,7 @@ func req_reinforce() -> void:
 		return
 	var d: Dictionary = world.doors[id]
 	if world.is_built(id):
-		if d.broken:
-			return
-		var full: float = World.BUILDS[d.kind].hp
-		if d.hp >= full:
-			_toast(p, "ยังไม่เสียหาย")
-			return
-		door_state.rpc(id, d.closed, minf(full, d.hp + full * 0.5), 0, false)
-		_toast(p, "ซ่อม%s" % World.BUILDS[d.kind].name)
+		return
 	elif world.is_window(id) and not d.closed:
 		# Board over the smashed window.
 		door_state.rpc(id, true, World.BOARD_HP, 1, false)
@@ -706,56 +696,28 @@ func _tick_traps(delta: float) -> void:
 			_kill_zombie(z, 1.0)
 
 
-## Place a structure (server). Costs wood; must be near you and on free ground.
-@rpc("any_peer", "call_remote", "reliable")
-func req_build(kind: String, cell: Vector2i) -> void:
-	var p := _sender()
-	if p == null or not p.alive() or p.on_roof or not World.BUILDS.has(kind):
+## Set the selected trap down on the ground just in front of you (server).
+func _place_trap(p: Player, it: Dictionary) -> void:
+	if p.on_roof:
+		_toast(p, "วางกับดักบนหลังคาไม่ได้")
 		return
-	var pos := world.to_pos(cell)
-	if p.position.distance_to(pos) > 48.0 or not world.can_build(cell):
+	var cell := world.to_cell(p.position + p.aim.normalized() * 14.0)
+	if not world.can_build(cell):
+		_toast(p, "วางตรงนี้ไม่ได้")
 		return
-	for q: Player in players.values():
-		if q.alive() and q.position.distance_to(pos) < 11.0 and World.BUILDS[kind].solid:
-			_toast(p, "มีคนยืนขวางอยู่")
-			return
-	for z: Zombie in zombies.values():
-		if z.position.distance_to(pos) < 11.0 and World.BUILDS[kind].solid:
-			return
-	var cost: int = World.BUILDS[kind].cost
-	if _count(p, "wood") < cost:
-		_toast(p, "ไม้กระดานไม่พอ (ต้องใช้ %d)" % cost)
-		return
-	_take(p, "wood", cost)
 	var id: int = world.door_at.get(cell, world.doors.size())
-	build_add.rpc(id, cell, kind, World.BUILDS[kind].hp)
-	fx_sound.rpc("door", pos)
-	_make_noise(pos, NOISE_SWING)
+	build_add.rpc(id, cell, it.id, World.BUILDS[it.id].hp)
+	it.n -= 1
+	if it.n <= 0:
+		p.inv[p.sel] = null
+	fx_sound.rpc("door", world.to_pos(cell))
+	_toast(p, "วาง%sแล้ว" % Items.display_name(it.id))
 	_send_inv(p)
 
 
 @rpc("authority", "call_local", "reliable")
 func build_add(id: int, cell: Vector2i, kind: String, hp: float) -> void:
 	world.add_structure(id, cell, kind, hp)
-
-
-func _count(p: Player, id: String) -> int:
-	var n := 0
-	for it in p.inv:
-		if it != null and it.id == id:
-			n += it.n
-	return n
-
-
-func _take(p: Player, id: String, n: int) -> void:
-	for i in Items.INV_SIZE:
-		var it = p.inv[i]
-		if n > 0 and it != null and it.id == id:
-			var k: int = mini(n, it.n)
-			it.n -= k
-			n -= k
-			if it.n <= 0:
-				p.inv[i] = null
 
 
 ## Each hit wears the weapon down; at zero it breaks.
@@ -839,6 +801,9 @@ func req_use() -> void:
 	if p == null or not p.alive():
 		return
 	var it = p.inv[p.sel]
+	if it != null and Items.def(it.id).get("type") == "trap":
+		_place_trap(p, it)
+		return
 	if it == null or Items.def(it.id).get("type") != "use":
 		return
 	var d := Items.def(it.id)
@@ -1269,12 +1234,8 @@ func _process(delta: float) -> void:
 				float(Input.is_key_pressed(KEY_S)) - float(Input.is_key_pressed(KEY_W)))
 		move = move.limit_length(1.0)
 		var aim := get_global_mouse_position() - (me.position + Look.CHEST)
-		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not build_mode
-		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not build_mode
-		if build_mode:
-			build_cell = world.to_cell(get_global_mouse_position() + Vector2(0, 8))
-			if not me.alive() or me.on_roof:
-				build_mode = false
+		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
 		me.sneak = sneak_toggle or Input.is_key_pressed(KEY_CTRL)
 		me.sprint = Input.is_key_pressed(KEY_SHIFT) and not me.sneak
 		me.aim = aim
@@ -1333,7 +1294,7 @@ func _process(delta: float) -> void:
 	for dn in dmg_numbers:
 		dn[3] += delta
 	dmg_numbers = dmg_numbers.filter(func(dn): return dn[3] < 0.9)
-	ui.update_hud(delta, me, day, time, players.size(), build_mode, build_kind)
+	ui.update_hud(delta, me, day, time, players.size())
 	var hurt := 0.0
 	if me and me.alive() and me.hp < 35:
 		hurt = (35.0 - me.hp) / 35.0
@@ -1473,15 +1434,7 @@ func _fade_trees_near(pos: Vector2) -> void:
 
 func _draw_fx() -> void:
 	var font := UiTheme.world("Kanit-Medium")
-	var builder: Player = players.get(multiplayer.get_unique_id())
-	if build_mode and builder:
-		var ok: bool = world.can_build(build_cell) and builder.position.distance_to(world.to_pos(build_cell)) <= 48.0 \
-				and _count(builder, "wood") >= World.BUILDS[build_kind].cost
-		var r := Rect2(Vector2(build_cell) * World.TILE, Vector2(World.TILE, World.TILE))
-		var col := Color(0.4, 0.9, 0.4) if ok else Color(0.95, 0.3, 0.25)
-		fx.draw_rect(r, Color(col, 0.25))
-		fx.draw_rect(r, Color(col, 0.9), false, 0.8)
-		fx.draw_arc(builder.position, 48.0, 0, TAU, 48, Color(1, 1, 1, 0.08), 0.6)
+	var local: Player = players.get(multiplayer.get_unique_id())
 	for p: Player in players.values():
 		if p.alive() and p.pname != "":
 			var w := font.get_string_size(p.pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 5).x + 6
@@ -1495,8 +1448,8 @@ func _draw_fx() -> void:
 		var col := Color(UiTheme.WARN, 1.0 - k * k) if dn[2] else Color(1, 1, 1, 1.0 - k * k)
 		fx.draw_string_outline(font, pos - Vector2(20, 0), "-" + dn[1], HORIZONTAL_ALIGNMENT_CENTER, 40, size, 3, Color(0.45, 0.06, 0.04, 1.0 - k * k))
 		fx.draw_string(font, pos - Vector2(20, 0), "-" + dn[1], HORIZONTAL_ALIGNMENT_CENTER, 40, size, col)
-	if builder:
-		_draw_roof_guides(builder, font)
+	if local:
+		_draw_roof_guides(local, font)
 	if prompt != "":
 		var sz := 5
 		var tw := UiTheme.draw_rich(fx, Vector2.ZERO, prompt, font, sz, UiTheme.PAPER, true)
@@ -1584,12 +1537,6 @@ func _draw_decals() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if world and in_game and event is InputEventKey and event.pressed and not event.echo:
 		var k: int = event.keycode
-		if build_mode and k >= KEY_1 and k <= KEY_4:
-			build_kind = World.BUILD_ORDER[k - KEY_1]
-			return
-		if k == KEY_B or (k == KEY_ESCAPE and build_mode):
-			build_mode = not build_mode and k == KEY_B
-			return
 		if k == KEY_H:
 			ui.toggle_help()
 		elif k == KEY_ESCAPE and ui.help.visible:
@@ -1607,13 +1554,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			_request(&"req_drop", [])
 		elif k >= KEY_1 and k <= KEY_8:
 			_request(&"req_select", [k - KEY_1])
-	if build_mode and event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			_request(&"req_build", [build_kind, build_cell])
-			return
-		if event.button_index == MOUSE_BUTTON_RIGHT:
-			build_mode = false
-			return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			play_zoom = (play_zoom * 1.1).clamp(Vector2(1, 1), Vector2(6, 6))

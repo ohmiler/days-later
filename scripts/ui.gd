@@ -26,7 +26,6 @@ var clock: Clock
 var tut: TutorialCard
 var feed: VBoxContainer
 var hotbar: InventoryBar
-var build_bar: BuildBar
 var help: Control
 var banner: Label
 var banner_t := 0.0
@@ -118,19 +117,9 @@ func tutorial(id: String) -> void:
 
 # --- Per frame ---------------------------------------------------------------
 
-func update_hud(delta: float, me: Player, day: int, time: float, online: int, building := false, build_kind := "") -> void:
+func update_hud(delta: float, me: Player, day: int, time: float, online: int) -> void:
 	if me == null:
 		return
-	build_bar.visible = building
-	hotbar.visible = not building
-	if building:
-		var wood := 0
-		for it in me.inv:
-			if it != null and it.id == "wood":
-				wood += it.n
-		build_bar.wood = wood
-		build_bar.kind = build_kind
-		build_bar.queue_redraw()
 	vitals.t += delta
 	vitals.pname = me.pname if me.pname != "" else player_name()
 	vitals.hp = me.hp
@@ -285,17 +274,6 @@ func _build_hud() -> void:
 
 	hotbar = InventoryBar.new()
 	hud.add_child(hotbar)
-	build_bar = BuildBar.new()
-	build_bar.visible = false
-	build_bar.anchor_left = 0.5
-	build_bar.anchor_right = 0.5
-	build_bar.anchor_top = 1.0
-	build_bar.anchor_bottom = 1.0
-	build_bar.offset_left = -300
-	build_bar.offset_right = 300
-	build_bar.offset_top = -150
-	build_bar.offset_bottom = -20
-	hud.add_child(build_bar)
 
 	banner = _label("", UiTheme.heavy(), 34, Color("ff6a5a"))
 	banner.anchor_left = 0.5
@@ -628,7 +606,7 @@ class HelpSheet extends Control:
 		["[ลูกกลิ้ง]", "ซูมกล้อง"], ["[G]", "ทิ้งของ"],
 		["[Shift]", "วิ่ง (เร็ว แต่เสียงดัง)"], ["[Ctrl]/[C]", "ย่อง (เงียบ ซอมบี้เห็นยาก)"],
 		["[R]", "ตอกไม้เสริม / ซ่อมประตู"], ["[E] ที่บันได", "ขึ้น / ลงดาดฟ้า"],
-		["[B]", "โหมดสร้าง: รั้ว กำแพง ลวดหนาม กับดัก"], ["[H]", "เปิด / ปิดหน้านี้"],
+		["[H]", "เปิด / ปิดหน้านี้"],
 	]
 
 	func _draw() -> void:
@@ -647,29 +625,3 @@ class HelpSheet extends Control:
 		draw_string(UiTheme.body(), Vector2(36, size.y - 30), "ทุก 3 วันจะมีคืนฝูง: ยึดร้านสักหลัง กด E ปิดประตู แล้วกด R ตอกไม้ให้แน่น",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(UiTheme.INK, 0.65))
 
-
-class BuildBar extends Control:
-	var wood := 0
-	var kind := "fence"
-
-	func _draw() -> void:
-		var title := "โหมดสร้าง · ไม้กระดาน %d แผ่น" % wood
-		draw_string_outline(UiTheme.medium(), Vector2(0, 24), title, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, 8, Color(0, 0, 0, 0.6))
-		draw_string(UiTheme.medium(), Vector2(0, 24), title, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, UiTheme.PAPER)
-		var hint := "[คลิกซ้าย] วาง  ·  [R] ซ่อม  ·  [B] ออก"
-		var hw := UiTheme.draw_rich(self, Vector2.ZERO, hint, UiTheme.body(), 14, UiTheme.PAPER, true)
-		UiTheme.draw_rich(self, Vector2((size.x - hw) / 2, 46), hint, UiTheme.body(), 14, Color(UiTheme.PAPER, 0.8))
-		var n := World.BUILD_ORDER.size()
-		var cw := 136.0
-		var x0 := (size.x - n * cw - (n - 1) * 8) / 2
-		for i in n:
-			var k: String = World.BUILD_ORDER[i]
-			var b: Dictionary = World.BUILDS[k]
-			var r := Rect2(x0 + i * (cw + 8), 62, cw, 56)
-			var sel := k == kind
-			var afford: bool = wood >= b.cost
-			draw_style_box(UiTheme.box(Color("ad9870") if afford else Color(0.11, 0.1, 0.08, 0.75), 6, UiTheme.WARN if sel else Color("6e5b3c"), 3 if sel else 2), r)
-			var ink: Color = UiTheme.INK if afford else Color(UiTheme.PAPER, 0.5)
-			draw_string(UiTheme.heading(), r.position + Vector2(10, 22), "%d  %s" % [i + 1, b.name], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, ink)
-			draw_string(UiTheme.body_bold(), r.position + Vector2(10, 44), "ใช้ไม้ %d" % b.cost + (" · กั้นทาง" if b.solid else " · กับดัก"),
-					HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(ink, 0.75))

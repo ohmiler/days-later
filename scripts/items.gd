@@ -34,6 +34,9 @@ const DEFS := {
 	"mama": {name = "บะหมี่กึ่งสำเร็จรูป", type = "use", food = 40.0, drink = -5.0},
 	"snack": {name = "ขนมถุง", type = "use", food = 20.0},
 	"energy": {name = "เครื่องดื่มชูกำลัง", type = "use", food = 5.0, drink = 25.0, stamina = 100.0},
+	# Traps: F sets one down on the ground in front of you
+	"wire": {name = "ลวดหนาม", type = "trap"},
+	"spikes": {name = "กับดักตะปู", type = "trap"},
 	# Building material: reinforce or repair doors (R)
 	"wood": {name = "ไม้กระดาน", type = "material"},
 	# Valuables, for trading later
@@ -45,9 +48,9 @@ const LOOT := {
 	"store": [["water", 4], ["mama", 3], ["snack", 4], ["energy", 2], ["painkiller", 1]],
 	"med": [["bandage", 4], ["painkiller", 3], ["firstaid", 1], ["antibiotic", 2], ["water", 1]],
 	"food": [["knife", 2], ["mama", 2], ["snack", 2], ["water", 2], ["energy", 1]],
-	"tools": [["pipe", 3], ["hammer", 3], ["plank", 3], ["axe", 1], ["machete", 1], ["wood", 5]],
+	"tools": [["pipe", 3], ["hammer", 3], ["plank", 3], ["axe", 1], ["machete", 1], ["wood", 5], ["wire", 2], ["spikes", 2]],
 	"valuables": [["gold", 3], ["bat", 1], ["knife", 1]],
-	"home": [["plank", 2], ["bat", 1], ["knife", 2], ["water", 3], ["mama", 3], ["snack", 2], ["bandage", 2], ["wood", 3]],
+	"home": [["plank", 2], ["bat", 1], ["knife", 2], ["water", 3], ["mama", 3], ["snack", 2], ["bandage", 2], ["wood", 3], ["spikes", 1]],
 }
 
 ## Furniture that goes in each kind of place.
@@ -156,6 +159,13 @@ static func draw_icon(ci: CanvasItem, r: Rect2, id: String) -> void:
 			ci.draw_rect(Rect2(c - Vector2(8, 13) * s, Vector2(16, 6) * s), Color("f0ece4"))
 			ci.draw_rect(Rect2(c - Vector2(5, 2) * s, Vector2(10, 7) * s), Color("f0ece4"))
 			ci.draw_rect(Rect2(c - Vector2(1, 1) * s, Vector2(2, 5) * s), Color("3a8a4a"))
+		"wire":
+			for i in 3:
+				ci.draw_arc(c + Vector2(-7 + i * 7, 0) * s, 6 * s, 0, TAU, 12, Color("8a8e90"), 1.5 * s)
+		"spikes":
+			ci.draw_rect(Rect2(c - Vector2(12, 4) * s, Vector2(24, 9) * s), Color("7a5634"))
+			for i in 5:
+				ci.draw_line(c + Vector2(-9 + i * 4.5, -4) * s, c + Vector2(-9 + i * 4.5, -11) * s, Color("c8ccd0"), 1.5 * s)
 		"wood":
 			for i in 3:
 				var y := (-8 + i * 7) * s
