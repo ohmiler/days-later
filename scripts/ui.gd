@@ -28,6 +28,7 @@ var feed: VBoxContainer
 var hotbar: InventoryBar
 var help: Control
 var gear: BagScreen
+var fs_button: Button
 var wheel: ActionWheel
 var banner: Label
 var banner_t := 0.0
@@ -43,6 +44,9 @@ func _ready() -> void:
 	layer = 2
 	cfg.load(SETTINGS)
 	Look.low_gore = cfg.get_value("video", "low_gore", false)
+	# Full screen unless turned off; left alone for test runs, servers and the browser.
+	if Engine.get_main_loop().get_script() == null and DisplayServer.get_name() != "headless" and not OS.has_feature("web"):
+		set_fullscreen(cfg.get_value("video", "fullscreen", true), false)
 	for id in cfg.get_value("tutorial", "done", []):
 		done_steps[id] = true
 	_build_hud()
@@ -83,6 +87,25 @@ func set_inventory(inv: Array, sel: int) -> void:
 func set_worn(worn: Dictionary) -> void:
 	gear.worn = worn
 	gear.queue_redraw()
+
+
+func is_fullscreen() -> bool:
+	return DisplayServer.window_get_mode() in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]
+
+
+func set_fullscreen(on: bool, remember := true) -> void:
+	if Engine.is_embedded_in_editor():
+		# Played inside the editor's Game tab, which can only be a window.
+		if remember:
+			set_status("เล่นในแท็บ Game ของ Godot เต็มจอไม่ได้ · ปิด Embed ในแท็บ Game หรือเปิดไฟล์เกมตรงๆ")
+			push_feed("เล่นในตัวแก้ไข Godot อยู่ · เต็มจอใช้ได้ตอนเปิดเกมในหน้าต่างของตัวเอง")
+		return
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if on else DisplayServer.WINDOW_MODE_WINDOWED)
+	if remember:
+		cfg.set_value("video", "fullscreen", on)
+		cfg.save(SETTINGS)
+	if fs_button:
+		fs_button.text = "เต็มจอ: " + ("เปิด" if on else "ปิด") + "  (F11)"
 
 
 func open_box(cid: int, items: Array, title: String) -> void:
@@ -445,7 +468,7 @@ func _build_menu() -> void:
 	form.add_child(row)
 	var gore := _button("", false)
 	var show_gore := func():
-		gore.text = "เลือดและชิ้นส่วน: " + ("น้อย" if Look.low_gore else "เต็ม")
+		gore.text = "เลือด: " + ("น้อย" if Look.low_gore else "เต็ม")
 	show_gore.call()
 	gore.add_theme_font_size_override("font_size", 16)
 	gore.pressed.connect(func():
@@ -453,7 +476,16 @@ func _build_menu() -> void:
 		cfg.set_value("video", "low_gore", Look.low_gore)
 		cfg.save(SETTINGS)
 		show_gore.call())
-	form.add_child(gore)
+	fs_button = _button("", false)
+	fs_button.add_theme_font_size_override("font_size", 16)
+	fs_button.pressed.connect(func(): set_fullscreen(not is_fullscreen()))
+	fs_button.text = "เต็มจอ: " + ("เปิด" if cfg.get_value("video", "fullscreen", true) else "ปิด") + "  (F11)"
+	var opts := HBoxContainer.new()
+	opts.add_theme_constant_override("separation", 8)
+	for b: Button in [gore, fs_button]:
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		opts.add_child(b)
+	form.add_child(opts)
 	status = _label("", UiTheme.body(), 15, UiTheme.WARN)
 	form.add_child(status)
 	_build_creator()

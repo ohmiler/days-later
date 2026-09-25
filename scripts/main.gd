@@ -2078,6 +2078,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			var a := Interact.primary(last_actions)
 			_request(&"req_act", [last_target.kind, last_target.id, a.verb])
 		return
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F11:
+		ui.set_fullscreen(not ui.is_fullscreen())
+		return
 	if world and in_game and event is InputEventKey and event.pressed and not event.echo:
 		var k: int = event.keycode
 		if k == KEY_H:
