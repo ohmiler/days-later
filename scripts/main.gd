@@ -40,6 +40,16 @@ const STARVE_DAMAGE := 0.6
 const BLEED_DAMAGE := 0.8
 const BITE_INFECT_CHANCE := 0.2
 const BITE_BLEED_CHANCE := 0.3
+# How far each kind of noise carries, in pixels (a tile is 16).
+const NOISE_WALK := 45.0
+const NOISE_RUN := 115.0
+const NOISE_SWING := 90.0
+const NOISE_HIT := 130.0
+const NOISE_SEARCH := 60.0
+const NOISE_BREAK := 170.0
+var rings: Array = []  # [pos, radius, age, colour] visual noise rings
+var local_step_t := 0.0
+var sneak_toggle := false
 var players := {}  # peer_id -> Player
 var zombies := {}  # zid -> Zombie
 var next_zid := 1
@@ -289,10 +299,11 @@ func req_set_name(n: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
-func send_input(move: Vector2, aim: Vector2, punch: bool, kick: bool, sprint: bool) -> void:
+func send_input(move: Vector2, aim: Vector2, punch: bool, kick: bool, sprint: bool, sneak: bool) -> void:
 	var p: Player = players.get(multiplayer.get_remote_sender_id())
 	if p:
 		p.sprint = sprint
+		p.sneak = sneak
 		p.move = move.limit_length(1.0)
 		p.aim = aim
 		p.punching = punch
@@ -341,10 +352,10 @@ func _server_tick(delta: float) -> void:
 		var ps := []
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint]])
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak]])
 		var zs := []
 		for z: Zombie in zombies.values():
-			zs.append([z.zid, z.position, z.hp])
+			zs.append([z.zid, z.position, z.hp, z.state])
 		snapshot.rpc(ps, zs, time, day)
 
 
@@ -373,6 +384,7 @@ func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 	p.shoot_cd = stats[2]
 	p.search_id = -1  # swinging interrupts a search
 	fx_melee.rpc(p.peer_id, kind)
+	_make_noise(p.position, NOISE_SWING * (0.6 if p.sneak else 1.0), false)
 	p.pending_kind = kind
 	p.pending_stats = stats
 	if windup < 0:
@@ -403,6 +415,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		z.stun = stats[3]
 		z.position = world.slide(z.position, dir * stats[4], Zombie.RADIUS)
 		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), stats[1])
+		_make_noise(z.position, NOISE_HIT)
 		if z.hp <= 0:
 			fx_death.rpc(z.position, 1.0 if dir.x >= 0 else -1.0, z.skin, z.shirt, z.pants, z.hair)
 			zombies.erase(z.zid)
@@ -416,7 +429,12 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 func _tick_needs(p: Player, delta: float) -> void:
 	if not p.alive():
 		return
-	var running := p.sprint and p.move.length() > 0.1 and not p.exhausted and p.stamina > 0.0
+	var running := p.sprint and not p.sneak and p.move.length() > 0.1 and not p.exhausted and p.stamina > 0.0
+	# Footsteps: quiet walking, loud running, silent sneaking.
+	p.step_t -= delta
+	if p.move.length() > 0.1 and not p.sneak and p.step_t <= 0.0:
+		p.step_t = 0.5
+		_make_noise(p.position, NOISE_RUN if running else NOISE_WALK, false)
 	p.hunger = maxf(0.0, p.hunger - HUNGER_RATE * delta * (1.6 if running else 1.0))
 	p.thirst = maxf(0.0, p.thirst - THIRST_RATE * delta * (1.8 if running else 1.0))
 	if running:
@@ -455,6 +473,20 @@ func _tick_needs(p: Player, delta: float) -> void:
 		_warn(p, "fever", p.infection > 60.0, "เชื้อลุกลาม ตัวเริ่มร้อนและเดินช้าลง...")
 		if p.infection >= 100.0:
 			_turn(p)
+
+
+## Every zombie within `radius` goes to look. `show` also draws a ring for everyone.
+func _make_noise(pos: Vector2, radius: float, show := true) -> void:
+	for z: Zombie in zombies.values():
+		if z.position.distance_to(pos) < radius:
+			z.hear(pos)
+	if show:
+		fx_noise.rpc(pos, radius)
+
+
+@rpc("authority", "call_local", "unreliable")
+func fx_noise(pos: Vector2, radius: float) -> void:
+	rings.append([pos, radius, 0.0, UiTheme.WARN])
 
 
 ## Send a warning once when a condition becomes true; re-arm when it clears.
@@ -506,6 +538,7 @@ func _wear_weapon(p: Player) -> void:
 	if it.hp <= 0:
 		p.inv[p.sel] = null
 		fx_sound.rpc("break", p.position)
+		_make_noise(p.position, NOISE_BREAK)
 		_toast(p, "%s หัก!" % Items.display_name(it.id))
 	_send_inv(p)
 
@@ -646,6 +679,7 @@ func req_interact() -> void:
 		p.search_id = f.data.id
 		p.search_t = SEARCH_TIME
 		fx_sound.rpc("rustle", f.position)
+		_make_noise(f.position, NOISE_SEARCH)
 		_notify(p.peer_id, &"search_started", [SEARCH_TIME])
 
 
@@ -760,6 +794,7 @@ func snapshot(ps: Array, zs: Array, t: float, d: int) -> void:
 		p.exhausted = n[5]
 		if not p.is_local:
 			p.sprint = n[6]
+			p.sneak = n[7]
 	for id in players.keys():
 		if not seen.has(id):
 			players[id].queue_free()
@@ -773,6 +808,7 @@ func snapshot(ps: Array, zs: Array, t: float, d: int) -> void:
 			z = _add_zombie(id, e[1])
 		z.net_pos = e[1]
 		z.hp = e[2]
+		z.state = e[3]
 	for id in zombies.keys():
 		if not seen.has(id):
 			zombies[id].queue_free()
@@ -908,14 +944,20 @@ func _process(delta: float) -> void:
 		var aim := get_global_mouse_position() - (me.position + Look.CHEST)
 		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
-		me.sprint = Input.is_key_pressed(KEY_SHIFT)
+		me.sneak = sneak_toggle or Input.is_key_pressed(KEY_CTRL)
+		me.sprint = Input.is_key_pressed(KEY_SHIFT) and not me.sneak
+		# Your own footsteps as faint rings, so you can see how loud you are.
+		local_step_t -= delta
+		if me.alive() and move.length() > 0.1 and not me.sneak and local_step_t <= 0.0:
+			local_step_t = 0.5
+			rings.append([me.position, NOISE_RUN if me.sprint and not me.exhausted else NOISE_WALK, 0.0, UiTheme.PAPER])
 		me.aim = aim
 		if multiplayer.is_server():
 			me.move = move
 			me.punching = punch
 			me.kicking = kick
 		else:
-			send_input.rpc_id(1, move, aim, punch, kick, me.sprint)
+			send_input.rpc_id(1, move, aim, punch, kick, me.sprint, me.sneak)
 			if me.alive():
 				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * delta, Player.RADIUS)
 		camera.position = me.position + Look.CHEST
@@ -960,6 +1002,9 @@ func _process(delta: float) -> void:
 				blood.append([p.position + Vector2(randf_range(-3, 3), randf_range(-1, 2)), randf_range(0.6, 1.4),
 						Color(0.4, 0.03, 0.03, 0.8)])
 				decals.queue_redraw()
+	for r in rings:
+		r[2] += delta
+	rings = rings.filter(func(r): return r[2] < 0.7)
 	for dn in dmg_numbers:
 		dn[3] += delta
 	dmg_numbers = dmg_numbers.filter(func(dn): return dn[3] < 0.9)
@@ -1050,6 +1095,12 @@ func _fade_trees_near(pos: Vector2) -> void:
 
 func _draw_fx() -> void:
 	var font := UiTheme.world("Kanit-Medium")
+	for r in rings:
+		var k: float = r[2] / 0.7
+		var col: Color = r[3]
+		fx.draw_set_transform(r[0], 0, Vector2(1, 0.55))
+		fx.draw_arc(Vector2.ZERO, r[1] * (0.35 + 0.65 * ease(k, 0.5)), 0, TAU, 48, Color(col, 0.55 * (1.0 - k)), 1.6)
+	fx.draw_set_transform(Vector2.ZERO)
 	for p: Player in players.values():
 		if p.alive() and p.pname != "":
 			var w := font.get_string_size(p.pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 5).x + 6
@@ -1121,6 +1172,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			ui.toggle_help()
 		elif k == KEY_ESCAPE and ui.help.visible:
 			ui.toggle_help()
+		elif k == KEY_C:
+			sneak_toggle = not sneak_toggle
+			ui.push_feed("ย่อง: เงียบ ช้า มองเห็นยาก" if sneak_toggle else "เลิกย่อง")
 		elif k == KEY_E:
 			_request(&"req_interact", [])
 		elif k == KEY_F:

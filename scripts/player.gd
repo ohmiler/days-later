@@ -41,6 +41,8 @@ var bleeding := false
 var stamina := 100.0
 var exhausted := false  # ran dry: no sprinting until stamina recovers
 var sprint := false
+var sneak := false  # Ctrl / C: slow, quiet, harder to spot
+var step_t := 0.0  # server: time to the next footstep noise
 var bitten := false  # server: set by a zombie bite, handled by main
 var turned := false  # died of the infection and got back up as a zombie
 var warned := {}  # server: which low-need warnings were already sent
@@ -116,7 +118,9 @@ func server_tick(delta: float) -> void:
 ## Sprinting is faster; a bad infection drags your feet.
 func speed_mult() -> float:
 	var m := 1.0
-	if sprint and not exhausted and stamina > 0.0:
+	if sneak:
+		m = 0.5
+	elif sprint and not exhausted and stamina > 0.0:
 		m = 1.6
 	if infection > 60.0:
 		m *= 0.85
@@ -192,7 +196,9 @@ func _draw() -> void:
 	if anim != Look.NONE and anim_t < dur:
 		# Punches use a quick out-and-back curve; kicks and swings pass their raw timeline.
 		ext = sin(anim_t / dur * PI) if anim in [Look.PUNCH_L, Look.PUNCH_R] else anim_t / dur
-	Look.draw_human(self, view, aim.angle(), phase, moving and ext == 0.0, skin, shirt, pants, hair, false,
-			anim if ext > 0.0 else Look.NONE, ext, false, anim != Look.NONE and anim_t < 1.2, Vector2.ZERO,
+	# Sneaking: crouched low, a slow creep.
+	var crouch := Vector2(0, 3.0) if sneak else Vector2.ZERO
+	Look.draw_human(self, view, aim.angle(), phase * (0.6 if sneak else 1.0), moving and ext == 0.0, skin, shirt, pants, hair, false,
+			anim if ext > 0.0 else Look.NONE, ext, false, anim != Look.NONE and anim_t < 1.2, crouch,
 			wdef.get("draw", {}))
 	Look.draw_hp(self, hp / MAX_HP)

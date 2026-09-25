@@ -288,9 +288,9 @@ func _build_help() -> void:
 	sheet.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	sheet.offset_left = -370
 	sheet.offset_right = 370
-	sheet.offset_top = -225
-	sheet.offset_bottom = 225
-	sheet.pivot_offset = Vector2(370, 225)
+	sheet.offset_top = -250
+	sheet.offset_bottom = 250
+	sheet.pivot_offset = Vector2(370, 250)
 	sheet.rotation = 0.01
 	help.add_child(sheet)
 
@@ -542,7 +542,8 @@ class HelpSheet extends Control:
 		["[คลิกซ้าย]", "ต่อย / ฟาดอาวุธ"], ["[1]–[8]", "เลือกช่องของ"],
 		["[คลิกขวา]", "เตะ ผลักซอมบี้ออก"], ["[F]", "ใช้ของ (กิน / รักษา)"],
 		["[ลูกกลิ้ง]", "ซูมกล้อง"], ["[G]", "ทิ้งของ"],
-		["[Shift]", "วิ่ง (ใช้แรง ทำให้หิวเร็วขึ้น)"], ["[H]", "เปิด / ปิดหน้านี้"],
+		["[Shift]", "วิ่ง (เร็ว แต่เสียงดัง)"], ["[Ctrl]/[C]", "ย่อง (เงียบ ซอมบี้เห็นยาก)"],
+		["[H]", "เปิด / ปิดหน้านี้"],
 	]
 
 	func _draw() -> void:
@@ -558,5 +559,5 @@ class HelpSheet extends Control:
 			var kw := UiTheme.draw_rich(self, p, ROWS[i][0], UiTheme.heading(), 16, UiTheme.INK)
 			draw_string(UiTheme.body_bold(), p + Vector2(maxf(kw, 60) + 14, 0), ROWS[i][1], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.INK)
 			draw_dashed_line(p + Vector2(0, 16), p + Vector2(320, 16), UiTheme.PAPER_DARK, 1.0, 4.0)
-		draw_string(UiTheme.body(), Vector2(36, size.y - 30), "เคล็ดลับ: ถ้าโดนรุม ให้เตะก่อนแล้วค่อยถอยไปต่อยทีละตัว",
+		draw_string(UiTheme.body(), Vector2(36, size.y - 30), "เคล็ดลับ: ซอมบี้ได้ยินเสียง ย่องเข้าร้านเงียบ ๆ แล้วค่อยค้นของ",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(UiTheme.INK, 0.65))
