@@ -26,7 +26,7 @@ const RARITY := {common = 4, uncommon = 2, rare = 1}
 const RARITY_NAMES := {common = "ธรรมดา", uncommon = "ไม่บ่อย", rare = "หายาก"}
 const RARITY_COLORS := {common = Color("c8c4b8"), uncommon = Color("6ab0e0"), rare = Color("e0b840")}
 ## Icon shapes an item's `icon` can use (drawn in draw_icon).
-const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain"]
+const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain", "rag", "nails", "tape", "scrap", "magazine"]
 
 ## id -> fields, read from DATA the first time Items is used.
 static var DEFS: Dictionary = _load_defs()
@@ -90,6 +90,11 @@ static func problems() -> Array:
 		for place in d.get("places", []):
 			if place not in PLACES:
 				out.append("%s: unknown place %s" % [id, place])
+		for part in d.get("salvage", {}):
+			if not DEFS.has(part):
+				out.append("%s: salvage gives unknown item %s" % [id, part])
+		if d.has("repair") and not DEFS.has(d.repair):
+			out.append("%s: repaired with unknown item %s" % [id, d.repair])
 		match d.get("type"):
 			"weapon":
 				for key in ["range", "dmg", "cd", "dur", "hp", "draw"]:
@@ -328,6 +333,27 @@ static func _shape_icon(ci: CanvasItem, r: Rect2, icon: Dictionary) -> void:
 		"chain":
 			ci.draw_arc(c, 9 * s, 0, TAU, 20, col, 3 * s)
 			ci.draw_circle(c + Vector2(0, 9) * s, 3 * s, col2)
+		"rag":  # a folded bit of cloth
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-12, -6) * s, c + Vector2(10, -9) * s,
+					c + Vector2(12, 7) * s, c + Vector2(-10, 9) * s]), col)
+			ci.draw_line(c + Vector2(-11, 0) * s, c + Vector2(11, -1) * s, col2, 1.2 * s)
+		"nails":
+			for i in 4:
+				var x := (-8 + i * 5) * s
+				ci.draw_line(c + Vector2(x, -9 * s), c + Vector2(x + 2 * s, 9 * s), col, 1.6 * s)
+				ci.draw_line(c + Vector2(x - 2 * s, -9 * s), c + Vector2(x + 2 * s, -9 * s), col2, 2 * s)
+		"tape":
+			ci.draw_circle(c, 11 * s, col)
+			ci.draw_circle(c, 5 * s, Color("c8b890"))
+			ci.draw_rect(Rect2(c + Vector2(6, 4) * s, Vector2(8, 5) * s), col2)
+		"scrap":
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-12, 2) * s, c + Vector2(-4, -10) * s,
+					c + Vector2(9, -6) * s, c + Vector2(12, 6) * s, c + Vector2(-2, 10) * s]), col)
+			ci.draw_circle(c + Vector2(3, 2) * s, 3 * s, col2)  # rust
+		"magazine":
+			ci.draw_rect(Rect2(c - Vector2(9, 12) * s, Vector2(18, 24) * s), col)
+			ci.draw_rect(Rect2(c - Vector2(9, 12) * s, Vector2(18, 7) * s), col2)
+			ci.draw_rect(Rect2(c + Vector2(-6, 0) * s, Vector2(12, 7) * s), col.darkened(0.25))
 		_:
 			ci.draw_circle(c, 8 * s, col)
 

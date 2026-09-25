@@ -30,6 +30,7 @@ var sel := 0
 var weapon_id := ""  # what everyone sees in this player's hand
 var search_id := -1  # server only: container being searched
 var search_t := 0.0
+var craft := {}  # server: the making/mending job under way ({kind, t, ...}; see Crafting)
 var dropped := false  # server only: death bag already dropped this life
 var death_t := 0.0  # seconds since dying (every peer, drives the fall)
 var pname := ""  # shown above the head

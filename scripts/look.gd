@@ -686,6 +686,12 @@ static func _draw_weapon(ci: CanvasItem, hand: Vector2, dv: Vector2, w: Dictiona
 		"bat":
 			_limb(ci, butt, tip, 1.2, 2.7, col)
 			_limb(ci, butt, hand + dv * 1.5, 1.4, 1.4, dark)  # grip tape
+		"nailbat":  # a plank with nails driven through the end
+			_limb(ci, butt, tip, 2.0, 2.6, col)
+			for k in 4:
+				var at := tip - dv * (1.0 + k * 1.6)
+				var side := 1.0 if k % 2 == 0 else -1.0
+				_line(ci, at + n * side * 1.8, at + n * side * 3.6, Color("b8bcc0"), 0.5)
 		"pipe":
 			_limb(ci, butt, tip, 1.8, 1.8, col)
 			_line(ci, butt + n * 0.4, tip + n * 0.4, col.lightened(0.3), 0.5)

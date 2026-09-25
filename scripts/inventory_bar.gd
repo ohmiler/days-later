@@ -104,9 +104,9 @@ func _draw() -> void:
 			"trap":
 				info = "กด F วางลงพื้นข้างหน้า · ซอมบี้ที่เหยียบจะโดน"
 			"material":
-				info = "ยืนที่ประตูแล้วกด R เพื่อตอกเสริม / ซ่อม"
+				info = "ยืนที่ประตูแล้วกด R เพื่อตอกเสริม · หรือใช้ทำของ (Tab)" if cur.id == "wood" else "ใช้ทำของและซ่อม (Tab > ทำของ)"
 			_:
-				info = "เก็บไว้แลกของ"
+				info = "ใช้ทำของ (Tab > ทำของ)" if cur.id == "magazine" else "เก็บไว้แลกของ"
 	var cx := size.x / 2
 	draw_string_outline(UiTheme.medium(), Vector2(0, 26), name, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, 8, Color(0, 0, 0, 0.6))
 	draw_string(UiTheme.medium(), Vector2(0, 26), name, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, UiTheme.PAPER)
