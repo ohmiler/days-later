@@ -71,6 +71,7 @@ var open_box := -1  # server: the container this player has open in the bag scre
 var torn := ""  # server: name of something a bite just tore apart, for main to report
 var wounds: Array = []  # see Body (server; the owner's machine gets a copy)
 var body_dirty := false  # server: wounds changed, send them to the owner
+var body_sync_t := 0.0  # server: time to the next refresh of the owner's copy
 var last_window := -1  # server: the smashed window being climbed through (glass cuts)
 var bite_where := ""  # server: where the last bite landed, and how much of it was stopped
 var bite_guard := 0.0

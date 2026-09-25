@@ -219,6 +219,11 @@ func _tick_needs(p: Player, delta: float) -> void:
 	var said := Body.tick(p, delta)
 	if said != "":
 		main._toast(p, said)
+	# While anything is healing, the owner's copy is refreshed now and then (for its progress bars).
+	p.body_sync_t -= delta
+	if p.body_sync_t <= 0.0 and not p.wounds.is_empty():
+		p.body_sync_t = 3.0
+		p.body_dirty = true
 	if p.body_dirty:
 		p.body_dirty = false
 		send_body(p)
