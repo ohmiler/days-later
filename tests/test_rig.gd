@@ -1,0 +1,103 @@
+extends "res://tests/test_base.gd"
+## The rig (pose -> joints): arms and legs keep their length in every pose and
+## view, so nothing stretches, and every leg says where its knee is.
+
+const EPS := 0.05
+
+
+func run() -> void:
+	var views := [[[Look.SIDE, false], 0.0], [[Look.SIDE, true], PI], [[Look.FRONT, false], PI / 2],
+			[[Look.BACK, false], -PI / 2], [[Look.SIDE, false], -0.6], [[Look.FRONT, false], 2.2]]
+	var weapons := {}
+	for id in ["machete", "axe", "bat", "knife"]:
+		weapons[id] = Items.def(id).draw
+	var poses := [{}, {guard = true}, {moving = true, phase = 1.2}, {moving = true, phase = -2.0}]
+	for t in [0.0, 0.15, 0.3, 0.45, 0.6, 0.8, 1.0]:
+		poses.append({attack = Look.PUNCH_R, ext = t})
+		poses.append({attack = Look.PUNCH_L, ext = t})
+		poses.append({attack = Look.KICK, ext = t})
+		for id in weapons:
+			poses.append({weapon = weapons[id], attack = Look.SWING, ext = t, id = id})
+		poses.append({weapon = weapons.machete, weapon_l = weapons.knife, attack = Look.SWING_L, ext = t, id = "pair"})
+		poses.append({zombie = true, bite = t})
+		poses.append({zombie = true, breed = "runner", moving = true, phase = t * TAU})
+	poses.append({zombie = true, moving = true, phase = 1.0, breed = "fat"})
+	poses.append({zombie = true, scream = 0.5})
+
+	var arms_bad := []
+	var legs_bad := []
+	var no_knee := []
+	for p in poses:
+		for v in views:
+			var st: Dictionary = p.duplicate()
+			st.view = v[0]
+			st.angle = v[1]
+			var r := Rig.build(st, {})
+			var name := "%s view %d angle %.1f" % [_describe(p), v[0][0], v[1]]
+			for a in r.arms_back + r.arms_front:
+				var up := (a.elbow as Vector2).distance_to(a.sh)
+				var fore := (a.hand as Vector2).distance_to(a.elbow)
+				if up > Rig.UPPER_ARM + EPS or fore > Rig.FOREARM + EPS:
+					arms_bad.append("%s arm %d: %.1f + %.1f" % [name, a.idx, up, fore])
+			for leg in r.legs:
+				if not (leg.has("hip") and leg.has("knee") and leg.has("foot")):
+					no_knee.append(name)
+					continue
+				if leg.type == "rect":
+					continue  # front/back legs are straight columns, not bent limbs
+				var th := (leg.knee as Vector2).distance_to(leg.hip)
+				var sh := (leg.foot as Vector2).distance_to(leg.knee)
+				if th > Rig.THIGH + EPS or sh > Rig.SHIN + EPS:
+					legs_bad.append("%s: %.1f + %.1f" % [name, th, sh])
+	check(arms_bad.is_empty(), "arms never stretch (%d poses checked)%s" % [poses.size() * views.size(), _first(arms_bad)])
+	check(legs_bad.is_empty(), "legs never stretch" + _first(legs_bad))
+	check(no_knee.is_empty(), "every leg has a hip, knee and foot" + _first(no_knee))
+
+	# A bigger build has wider shoulders, so the arms hang off the body, not inside it.
+	var thin := Rig.build({view = [Look.FRONT, false]}, {})
+	var big := Rig.build({view = [Look.FRONT, false]}, {build = 1.35})
+	check(absf(big.arms_front[1].sh.x) > absf(thin.arms_front[1].sh.x) + 1.0, "a big build's shoulders are wider")
+
+	# Idle and fighting use the same shoulders: raising the fists doesn't make them jump.
+	for view in [Look.SIDE, Look.FRONT]:
+		var idle := Rig.build({view = [view, false]}, {})
+		var guard := Rig.build({view = [view, false], guard = true, angle = PI / 2 if view == Look.FRONT else 0.0}, {})
+		var same := true
+		for i in 2:
+			same = same and _arm_by_idx(idle, i).sh.is_equal_approx(_arm_by_idx(guard, i).sh)
+		check(same, "shoulders stay put going from idle to guard (view %d)" % view)
+
+	# Two hands on a long weapon: both hands are on the handle.
+	for id in ["axe", "bat"]:
+		var far := 0.0
+		for t in [0.0, 0.2, 0.4, 0.6, 0.8]:
+			var r := Rig.build({view = [Look.SIDE, false], weapon = weapons[id], attack = Look.SWING, ext = t}, {})
+			var main_arm := _arm_by_idx(r, 1)
+			var off := _arm_by_idx(r, 0)
+			var dir: Vector2 = main_arm.weapon.dir
+			var h: Vector2 = main_arm.hand
+			var rel: Vector2 = off.hand - h
+			far = maxf(far, absf(rel.cross(dir)))  # how far off the handle's line
+		check(far < 0.3, "%s: the other hand stays on the handle (%.2f off)" % [id, far])
+
+
+func _arm_by_idx(r: Dictionary, i: int) -> Dictionary:
+	for a in r.arms_back + r.arms_front:
+		if a.idx == i:
+			return a
+	return {}
+
+
+func _describe(p: Dictionary) -> String:
+	var bits := []
+	for k in p:
+		if k in ["weapon", "weapon_l"]:
+			continue
+		bits.append("%s=%s" % [k, p[k]])
+	return "{" + ", ".join(bits) + "}"
+
+
+func _first(list: Array) -> String:
+	if list.is_empty():
+		return ""
+	return " -- %d bad, e.g. %s" % [list.size(), "; ".join(list.slice(0, 3))]
