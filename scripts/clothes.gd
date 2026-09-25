@@ -12,9 +12,11 @@ class_name Clothes
 ##   behind_head behind the head (a hood down the back, seen from the front)
 ##   torso       over the shirt (vests, a backpack's straps or the bag itself)
 ##   strap       over that (a bag's strap across the chest)
+##   neck        round the neck, up under the chin (scarves)
+##   arm         on each forearm (arm guards) - drawn by Look._draw_arm
 ##   face        on the face (masks, glasses) - drawn by Look._head
 ##   hat         on the head (caps, helmets) - drawn by Look._head
-##   back_head   over the head, seen from behind (a hood)
+##   back_head   over the head, seen from behind (a hood); `neck` just before it
 ##   hand        on each hand (gloves)
 ## Some templates also change the base body (see Look._dress): what colour the
 ## shirt, sleeves and trousers are, shorts, boots.
@@ -41,6 +43,10 @@ const TEMPLATES := {
 	satchel = ["back_side", "strap"],
 	coat = ["coat"],
 	hood = ["behind_head", "back_head"],
+	armguards = ["arm"],
+	fullface = ["hat"],
+	scarf = ["neck"],
+	shinguards = ["knee"],
 }
 
 
@@ -95,6 +101,22 @@ static func _draw(ci: CanvasItem, layer: String, shape: String, p: Dictionary, r
 			_satchel_bag(ci, view, p, false)
 		["coat", "coat"]:
 			_coat(ci, view, r, p)
+		["scarf", "neck"]:
+			var col: Color = p.col
+			var w := (2.4 if view == Look.SIDE else 3.3) * Look._girth
+			Look._rect(ci, Rect2(-w, -20.6, w * 2, 2.4), col)
+			Look._rect(ci, Rect2(-w, -20.6, w * 2, 0.7), col.lightened(0.15))
+			if view != Look.BACK:
+				Look._rect(ci, Rect2(w * 0.25, -18.4, 1.6, 4.0), col.darkened(0.12))  # the loose end
+		["shinguards", "knee"]:
+			for leg in r.legs:
+				var k := _knee_of(leg)
+				if k == Vector2.INF:
+					continue
+				var foot: Vector2 = leg.foot if leg.has("foot") else Vector2(leg.get("x", 0.0) + 1.4, -leg.get("lift", 0.0))
+				var a := k.lerp(foot, 0.15)
+				var b := k.lerp(foot, 0.75)
+				Look._limb(ci, a, b, 3.0, 2.6, (p.col as Color).darkened(0.2 if leg.far else 0.0))
 		["kneepads", "knee"]:
 			for leg in r.legs:
 				var k := _knee_of(leg)
@@ -148,6 +170,18 @@ static func hat(ci: CanvasItem, view: int, c: Vector2, h: Dictionary) -> void:
 						Look._rect(ci, Rect2(c.x + 2.4, c.y - 1.6, 3.8, 0.9), col.darkened(0.15))
 					Look.BACK:
 						Look._rect(ci, Rect2(c.x - 1.2, c.y - 1.2, 2.4, 0.7), col.darkened(0.3))  # strap
+			"fullface":
+				# A full-face helmet: a shell over the whole head, a dark visor where the face is.
+				Look._dot(ci, c + Vector2(0, 0.2), 5.1, col)
+				Look._poly(ci, Look._arc(c + Vector2(-1.4, -2.4), 1.6, PI, TAU), col.lightened(0.3))  # shine
+				match view:
+					Look.FRONT:
+						Look._rect(ci, Rect2(c.x - 3.4, c.y - 1.4, 6.8, 2.6), Color("141820"))
+						Look._rect(ci, Rect2(c.x - 3.0, c.y - 1.2, 2.2, 0.6), Color(1, 1, 1, 0.3))
+						Look._rect(ci, Rect2(c.x - 2.0, c.y + 2.6, 4.0, 1.6), col.darkened(0.2))  # chin bar
+					Look.SIDE:
+						Look._rect(ci, Rect2(c.x + 1.2, c.y - 1.4, 4.0, 2.6), Color("141820"))
+						Look._rect(ci, Rect2(c.x + 1.4, c.y + 1.8, 3.6, 2.0), col.darkened(0.2))
 
 
 ## Masks and glasses, on the face (under any hat).
@@ -184,6 +218,20 @@ static func face(ci: CanvasItem, view: int, c: Vector2, f: Dictionary) -> void:
 					Look.BACK:
 						for sx in [-1.0, 1.0]:
 							Look._line(ci, c + Vector2(4.0 * sx, -0.4), c + Vector2(3.6 * sx, 0.6), frame, 0.3)
+
+
+## An arm guard wrapped round the forearm (drawn by Look._draw_arm).
+static func arm_guard(ci: CanvasItem, elbow: Vector2, hand: Vector2, g: Dictionary) -> void:
+	for p in parts(g):
+		if p.get("shape", "") == "armguards":
+			var col: Color = p.col
+			var a := elbow.lerp(hand, 0.12)
+			var b := elbow.lerp(hand, 0.78)
+			Look._limb(ci, a, b, 3.0, 2.7, col)
+			for t in [0.3, 0.6]:
+				var m := a.lerp(b, t)
+				var n := (b - a).orthogonal().normalized() * 1.4
+				Look._line(ci, m - n, m + n, Color("8a9098"), 0.5)  # tape
 
 
 ## A glove over the hand (drawn by Look._draw_arm).

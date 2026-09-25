@@ -160,6 +160,8 @@ static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
 				lk.get("mouth", 0.0), true, lk.get("gore", -1) >= 0 and int(lk.gore) % 2 == 0 and not low_gore, wear.get("face", {}))
 		if lk.get("crushed", false) and not low_gore:
 			_crushed(ci, r.head)
+	if not missing & LOST_HEAD:
+		Clothes.draw_layer(ci, "neck", r, lk)  # wrapped up under the chin, over the collar
 	Clothes.draw_layer(ci, "back_head", r, lk)
 	for a in r.arms_front:
 		_draw_arm_or_stump(ci, a, lk, missing)
@@ -401,6 +403,9 @@ static func _draw_arm(ci: CanvasItem, a: Dictionary, lk: Dictionary) -> void:
 	_arm(ci, a.sh, a.elbow, a.hand, sleeve, skin, a.fist, lk.get("long_sleeves", false))
 	if a.big_hand:
 		_dot(ci, a.hand, 1.7, skin)
+	var guards: Dictionary = lk.get("wear", {}).get("arms", {})
+	if not guards.is_empty():
+		Clothes.arm_guard(ci, a.elbow, a.hand, guards)
 	var gloves: Dictionary = lk.get("wear", {}).get("hands", {})
 	if not gloves.is_empty():
 		Clothes.glove(ci, a.hand, a.fist, gloves)

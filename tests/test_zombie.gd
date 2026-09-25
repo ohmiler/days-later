@@ -32,10 +32,36 @@ func run() -> void:
 		main.inventory._give(me, id)
 		me.sel = me.inv.find(me.inv.filter(func(x): return x != null and x.id == id)[0])
 		main.inventory._use_selected(me)
-	check(me.armor() > 0.3, "wearing vest and helmet (armor %.2f)" % me.armor())
+	check(me.guard("torso") > 0.5 and me.guard("head") > 0.5, "vest and helmet guard body and head (%.2f, %.2f)" % [me.guard("torso"), me.guard("head")])
 	me.hp = 100.0
-	me.bite(20.0)
-	check(me.hp > 80.0 and me.hp < 100.0, "a 20 bite does less through armour (hp %.1f)" % me.hp)
+	me.bite(20.0, "torso")
+	check(me.hp > 80.0 and me.hp < 100.0, "a 20 bite on the body does less through the vest (hp %.1f)" % me.hp)
+	me.hp = 100.0
+	me.bite(20.0, "arms")
+	check(me.hp == 80.0, "but a bite on a bare arm does it all (hp %.1f)" % me.hp)
+	me.hp = 100.0
+
+	# Where bites land: from behind, the neck and back; flat on the ground, the legs.
+	me.aim = Vector2.RIGHT
+	var spots := {}
+	for i in 200:
+		var at: String = me.bite_part(me.position + Vector2(-10, 0), false)
+		spots[at] = spots.get(at, 0) + 1
+	check(spots.get("neck", 0) > 50 and not spots.has("hands"), "from behind it goes for the neck (%s)" % [spots])
+	check(me.bite_part(me.position + Vector2(10, 0), true) == "legs", "on the ground it goes for the legs")
+	main.inventory._give(me, "scarf")
+	me.sel = me.inv.find(me.inv.filter(func(x): return x != null and x.id == "scarf")[0])
+	main.inventory._use_selected(me)
+	check(me.guard("neck") > 0.4, "a thick scarf guards the neck (%.2f)" % me.guard("neck"))
+	var flat := zombie_at(me.position + Vector2(6, 0))
+	flat.knock_down()
+	flat.attack_cd = 0.0
+	me.hp = 100.0
+	simulate(0.3)
+	check(me.hp < 100.0 and me.bite_where == "legs", "a zombie knocked flat still bites the legs of anyone standing over it")
+	flat.queue_free()
+	main.zombies.erase(flat.zid)
+	me.hp = 100.0
 
 	# It comes for you from across the street.
 	z.queue_free()

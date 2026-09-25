@@ -12,6 +12,8 @@ const KINDS := {
 	"screamer": {speed = 34.0, hp = 45.0, dmg = 6.0, girth = 0.9, door = 0.6},
 }
 
+const GROUND_BITE_CD := 1.6  # a zombie on the ground snaps at your legs this often
+
 var world: World
 var players: Dictionary  # shared reference to main's peer_id -> Player
 var zid := 0
@@ -81,6 +83,13 @@ func server_tick(delta: float) -> void:
 	flags = (1 if lunge_t > 0.0 else 0) | (2 if down_t > 0.0 else 0)
 	if down_t > 0.0:
 		down_t -= delta
+		# Flat on the ground it still snaps at ankles that come too close.
+		if attack_cd <= 0.0:
+			for p: Player in players.values():
+				if p.alive() and not p.on_roof and p.riding < 0 and p.position.distance_to(position) < 11.0:
+					attack_cd = GROUND_BITE_CD
+					p.bite(bite_damage() * 0.6, "legs")
+					break
 		return
 	if stun > 0:
 		stun -= delta
@@ -89,7 +98,7 @@ func server_tick(delta: float) -> void:
 	if lunge_t > 0.0:
 		lunge_t -= delta
 		if lunge_t <= 0.0 and target and target.alive() and not target.on_roof and position.distance_to(target.position) < 16.0:
-			target.bite(bite_damage())
+			target.bite(bite_damage(), target.bite_part(position, false))
 		return
 	if repath <= 0:
 		repath = randf_range(0.4, 0.7)  # spread out, so they do not all think on the same frame
