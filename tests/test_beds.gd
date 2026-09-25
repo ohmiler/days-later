@@ -14,8 +14,9 @@ func _bed() -> FurnitureProp:
 ## Stand beside the bed, inside, where E points at it.
 func _stand_by(f: FurnitureProp) -> void:
 	var w: World = main.world
-	for d in [Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP]:
-		var c: Vector2i = f.data.cell + d
+	var cells := [f.data.cell, w.to_cell(f.position - Vector2(0, 4))]  # (a long bed covers two)
+	for i in 8:
+		var c: Vector2i = cells[i / 4] + [Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP][i % 4]
 		if not w.is_solid(c) and w.building_at.get(c) == w.building_at.get(f.data.cell):
 			me.position = w.to_pos(c)
 			me.aim = f.position - me.position
@@ -41,6 +42,7 @@ func _shut(f: FurnitureProp, closed: bool) -> void:
 
 func run() -> void:
 	SaveGame.wipe()
+	seed(5)  # always the same city
 	await host(9370)
 	_clear_zombies()
 	var bed := _bed()

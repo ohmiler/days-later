@@ -150,8 +150,9 @@ static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
 	_torso(ci, r.view, lk.shirt, pants, r.zombie)
 	if lk.get("gore", -1) >= 0 and not low_gore:
 		_wounds(ci, r.view, lk.gore)
-	if body.get("shape") == "vest":
-		_vest(ci, r.view, body)
+	var over: Dictionary = wear.get("over", {})
+	if over.get("shape") == "vest":
+		_vest(ci, r.view, over)  # on top of the shirt
 	if not pack.is_empty() and r.view != SIDE:
 		_pack(ci, r.view, pack)
 	if missing & LOST_HEAD:
