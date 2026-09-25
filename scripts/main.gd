@@ -187,6 +187,19 @@ func _clear_backdrop() -> void:
 
 ## Start a server. `resume` loads the saved city; otherwise a new one replaces it.
 func _host(dedicated: bool, resume := false) -> void:
+	var saved := {}
+	if resume:
+		# Never start a fresh city over a save we could not read: it would be
+		# written over within the minute.
+		var r := SaveGame.load_world()
+		if r.state in ["newer", "corrupt"]:
+			var msg: String = SaveGame.world_info().get("problem", "")
+			ui.set_status(msg)
+			print("Not starting: world save is %s (%s)" % [r.state, ProjectSettings.globalize_path(SaveGame.dir())])
+			if dedicated:
+				get_tree().quit(1)
+			return
+		saved = r.data
 	var peer := WebSocketMultiplayerPeer.new()
 	if peer.create_server(port) != OK:
 		ui.set_status("เปิดพอร์ต %d ไม่ได้ (มีเกมอื่นเปิดอยู่หรือเปล่า?)" % port)
@@ -194,7 +207,6 @@ func _host(dedicated: bool, resume := false) -> void:
 	multiplayer.multiplayer_peer = peer
 	_connect_once(multiplayer.peer_connected, _on_peer_connected)
 	_connect_once(multiplayer.peer_disconnected, _on_peer_disconnected)
-	var saved := SaveGame.read_world() if resume else {}
 	if not resume:
 		SaveGame.wipe()
 	world_seed = saved.get("seed", randi())

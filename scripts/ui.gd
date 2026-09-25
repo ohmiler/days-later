@@ -630,7 +630,9 @@ func _build_menu() -> void:
 	form.add_child(name_edit)
 	# Carry on in the saved city, or start a new one (which replaces it).
 	var info := SaveGame.world_info()
-	if not info.is_empty():
+	if info.has("problem"):
+		form.add_child(_label(info.problem, UiTheme.body_bold(), 15, UiTheme.WARN))
+	elif not info.is_empty():
 		var cont := _button("เล่นต่อ · วันที่ %d" % info.day, true)
 		cont.pressed.connect(func():
 			_remember_name()
@@ -640,7 +642,7 @@ func _build_menu() -> void:
 	fresh.pressed.connect(func():
 		if not info.is_empty() and not fresh.has_meta("confirm"):
 			fresh.set_meta("confirm", true)
-			fresh.text = "กดอีกครั้งเพื่อยืนยัน · เมืองเดิมจะหายไป"
+			fresh.text = "กดอีกครั้งเพื่อยืนยัน · เมืองเดิมจะถูกย้ายไปเก็บสำรอง"
 			return
 		_remember_name()
 		host_requested.emit(player_name(), false))

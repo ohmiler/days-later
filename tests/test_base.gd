@@ -59,8 +59,8 @@ func host(port: int, resume := false, clear_zombies := true) -> void:
 	main.port = port
 	main.player_name = "Tester"
 	main._host(false, resume)
-	me = main.players[1]
-	if clear_zombies:
+	me = main.players.get(1)  # none if the game refused to start
+	if clear_zombies and me:
 		for z in main.zombies.values():
 			z.queue_free()
 		main.zombies.clear()
