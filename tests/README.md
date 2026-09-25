@@ -32,7 +32,7 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | `test_inventory` | Stack sizes, quick heal, drag/merge/split/drop, clothes slots and layers, masks/gloves/knee pads, bags adding slots |
 | `test_crafting` | The recipe table has no typos, taking apart, making (standing still), mending, worn clothes never used up, pulling furniture apart |
 | `test_doors` | Opening, not shutting on someone, boarding, smashing windows |
-| `test_rig` | Arms and legs keep their length in every pose and view (nothing stretches), every leg has a knee, broader builds have wider shoulders, both hands stay on a two-handed weapon |
+| `test_rig` | Arms and legs keep their length in every pose and view (nothing stretches), every leg has a knee, broader builds have wider shoulders, both hands stay on a two-handed weapon, pose changes ease in (without stretching) but turning around doesn't, breathing only when standing still |
 | `test_save` | Save and resume: doors, furniture contents, day/time, player, bag, clothes |
 | `test_items` | The item table in data/items.cfg has no typos, rare finds are rarer, furniture holds what you'd expect (fridges: food and drink), tags, carrying too much slows you |
 | `test_migration` | Old save formats upgrade (and the old file is kept), a damaged save loads from `.bak`, unreadable or newer saves are never written over, "new city" keeps the old one, a city from an older generator moves its survivors to a new one |

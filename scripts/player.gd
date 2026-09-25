@@ -47,6 +47,7 @@ var sprint := false
 var sneak := false  # Ctrl / C: slow, quiet, harder to spot
 var on_roof := false  # up on the shophouse roofs: zombies can't follow
 var lift := 0.0  # current drawn height above the street (eases between roofs)
+var _pose := {}  # what the body last showed, for easing between poses (Rig.build_eased)
 var step_t := 0.0  # server: time to the next footstep noise
 var bitten := false  # server: set by a zombie bite, handled by main
 var turned := false  # died of the infection and got back up as a zombie
@@ -492,9 +493,10 @@ func _draw() -> void:
 		ext = sin(anim_t / dur * PI) if anim in [Look.PUNCH_L, Look.PUNCH_R] else anim_t / dur
 	# Sneaking: crouched low, a slow creep.
 	Look.lift = Vector2(0, -lift)
-	Look.draw(self, {view = view, angle = aim.angle(), phase = phase * (0.6 if sneak else 1.0), moving = moving and ext == 0.0,
+	Look.draw_eased(self, {view = view, angle = aim.angle(), phase = phase * (0.6 if sneak else 1.0), moving = moving and ext == 0.0,
 			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = anim != Look.NONE and anim_t < 1.2,
-			crouch = 3.0 if sneak else 0.0, weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {})}, look)
+			crouch = 3.0 if sneak else 0.0, weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}),
+			breath = Time.get_ticks_msec() * 0.0016 + get_instance_id() % 7}, look, _pose)
 	Look.lift = Vector2.ZERO
 	draw_set_transform(Vector2(0, -lift))
 	Look.draw_hp(self, hp / MAX_HP)
