@@ -183,7 +183,7 @@ func _spawn_props() -> void:
 		p.position = rec.pos
 		p.z_index = 0 if rec.get("flat", false) else 1  # litter lies under everyone
 		if rec.kind in StreetProp.VEHICLES:
-			p.scale = Vector2.ONE * (StreetProp.MOTORBIKE_SCALE if rec.kind == "motorbike" else StreetProp.VEHICLE_SCALE)  # vehicles the size of vehicles
+			p.scale = Vector2.ONE * StreetProp.VEHICLE_SCALE  # vehicles the size of vehicles
 		prop_parent.add_child(p)
 	overhead = Overhead.new()
 	overhead.world = self
