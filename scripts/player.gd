@@ -111,7 +111,7 @@ func server_tick(delta: float) -> void:
 			warned.clear()
 			position = world.spawn_point()
 		return
-	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * delta, RADIUS)
+	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS)
 
 
 ## Sprinting is faster; a bad infection drags your feet.

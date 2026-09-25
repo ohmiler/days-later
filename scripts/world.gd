@@ -10,6 +10,8 @@ const H := 120
 const CHUNK := 16
 const BTS_H := 64.0  # how high the skytrain deck floats above the road
 const DOOR_HP := 60.0
+const WINDOW_HP := 15.0  # glass: one good hit
+const WINDOW_SLOW := 0.35  # climbing through a smashed window
 const BOARD_HP := 60.0  # each board nailed across a door
 const MAX_BOARDS := 3
 enum { GRASS, DIRT, WATER, TREE, WALL, ROAD, SIDEWALK, SOI, BUILDING, PLAZA, FLOOR, IWALL, DOOR }
@@ -176,6 +178,16 @@ func is_solid(c: Vector2i) -> bool:
 	return get_tile(c) in [WATER, TREE, WALL, BUILDING, IWALL] or blocked.has(c)
 
 
+func is_window(id: int) -> bool:
+	return doors[id].get("kind", "door") == "window"
+
+
+## Movement multiplier at a position: climbing through a smashed window is slow.
+func slow_at(pos: Vector2) -> float:
+	var id: int = door_at.get(to_cell(pos), -1)
+	return WINDOW_SLOW if id >= 0 and is_window(id) and not doors[id].closed else 1.0
+
+
 ## Update a door from the server's state.
 func set_door(id: int, closed: bool, hp: float, boards: int, broken: bool) -> void:
 	var d: Dictionary = doors[id]
@@ -273,10 +285,18 @@ func ray_length(from: Vector2, dir: Vector2, max_len: float) -> float:
 	var t := 0.0
 	while t < max_len:
 		var c := to_cell(from + dir * t)
-		if not in_bounds(c) or get_tile(c) in [TREE, WALL, BUILDING, IWALL] or (door_at.has(c) and doors[door_at[c]].closed):
+		if not in_bounds(c) or get_tile(c) in [TREE, WALL, BUILDING, IWALL] or _blocks_sight(c):
 			return t
 		t += 4.0
 	return max_len
+
+
+## Closed doors and boarded windows block the view; bare glass doesn't.
+func _blocks_sight(c: Vector2i) -> bool:
+	var id: int = door_at.get(c, -1)
+	if id < 0 or not doors[id].closed:
+		return false
+	return not is_window(id) or doors[id].boards > 0
 
 
 func free_neighbor(c: Vector2i) -> Vector2i:

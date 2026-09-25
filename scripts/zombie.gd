@@ -140,7 +140,7 @@ func hear(pos: Vector2) -> void:
 
 
 func _move(dir: Vector2, delta: float) -> void:
-	position = world.slide(position, dir * speed * delta, RADIUS)
+	position = world.slide(position, dir * speed * world.slow_at(position) * delta, RADIUS)
 
 
 ## Closest player it can actually see: sneaking halves the range, walls block

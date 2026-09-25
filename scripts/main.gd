@@ -497,9 +497,14 @@ func damage_door(id: int, dmg: float) -> void:
 		return
 	var hp: float = d.hp - dmg
 	# Boards take the beating first; each one splinters off as its share runs out.
-	var boards: int = mini(d.boards, maxi(0, ceili((hp - World.DOOR_HP) / World.BOARD_HP)))
+	var base_hp := World.WINDOW_HP if world.is_window(id) else World.DOOR_HP
+	var boards: int = mini(d.boards, maxi(0, ceili((hp - base_hp) / World.BOARD_HP)))
 	var pos := world.to_pos(d.cell)
-	if hp <= 0.0:
+	if hp <= 0.0 and world.is_window(id):
+		door_state.rpc(id, false, 0.0, 0, true)  # glass and boards gone: now a hole to climb through
+		fx_sound.rpc("break", pos)
+		_make_noise(pos, NOISE_BREAK)
+	elif hp <= 0.0:
 		door_state.rpc(id, false, 0.0, 0, true)
 		fx_sound.rpc("break", pos)
 		_make_noise(pos, NOISE_BREAK)
@@ -536,15 +541,21 @@ func req_reinforce() -> void:
 		_toast(p, "ต้องมีไม้กระดาน")
 		return
 	var d: Dictionary = world.doors[id]
-	if d.broken:
+	if world.is_window(id) and not d.closed:
+		# Board over the smashed window.
+		door_state.rpc(id, true, World.BOARD_HP, 1, false)
+		_toast(p, "ตอกไม้ปิดหน้าต่าง (1/%d)" % World.MAX_BOARDS)
+	elif d.broken:
 		door_state.rpc(id, false, World.DOOR_HP, 0, false)
 		_toast(p, "ซ่อมประตูแล้ว")
 	elif d.boards >= World.MAX_BOARDS:
 		_toast(p, "ตอกไม้เต็มแล้ว")
 		return
 	else:
-		door_state.rpc(id, d.closed, minf(d.hp + World.BOARD_HP, World.DOOR_HP + (d.boards + 1) * World.BOARD_HP), d.boards + 1, false)
-		_toast(p, "ตอกไม้เสริมประตู (%d/%d)" % [d.boards + 1, World.MAX_BOARDS])
+		var base_hp := World.WINDOW_HP if world.is_window(id) else World.DOOR_HP
+		var nb: int = d.boards + 1  # read before door_state updates `d` in place
+		door_state.rpc(id, d.closed, minf(d.hp + World.BOARD_HP, base_hp + nb * World.BOARD_HP), nb, false)
+		_toast(p, "ตอกไม้เสริม%s (%d/%d)" % ["หน้าต่าง" if world.is_window(id) else "ประตู", nb, World.MAX_BOARDS])
 	p.inv[slot].n -= 1
 	if p.inv[slot].n <= 0:
 		p.inv[slot] = null
@@ -555,6 +566,15 @@ func req_reinforce() -> void:
 
 func _toggle_door(p: Player, id: int) -> void:
 	var d: Dictionary = world.doors[id]
+	if world.is_window(id):
+		if d.closed and d.boards == 0:
+			door_state.rpc(id, false, 0.0, 0, true)
+			fx_sound.rpc("break", world.to_pos(d.cell))
+			_make_noise(world.to_pos(d.cell), NOISE_BREAK)
+			_toast(p, "ทุบกระจกแล้ว ปีนผ่านได้ (ช้า)")
+		elif d.closed:
+			_toast(p, "หน้าต่างตอกไม้ปิดไว้")
+		return
 	if d.broken:
 		_toast(p, "ประตูพัง ต้องซ่อมด้วยไม้กระดาน [R]")
 		return
@@ -1099,7 +1119,7 @@ func _process(delta: float) -> void:
 		else:
 			send_input.rpc_id(1, move, aim, punch, kick, me.sprint, me.sneak)
 			if me.alive():
-				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * delta, Player.RADIUS)
+				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS)
 		camera.position = me.position + Look.CHEST
 		camera.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake
 		shake = move_toward(shake, 0.0, delta * 14.0)
@@ -1200,6 +1220,16 @@ func _update_prompt(me: Player) -> void:
 	if door >= 0:
 		var d: Dictionary = world.doors[door]
 		var has_wood := me.inv.any(func(it): return it != null and it.id == "wood")
+		var board := "  [R] ตอกไม้" if has_wood and d.boards < World.MAX_BOARDS else ""
+		if world.is_window(door):
+			if not d.closed:
+				prompt = "หน้าต่างแตก · เดินปีนผ่านได้" + ("  [R] ตอกไม้ปิด" if has_wood else "")
+			elif d.boards == 0:
+				prompt = "[E] ทุบกระจก (เสียงดัง)" + board
+			else:
+				prompt = "หน้าต่างตอกไม้ (%d/%d)" % [d.boards, World.MAX_BOARDS] + board
+			prompt_pos = world.to_pos(d.cell) + Vector2(0, -22)
+			return
 		if d.broken:
 			prompt = "ประตูพัง" + ("  [R] ซ่อม" if has_wood else "  (ต้องมีไม้กระดาน)")
 		else:

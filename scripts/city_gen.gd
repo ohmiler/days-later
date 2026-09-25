@@ -91,11 +91,22 @@ static func _make_enterable(w: World, rec: Dictionary, rng: RandomNumberGenerato
 	w.fill(r, World.IWALL)
 	w.fill(inner, World.FLOOR)
 	var door := r.position.x + rng.randi_range(1, r.size.x - 2)
-	w.fill(Rect2i(door, r.end.y - 1, 1, 1), World.DOOR)
-	w.doors.append({id = w.doors.size(), cell = Vector2i(door, r.end.y - 1), closed = rng.randf() < 0.4,
-			hp = World.DOOR_HP, boards = 0, broken = rng.randf() < 0.1})
+	_add_opening(w, Vector2i(door, r.end.y - 1), "door", rng)
 	rec.enter = true
 	rec.door = door - r.position.x
+	# A back door onto the soi behind, so a horde at the front isn't the end.
+	var back := -1
+	var behind := w.get_tile(Vector2i(r.position.x + 1, r.position.y - 1))
+	if behind in [World.SOI, World.SIDEWALK, World.DIRT, World.GRASS] and rng.randf() < 0.8:
+		back = r.position.x + rng.randi_range(1, r.size.x - 2)
+		if w.get_tile(Vector2i(back, r.position.y - 1)) in [World.SOI, World.SIDEWALK, World.DIRT, World.GRASS]:
+			_add_opening(w, Vector2i(back, r.position.y), "door", rng)
+		else:
+			back = -1
+	# Shop windows in the front wall either side of the door.
+	for x in range(r.position.x + 1, r.end.x - 1):
+		if x != door and rng.randf() < 0.6:
+			_add_opening(w, Vector2i(x, r.end.y - 1), "window", rng)
 	rec.table = "store" if rec.kind == "store" else SIGN_LOOT.get(rec.sign, "home")
 	var kinds: Array = Items.FURNITURE[rec.table]
 	var n := mini(inner.size.x, kinds.size())
@@ -103,10 +114,22 @@ static func _make_enterable(w: World, rec: Dictionary, rng: RandomNumberGenerato
 		# Spread along the back wall; the row nearest the door stays clear to walk.
 		var x := inner.position.x + int(round(float(i) * (inner.size.x - 1) / maxf(1.0, n - 1.0))) if n > 1 else inner.position.x
 		var cell := Vector2i(x, inner.position.y)
-		if w.blocked.has(cell):
-			continue
+		if w.blocked.has(cell) or x == back:
+			continue  # never block the way to the back door
 		w.blocked[cell] = true
 		w.containers.append({id = w.containers.size(), kind = kinds[i], cell = cell, table = rec.table})
+
+
+## A door or window in a wall. Windows start intact (glass), some already smashed.
+static func _add_opening(w: World, cell: Vector2i, kind: String, rng: RandomNumberGenerator) -> void:
+	w.fill(Rect2i(cell, Vector2i.ONE), World.DOOR)
+	var d := {id = w.doors.size(), cell = cell, kind = kind, boards = 0}
+	if kind == "window":
+		var smashed := rng.randf() < 0.3
+		d.merge({closed = not smashed, hp = World.WINDOW_HP, broken = smashed})
+	else:
+		d.merge({closed = rng.randf() < 0.4, hp = World.DOOR_HP, broken = rng.randf() < 0.1})
+	w.doors.append(d)
 
 
 # --- Blocks -----------------------------------------------------------------

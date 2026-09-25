@@ -7,6 +7,9 @@ var door: Dictionary
 
 
 func _draw() -> void:
+	if door.get("kind", "door") == "window":
+		_draw_window()
+		return
 	var T := World.TILE
 	var wood := Color("7a5634")
 	if door.broken:
@@ -39,3 +42,27 @@ func _draw() -> void:
 		draw_line(Vector2(-1, y - tilt - 1), Vector2(T + 1, y + tilt - 1), Color("c8a878"), 0.6)
 		draw_circle(Vector2(0.5, y - tilt), 0.5, Color("6a6a6a"))
 		draw_circle(Vector2(T - 0.5, y + tilt), 0.5, Color("6a6a6a"))
+
+
+func _draw_window() -> void:
+	var T := World.TILE
+	var frame := Color("4a4640")
+	var pane := Rect2(1.5, -13, T - 3, 9)
+	draw_rect(Rect2(0.5, -14, T - 1, 11), frame)
+	if door.broken or not door.closed:
+		draw_rect(pane, Color("15120f"))  # dark hole
+		for p in [[Vector2(1.5, -13), Vector2(5, -13), Vector2(1.5, -8)], [Vector2(T - 1.5, -13), Vector2(T - 6, -13), Vector2(T - 1.5, -9)],
+				[Vector2(1.5, -4), Vector2(4, -4), Vector2(1.5, -7)], [Vector2(T - 1.5, -4), Vector2(T - 5, -4), Vector2(T - 1.5, -6)]]:
+			draw_colored_polygon(PackedVector2Array(p), Color(0.7, 0.85, 0.9, 0.6))  # shards left in the frame
+	else:
+		draw_rect(pane, Color(0.55, 0.7, 0.78, 0.85))
+		draw_line(pane.position + Vector2(2, 8), pane.position + Vector2(7, 1), Color(1, 1, 1, 0.35), 1.2)
+		draw_line(Vector2(T / 2, -13), Vector2(T / 2, -4), frame, 0.8)
+		var dmg: float = 1.0 - door.hp / (World.WINDOW_HP + door.boards * World.BOARD_HP)
+		if dmg > 0.3 and door.boards == 0:
+			draw_line(Vector2(4, -12), Vector2(9, -6), Color(1, 1, 1, 0.6), 0.5)  # cracked
+	draw_rect(Rect2(-0.5, -4, T + 1, 1.5), frame.lightened(0.15))  # sill
+	for i in door.boards:
+		var y: float = -12.0 + i * 3.5
+		draw_line(Vector2(-1, y), Vector2(T + 1, y + (1.2 if i % 2 else -1.2)), Color("a8885a"), 2.6)
+		draw_line(Vector2(-1, y - 1), Vector2(T + 1, y - 1 + (1.2 if i % 2 else -1.2)), Color("c8a878"), 0.5)
