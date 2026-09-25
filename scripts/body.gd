@@ -24,7 +24,7 @@ const SIDED := ["arms", "hands", "legs"]
 
 ## Infection stages: [from %, name, what it does].
 const STAGES := [[0.0, "แผลอักเสบ", "ยังไม่มีอาการ"], [25.0, "มีไข้", "เริ่มอ่อนแรง"],
-		[60.0, "ไข้สูง", "เดินช้าลง ตัวร้อน"], [85.0, "ใกล้กลายร่าง", "ต้องใช้ยาปฏิชีวนะด่วน"]]
+		[60.0, "ไข้สูง", "เดินช้าลง ตัวร้อน"], [85.0, "ใกล้กลายร่าง", "อีกไม่นานจะกลายเป็นซอมบี้"]]
 
 
 static func where(w: Dictionary) -> String:
@@ -133,7 +133,8 @@ static func statuses(p: Player) -> Array:
 		out.append({icon = "bleed", level = 2, text = "เลือดออก · พันแผลด่วน"})
 	if p.infection > 0.0:
 		var s: Array = STAGES[infection_stage(p.infection)]
-		out.append({icon = "fever", level = 2 if p.infection >= 60.0 else 1, text = "ติดเชื้อ · %s · %s" % [s[1], s[2]]})
+		out.append({icon = "fever", level = 2 if p.infection >= 60.0 else 1,
+				text = "ติดเชื้อ · %s · %s · รักษาด้วยยาปฏิชีวนะ (ร้านขายยา)" % [s[1], s[2]]})
 	if p.thirst < 25.0:
 		out.append({icon = "thirst", level = 2 if p.thirst <= 0.0 else 1, text = "ขาดน้ำ" if p.thirst <= 0.0 else "กระหายน้ำ"})
 	if p.hunger < 25.0:
