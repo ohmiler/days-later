@@ -13,6 +13,13 @@ func _open_dir() -> Vector2:
 
 
 func run() -> void:
+	# Not in the city yet: guns and ammo wait for the police station (phase 3).
+	var found := []
+	for place in Items.LOOT:
+		for entry in Items.LOOT[place]:
+			if Items.def(entry[0]).get("type", "") in ["gun", "ammo"]:
+				found.append("%s in %s" % [entry[0], place])
+	check(found.is_empty(), "no guns or ammo to find in the city yet" + ("" if found.is_empty() else ": " + ", ".join(found)))
 	await host(9430)
 	main.spawn_timer = 1e9
 	me.inv.fill(null)

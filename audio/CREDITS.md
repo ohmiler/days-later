@@ -14,6 +14,7 @@ change and sell, no attribution required. Credited anyway, with thanks.
 | `sfx/groan_24-25`, `snarl_0` | [Zombie noises and moans](https://opengameart.org/content/zombie-noises-and-moans) | ianzazz |
 | `sfx/scream_*`, `eat_*` | [80 CC0 creature SFX](https://opengameart.org/content/80-cc0-creature-sfx) | rubberduck |
 | `sfx/siren_0` (cut from) | [Storm & Siren](https://opengameart.org/content/storm-siren) | TinyWorlds |
+| `sfx/gunshot_*`, `shotgun_*`, `reload_0`, `gun_click_0` | Made in code for this game (no outside source) | — |
 
 ## Ambience
 
