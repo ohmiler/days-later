@@ -8,10 +8,15 @@ uniform float contrast = 1.05;
 uniform float vignette = 0.9;
 uniform float grain = 0.035;
 uniform float death = 0.0;
-uniform float hurt = 0.0;  // 0..1 as health runs low  // 0..1 while the local player is dead
+uniform float hurt = 0.0;
+uniform float sick = 0.0;  // 0..1 as the infection spreads  // 0..1 as health runs low  // 0..1 while the local player is dead
 
 void fragment() {
-	vec3 c = texture(screen_tex, SCREEN_UV).rgb;
+	// Infection: the world swims and colours split apart.
+	vec2 uv = SCREEN_UV + vec2(sin(SCREEN_UV.y * 18.0 + TIME * 1.9), cos(SCREEN_UV.x * 15.0 + TIME * 1.4)) * 0.004 * sick;
+	vec2 split = vec2(0.004, 0.0) * sick * (0.6 + 0.4 * sin(TIME * 3.0));
+	vec3 c = vec3(texture(screen_tex, uv + split).r, texture(screen_tex, uv).g, texture(screen_tex, uv - split).b);
+	c = mix(c, c * vec3(0.9, 1.05, 0.75), sick * 0.6);
 	float g = dot(c, vec3(0.299, 0.587, 0.114));
 	c = mix(vec3(g), c, saturation) * tint;
 	c = (c - 0.5) * contrast + 0.5;

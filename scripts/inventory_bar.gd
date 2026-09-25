@@ -73,7 +73,7 @@ func _draw() -> void:
 			"weapon":
 				info = "ทนทาน %d / %d · คลิกซ้ายฟาด" % [cur.hp, d.hp]
 			"use":
-				info = "กด F ใช้ · เลือด +%d" % int(d.get("heal", 0))
+				info = "กด F ใช้ · " + Items.effect_text(cur.id)
 			_:
 				info = "เก็บไว้แลกของ"
 	var cx := size.x / 2

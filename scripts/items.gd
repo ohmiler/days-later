@@ -24,14 +24,16 @@ const DEFS := {
 			dur = 0.45, hp = 35, cleave = true, draw = {kind = "axe", len = 11.0, col = Color("7a8088")}},
 	"hammer": {name = "ค้อน", type = "weapon", range = 18.0, dmg = 24.0, cd = 0.55, stun = 0.5, knock = 5.0,
 			dur = 0.3, hp = 50, draw = {kind = "hammer", len = 8.0, col = Color("5a5e64")}},
-	# Consumables (heal = hp restored; hunger and thirst come in a later milestone)
-	"bandage": {name = "ผ้าพันแผล", type = "use", heal = 25.0},
-	"painkiller": {name = "ยาแก้ปวด", type = "use", heal = 15.0},
-	"firstaid": {name = "ชุดปฐมพยาบาล", type = "use", heal = 60.0},
-	"water": {name = "น้ำดื่ม", type = "use", heal = 5.0},
-	"mama": {name = "บะหมี่กึ่งสำเร็จรูป", type = "use", heal = 8.0},
-	"snack": {name = "ขนมถุง", type = "use", heal = 5.0},
-	"energy": {name = "เครื่องดื่มชูกำลัง", type = "use", heal = 10.0},
+	# Consumables. heal = health, food / drink = hunger / thirst restored,
+	# cure = infection removed, stop_bleed, stamina.
+	"bandage": {name = "ผ้าพันแผล", type = "use", heal = 10.0, stop_bleed = true},
+	"painkiller": {name = "ยาแก้ปวด", type = "use", heal = 20.0},
+	"firstaid": {name = "ชุดปฐมพยาบาล", type = "use", heal = 50.0, stop_bleed = true},
+	"antibiotic": {name = "ยาปฏิชีวนะ", type = "use", cure = 60.0},
+	"water": {name = "น้ำดื่ม", type = "use", drink = 45.0},
+	"mama": {name = "บะหมี่กึ่งสำเร็จรูป", type = "use", food = 40.0, drink = -5.0},
+	"snack": {name = "ขนมถุง", type = "use", food = 20.0},
+	"energy": {name = "เครื่องดื่มชูกำลัง", type = "use", food = 5.0, drink = 25.0, stamina = 100.0},
 	# Valuables, for trading later
 	"gold": {name = "สร้อยทอง", type = "junk"},
 }
@@ -39,11 +41,11 @@ const DEFS := {
 ## What each kind of place can hold: [item, weight].
 const LOOT := {
 	"store": [["water", 4], ["mama", 3], ["snack", 4], ["energy", 2], ["painkiller", 1]],
-	"med": [["bandage", 4], ["painkiller", 3], ["firstaid", 1], ["water", 1]],
+	"med": [["bandage", 4], ["painkiller", 3], ["firstaid", 1], ["antibiotic", 2], ["water", 1]],
 	"food": [["knife", 2], ["mama", 2], ["snack", 2], ["water", 2], ["energy", 1]],
 	"tools": [["pipe", 3], ["hammer", 3], ["plank", 3], ["axe", 1], ["machete", 1]],
 	"valuables": [["gold", 3], ["bat", 1], ["knife", 1]],
-	"home": [["plank", 2], ["bat", 1], ["knife", 2], ["water", 2], ["mama", 2], ["snack", 2], ["bandage", 2]],
+	"home": [["plank", 2], ["bat", 1], ["knife", 2], ["water", 3], ["mama", 3], ["snack", 2], ["bandage", 2]],
 }
 
 ## Furniture that goes in each kind of place.
@@ -59,6 +61,25 @@ const FURNITURE := {
 
 static func def(id: String) -> Dictionary:
 	return DEFS.get(id, {})
+
+
+## One line on what a consumable does, for the hotbar.
+static func effect_text(id: String) -> String:
+	var d := def(id)
+	var parts := []
+	if d.get("heal", 0.0) > 0:
+		parts.append("เลือด +%d" % d.heal)
+	if d.get("food", 0.0) > 0:
+		parts.append("อิ่ม +%d" % d.food)
+	if d.get("drink", 0.0) > 0:
+		parts.append("น้ำ +%d" % d.drink)
+	if d.get("cure", 0.0) > 0:
+		parts.append("เชื้อ -%d" % d.cure)
+	if d.get("stop_bleed", false):
+		parts.append("ห้ามเลือด")
+	if d.get("stamina", 0.0) > 0:
+		parts.append("แรงเต็ม")
+	return " · ".join(parts)
 
 
 static func is_weapon(id: String) -> bool:
@@ -128,6 +149,11 @@ static func draw_icon(ci: CanvasItem, r: Rect2, id: String) -> void:
 		"energy":
 			ci.draw_rect(Rect2(c - Vector2(5, 10) * s, Vector2(10, 20) * s), Color("8a4a1a"))
 			ci.draw_rect(Rect2(c - Vector2(5, 3) * s, Vector2(10, 6) * s), Color("e8c040"))
+		"antibiotic":
+			ci.draw_rect(Rect2(c - Vector2(7, 8) * s, Vector2(14, 20) * s), Color("e0802a"))
+			ci.draw_rect(Rect2(c - Vector2(8, 13) * s, Vector2(16, 6) * s), Color("f0ece4"))
+			ci.draw_rect(Rect2(c - Vector2(5, 2) * s, Vector2(10, 7) * s), Color("f0ece4"))
+			ci.draw_rect(Rect2(c - Vector2(1, 1) * s, Vector2(2, 5) * s), Color("3a8a4a"))
 		"gold":
 			ci.draw_arc(c, 9 * s, 0, TAU, 20, Color("e0b840"), 3 * s)
 			ci.draw_circle(c + Vector2(0, 9) * s, 3 * s, Color("f0d060"))

@@ -33,6 +33,17 @@ var search_t := 0.0
 var dropped := false  # server only: death bag already dropped this life
 var death_t := 0.0  # seconds since dying (every peer, drives the fall)
 var pname := ""  # shown above the head
+# Survival needs, 0..100. Server-authoritative, sent to everyone in snapshots.
+var hunger := 80.0  # 100 = full
+var thirst := 80.0  # 100 = fully hydrated
+var infection := 0.0  # 100 = you turn
+var bleeding := false
+var stamina := 100.0
+var exhausted := false  # ran dry: no sprinting until stamina recovers
+var sprint := false
+var bitten := false  # server: set by a zombie bite, handled by main
+var turned := false  # died of the infection and got back up as a zombie
+var warned := {}  # server: which low-need warnings were already sent
 var life_t := 0.0  # seconds alive since the last respawn
 var fall_dir := 1.0
 var last_death_pos := Vector2.ZERO
@@ -90,9 +101,26 @@ func server_tick(delta: float) -> void:
 		if respawn <= 0:
 			hp = MAX_HP
 			dropped = false
+			hunger = 80.0
+			thirst = 80.0
+			infection = 0.0
+			bleeding = false
+			stamina = 100.0
+			turned = false
+			warned.clear()
 			position = world.spawn_point()
 		return
-	position = world.slide(position, move.limit_length(1.0) * SPEED * delta, RADIUS)
+	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * delta, RADIUS)
+
+
+## Sprinting is faster; a bad infection drags your feet.
+func speed_mult() -> float:
+	var m := 1.0
+	if sprint and not exhausted and stamina > 0.0:
+		m = 1.6
+	if infection > 60.0:
+		m *= 0.85
+	return m
 
 
 func _ready() -> void:
@@ -133,7 +161,7 @@ func _process(delta: float) -> void:
 	if alive():
 		if death_t > 0.0:
 			# Respawned: leave the old body where it fell.
-			if get_parent().has_method("leave_corpse"):
+			if not turned and get_parent().has_method("leave_corpse"):
 				get_parent().leave_corpse(last_death_pos, fall_dir, skin, shirt, pants, hair, false, death_t)
 			death_t = 0.0
 	else:
@@ -148,6 +176,8 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	if not alive():
+		if turned:
+			return  # the body got up and walked off as a zombie
 		Look.draw_blood_pool(self, fall_dir, clampf((death_t - 0.5) / 3.0, 0.0, 1.0))
 		Look.draw_human(self, [Look.SIDE, fall_dir > 0], 0.0, 0.0, false, skin, shirt, pants, hair, false,
 				Look.NONE, 0.0, false, false, Vector2.ZERO, {}, clampf(death_t / 0.75, 0.001, 1.0), fall_dir)

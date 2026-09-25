@@ -20,6 +20,7 @@ var stun := 0.0  # staggered after being hit
 var hit_t := 0.0  # > 0 while flinching from a hit (visual, every peer)
 var hit_dir := Vector2.ZERO
 var groan_t := randf_range(2.0, 10.0)
+var outfit: Array = []  # [shirt, pants, hair] of the player this zombie used to be
 var facing := 0.0
 var last_pos := Vector2.ZERO
 var skin: Color
@@ -56,6 +57,7 @@ func server_tick(delta: float) -> void:
 	if d < 12:
 		if attack_cd <= 0:
 			target.take_damage(8)
+			target.bitten = true
 			attack_cd = 1.0
 	elif d < 20 or path.is_empty():
 		_move((target.position - position).normalized(), delta)
@@ -88,6 +90,15 @@ func _ready() -> void:
 	shirt = Look.SHIRTS[rng.randi() % Look.SHIRTS.size()].darkened(0.15)
 	pants = Look.PANTS[rng.randi() % Look.PANTS.size()]
 	hair = Look.HAIRS[rng.randi() % Look.HAIRS.size()].darkened(0.3)
+	if not outfit.is_empty():
+		apply_outfit(outfit)
+
+
+func apply_outfit(o: Array) -> void:
+	outfit = o
+	shirt = Color(o[0]).darkened(0.1)
+	pants = o[1]
+	hair = o[2]
 
 
 func _process(delta: float) -> void:

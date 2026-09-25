@@ -30,6 +30,16 @@ var player_name := ""
 var day := 1
 var last_kills := 0
 var dmg_numbers: Array = []  # [pos, text, crit, age]
+var outfits := {}  # zid -> [shirt, pants, hair] for zombies that were players
+var drip_t := 0.0
+# Survival tuning, per second. A full stomach lasts about two in-game days.
+const HUNGER_RATE := 100.0 / 480.0
+const THIRST_RATE := 100.0 / 330.0  # Bangkok heat: water runs out faster
+const INFECTION_RATE := 0.35
+const STARVE_DAMAGE := 0.6
+const BLEED_DAMAGE := 0.8
+const BITE_INFECT_CHANCE := 0.2
+const BITE_BLEED_CHANCE := 0.3
 var players := {}  # peer_id -> Player
 var zombies := {}  # zid -> Zombie
 var next_zid := 1
@@ -260,6 +270,7 @@ func _add_zombie(id: int, pos: Vector2) -> Zombie:
 	z.world = world
 	z.players = players
 	z.zid = id
+	z.outfit = outfits.get(id, [])
 	z.position = pos
 	z.net_pos = pos
 	z.z_index = 1
@@ -278,9 +289,10 @@ func req_set_name(n: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
-func send_input(move: Vector2, aim: Vector2, punch: bool, kick: bool) -> void:
+func send_input(move: Vector2, aim: Vector2, punch: bool, kick: bool, sprint: bool) -> void:
 	var p: Player = players.get(multiplayer.get_remote_sender_id())
 	if p:
+		p.sprint = sprint
 		p.move = move.limit_length(1.0)
 		p.aim = aim
 		p.punching = punch
@@ -310,6 +322,7 @@ func _server_tick(delta: float) -> void:
 					var w := Items.def(wid)
 					_melee(p, Look.SWING, [w.range, w.dmg, w.cd, w.stun, w.knock], w.dur * 0.45)
 		_tick_search(p, delta)
+		_tick_needs(p, delta)
 		if not p.alive() and not p.dropped:
 			p.dropped = true
 			_drop_everything(p)
@@ -327,7 +340,8 @@ func _server_tick(delta: float) -> void:
 		snap_timer = SNAPSHOT_RATE
 		var ps := []
 		for p: Player in players.values():
-			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname])
+			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint]])
 		var zs := []
 		for z: Zombie in zombies.values():
 			zs.append([z.zid, z.position, z.hp])
@@ -396,6 +410,91 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 			p.kills += 1
 	if wid != "":
 		_wear_weapon(p)
+
+
+## Hunger, thirst, infection, bleeding and stamina (server).
+func _tick_needs(p: Player, delta: float) -> void:
+	if not p.alive():
+		return
+	var running := p.sprint and p.move.length() > 0.1 and not p.exhausted and p.stamina > 0.0
+	p.hunger = maxf(0.0, p.hunger - HUNGER_RATE * delta * (1.6 if running else 1.0))
+	p.thirst = maxf(0.0, p.thirst - THIRST_RATE * delta * (1.8 if running else 1.0))
+	if running:
+		p.stamina = maxf(0.0, p.stamina - 22.0 * delta)
+		if p.stamina <= 0.0:
+			p.exhausted = true
+			_toast(p, "หมดแรง! ต้องพักก่อนวิ่งต่อ")
+	else:
+		var regen := 16.0 if p.hunger > 20.0 and p.thirst > 20.0 else 6.0
+		p.stamina = minf(100.0, p.stamina + regen * delta)
+		if p.exhausted and p.stamina > 35.0:
+			p.exhausted = false
+	if p.bitten:
+		p.bitten = false
+		if p.infection <= 0.0 and randf() < BITE_INFECT_CHANCE:
+			p.infection = 12.0
+			_toast(p, "โดนกัด! ติดเชื้อแล้ว หายาปฏิชีวนะ")
+		if not p.bleeding and randf() < BITE_BLEED_CHANCE:
+			p.bleeding = true
+			_toast(p, "เลือดออก! ใช้ผ้าพันแผลห้ามเลือด")
+	var dmg := 0.0
+	if p.hunger <= 0.0:
+		dmg += STARVE_DAMAGE
+	if p.thirst <= 0.0:
+		dmg += STARVE_DAMAGE
+	if p.bleeding:
+		dmg += BLEED_DAMAGE
+	if dmg > 0:
+		p.take_damage(dmg * delta)
+	_warn(p, "hungry", p.hunger < 25.0, "หิวแล้ว หาอะไรกิน")
+	_warn(p, "starving", p.hunger <= 0.0, "หิวจนเลือดลด!")
+	_warn(p, "thirsty", p.thirst < 25.0, "กระหายน้ำ หาน้ำดื่ม")
+	_warn(p, "dry", p.thirst <= 0.0, "ขาดน้ำจนเลือดลด!")
+	if p.infection > 0.0:
+		p.infection = minf(100.0, p.infection + INFECTION_RATE * delta)
+		_warn(p, "fever", p.infection > 60.0, "เชื้อลุกลาม ตัวเริ่มร้อนและเดินช้าลง...")
+		if p.infection >= 100.0:
+			_turn(p)
+
+
+## Send a warning once when a condition becomes true; re-arm when it clears.
+func _warn(p: Player, key: String, cond: bool, text: String) -> void:
+	if cond and not p.warned.has(key):
+		p.warned[key] = true
+		_toast(p, text)
+	elif not cond:
+		p.warned.erase(key)
+
+
+## The infection wins: the player dies and gets back up as a zombie in their clothes.
+func _turn(p: Player) -> void:
+	p.infection = 100.0
+	p.take_damage(9999)
+	p.dropped = true
+	_drop_everything(p)
+	fx_turned.rpc(p.peer_id)
+	var z := _add_zombie(next_zid, p.position)
+	next_zid += 1
+	var o := [p.shirt, p.pants, p.hair]
+	z.apply_outfit(o)
+	outfits[z.zid] = o
+	zombie_outfit.rpc(z.zid, o)
+
+
+@rpc("authority", "call_remote", "reliable")
+func zombie_outfit(zid: int, o: Array) -> void:
+	outfits[zid] = o
+	var z: Zombie = zombies.get(zid)
+	if z:
+		z.apply_outfit(o)
+
+
+@rpc("authority", "call_local", "reliable")
+func fx_turned(peer_id: int) -> void:
+	var p: Player = players.get(peer_id)
+	if p:
+		p.turned = true
+		Sfx.play(self, "groan", p.position, 0.0, 0.8)
 
 
 ## Each hit wears the weapon down; at zero it breaks.
@@ -480,7 +579,18 @@ func req_use() -> void:
 	var it = p.inv[p.sel]
 	if it == null or Items.def(it.id).get("type") != "use":
 		return
-	p.hp = minf(Player.MAX_HP, p.hp + Items.def(it.id).heal)
+	var d := Items.def(it.id)
+	p.hp = minf(Player.MAX_HP, p.hp + d.get("heal", 0.0))
+	p.hunger = clampf(p.hunger + d.get("food", 0.0), 0.0, 100.0)
+	p.thirst = clampf(p.thirst + d.get("drink", 0.0), 0.0, 100.0)
+	p.stamina = minf(100.0, p.stamina + d.get("stamina", 0.0))
+	if d.get("cure", 0.0) > 0.0 and p.infection > 0.0:
+		p.infection = maxf(0.0, p.infection - d.cure)
+		if p.infection <= 0.0:
+			_toast(p, "หายจากการติดเชื้อแล้ว")
+	if d.get("stop_bleed", false) and p.bleeding:
+		p.bleeding = false
+		_toast(p, "ห้ามเลือดแล้ว")
 	it.n -= 1
 	if it.n <= 0:
 		p.inv[p.sel] = null
@@ -641,6 +751,15 @@ func snapshot(ps: Array, zs: Array, t: float, d: int) -> void:
 		p.kills = e[4]
 		p.weapon_id = e[5]
 		p.pname = e[6]
+		var n: Array = e[7]
+		p.hunger = n[0]
+		p.thirst = n[1]
+		p.infection = n[2]
+		p.bleeding = n[3]
+		p.stamina = n[4]
+		p.exhausted = n[5]
+		if not p.is_local:
+			p.sprint = n[6]
 	for id in players.keys():
 		if not seen.has(id):
 			players[id].queue_free()
@@ -789,15 +908,16 @@ func _process(delta: float) -> void:
 		var aim := get_global_mouse_position() - (me.position + Look.CHEST)
 		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+		me.sprint = Input.is_key_pressed(KEY_SHIFT)
 		me.aim = aim
 		if multiplayer.is_server():
 			me.move = move
 			me.punching = punch
 			me.kicking = kick
 		else:
-			send_input.rpc_id(1, move, aim, punch, kick)
+			send_input.rpc_id(1, move, aim, punch, kick, me.sprint)
 			if me.alive():
-				me.position = world.slide(me.position, move * Player.SPEED * delta, Player.RADIUS)
+				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * delta, Player.RADIUS)
 		camera.position = me.position + Look.CHEST
 		camera.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake
 		shake = move_toward(shake, 0.0, delta * 14.0)
@@ -832,6 +952,14 @@ func _process(delta: float) -> void:
 	fx.queue_redraw()
 
 
+	drip_t -= delta
+	if drip_t <= 0.0:
+		drip_t = 0.35
+		for p: Player in players.values():
+			if p.alive() and p.bleeding:
+				blood.append([p.position + Vector2(randf_range(-3, 3), randf_range(-1, 2)), randf_range(0.6, 1.4),
+						Color(0.4, 0.03, 0.03, 0.8)])
+				decals.queue_redraw()
 	for dn in dmg_numbers:
 		dn[3] += delta
 	dmg_numbers = dmg_numbers.filter(func(dn): return dn[3] < 0.9)
@@ -840,6 +968,10 @@ func _process(delta: float) -> void:
 	if me and me.alive() and me.hp < 35:
 		hurt = (35.0 - me.hp) / 35.0
 	grade_mat.set_shader_parameter("hurt", hurt)
+	var sick := 0.0
+	if me and me.alive():
+		sick = clampf((me.infection - 10.0) / 90.0, 0.0, 1.0)
+	grade_mat.set_shader_parameter("sick", sick)
 	_update_death_screen(me, delta)
 
 

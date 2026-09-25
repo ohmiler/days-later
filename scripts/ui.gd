@@ -117,18 +117,14 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	vitals.hp = me.hp
 	vitals.ghost = move_toward(vitals.ghost, me.hp, delta * 18.0) if vitals.ghost > me.hp else me.hp
 	vitals.alive_t = me.life_t
-	vitals.hint = ""
-	if me.alive() and me.hp < 35:
-		var best := -1
-		var best_heal := 0.0
-		for i in me.inv.size():
-			var it = me.inv[i]
-			if it != null and Items.def(it.id).get("heal", 0.0) > best_heal:
-				best_heal = Items.def(it.id).heal
-				best = i
-		if best >= 0:
-			vitals.hint = "กด [%d] แล้ว [F] ใช้ %s (+%d)" % [best + 1, Items.display_name(me.inv[best].id), int(best_heal)]
-	vitals.offset_top = vitals.offset_bottom - (108 if vitals.hint != "" else 84)
+	vitals.hunger = me.hunger
+	vitals.thirst = me.thirst
+	vitals.infection = me.infection
+	vitals.bleeding = me.bleeding
+	vitals.stamina = me.stamina
+	vitals.exhausted = me.exhausted
+	vitals.hint = _hint(me) if me.alive() else ""
+	vitals.offset_top = vitals.offset_bottom - (150 if vitals.hint != "" else 126)
 	vitals.queue_redraw()
 
 	clock.day = day
@@ -160,8 +156,40 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	var k := clampf((me.death_t - 0.6) / 1.2, 0.0, 1.0) if not me.alive() else 0.0
 	death_label.modulate.a = k
 	death_sub.modulate.a = k
+	death_label.text = "คุณกลายเป็นซอมบี้" if me.turned else "คุณตายแล้ว"
 	if not me.alive():
 		death_sub.text = "ของที่ถืออยู่ร่วงอยู่ข้างศพ  ·  เกิดใหม่ใน %d วินาที" % ceili(maxf(0.0, Player.RESPAWN_TIME - me.death_t))
+
+
+## The most urgent thing in the bag that would help right now.
+func _hint(me: Player) -> String:
+	var wants := []  # [urgency, stat key, reason]
+	if me.bleeding:
+		wants.append([90, "stop_bleed", "ห้ามเลือด"])
+	if me.infection > 25.0:
+		wants.append([60 + me.infection * 0.3, "cure", "ลดเชื้อ"])
+	if me.hp < 35.0:
+		wants.append([80 - me.hp, "heal", "รักษา"])
+	if me.thirst < 20.0:
+		wants.append([70 - me.thirst, "drink", "ดื่ม"])
+	if me.hunger < 20.0:
+		wants.append([65 - me.hunger, "food", "กิน"])
+	wants.sort_custom(func(a, b): return a[0] > b[0])
+	for w in wants:
+		var best := -1
+		var best_v := 0.0
+		for i in me.inv.size():
+			var it = me.inv[i]
+			if it == null:
+				continue
+			var v = Items.def(it.id).get(w[1], 0.0)
+			v = 1.0 if typeof(v) == TYPE_BOOL and v else float(v) if typeof(v) != TYPE_BOOL else 0.0
+			if v > best_v:
+				best_v = v
+				best = i
+		if best >= 0:
+			return "กด [%d] แล้ว [F] %s ด้วย %s" % [best + 1, w[2], Items.display_name(me.inv[best].id)]
+	return ""
 
 
 # --- Building ----------------------------------------------------------------
@@ -188,7 +216,7 @@ func _build_hud() -> void:
 	vitals.offset_right = 24 + 270
 	vitals.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	vitals.offset_bottom = -24
-	vitals.offset_top = -24 - 84
+	vitals.offset_top = -24 - 126
 	hud.add_child(vitals)
 
 	clock = Clock.new()
@@ -260,9 +288,9 @@ func _build_help() -> void:
 	sheet.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	sheet.offset_left = -370
 	sheet.offset_right = 370
-	sheet.offset_top = -200
-	sheet.offset_bottom = 200
-	sheet.pivot_offset = Vector2(370, 200)
+	sheet.offset_top = -225
+	sheet.offset_bottom = 225
+	sheet.pivot_offset = Vector2(370, 225)
 	sheet.rotation = 0.01
 	help.add_child(sheet)
 
@@ -381,6 +409,12 @@ class Vitals extends Control:
 	var alive_t := 0.0
 	var hint := ""
 	var t := 0.0
+	var hunger := 80.0
+	var thirst := 80.0
+	var infection := 0.0
+	var bleeding := false
+	var stamina := 100.0
+	var exhausted := false
 
 	func _survived() -> String:
 		var hours := int(alive_t / GameUI.GAME_HOUR)
@@ -393,7 +427,8 @@ class Vitals extends Control:
 		var pulse := 0.5 + 0.5 * sin(t * 7.0)
 		draw_style_box(UiTheme.box(UiTheme.CARD, 8, UiTheme.BLOOD if low else UiTheme.LINE, 2 if low else 1), Rect2(Vector2.ZERO, size))
 		draw_string(UiTheme.heading(), Vector2(16, 32), pname, HORIZONTAL_ALIGNMENT_LEFT, size.x - 150, 20, UiTheme.PAPER)
-		var sub := "ใกล้ตาย!" if low else _survived()
+		var sub := "ใกล้ตาย!" if low else ("เลือดออก!" if bleeding else _survived())
+		low = low or bleeding
 		var sub_col := Color(1, 0.42, 0.35, 0.55 + 0.45 * pulse) if low else Color(UiTheme.PAPER, 0.6)
 		draw_string(UiTheme.body_bold() if low else UiTheme.body(), Vector2(0, 31), sub, HORIZONTAL_ALIGNMENT_RIGHT, size.x - 16, 14, sub_col)
 		var hc := Color("ff3a2a") if low else UiTheme.BLOOD
@@ -405,8 +440,27 @@ class Vitals extends Control:
 		draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(hp / 100.0, 0, 1), 3)), Color(1, 1, 1, 0.18))
 		draw_string(UiTheme.medium(), Vector2(bar.end.x + 10, 66), str(ceili(hp)), HORIZONTAL_ALIGNMENT_LEFT, -1, 17,
 				Color("ff6a5a") if low else UiTheme.PAPER)
+		# Stamina: a thin bar under health.
+		var st := Rect2(48, 70, bar.size.x, 3)
+		draw_rect(st, Color(1, 1, 1, 0.06))
+		draw_rect(Rect2(st.position, Vector2(st.size.x * stamina / 100.0, 3)),
+				Color(1, 0.45, 0.3, 0.5 + 0.5 * pulse) if exhausted else Color(0.95, 0.85, 0.4, 0.8))
+		# Needs row.
+		var needs := [["อิ่ม", hunger, Color("c9a24a"), hunger < 25], ["น้ำ", thirst, Color("4a8ac9"), thirst < 25],
+				["เชื้อ", infection, Color("7ab04a"), infection > 0]]
+		for i in needs.size():
+			var n: Array = needs[i]
+			var x := 16.0 + i * (size.x - 16) / 3.0
+			var cw := (size.x - 16) / 3.0 - 12
+			var warn: bool = n[3] and (i < 2 or infection > 40)
+			var lc := Color(1, 0.55, 0.45, 0.6 + 0.4 * pulse) if warn else Color(UiTheme.PAPER, 0.75)
+			draw_string(UiTheme.body_bold(), Vector2(x, 100), n[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, lc)
+			var b := Rect2(x, 106, cw, 5)
+			draw_rect(b, Color(1, 1, 1, 0.08))
+			draw_rect(Rect2(b.position, Vector2(b.size.x * n[1] / 100.0, b.size.y)), n[2])
+			draw_string(UiTheme.body(), Vector2(x, 100), "%d" % n[1], HORIZONTAL_ALIGNMENT_RIGHT, cw, 12, Color(UiTheme.PAPER, 0.55))
 		if hint != "":
-			UiTheme.draw_rich(self, Vector2(16, 94), hint, UiTheme.body_bold(), 14, Color(1, 0.8, 0.75))
+			UiTheme.draw_rich(self, Vector2(16, 138), hint, UiTheme.body_bold(), 14, Color(1, 0.8, 0.75))
 
 
 class Clock extends Control:
@@ -488,6 +542,7 @@ class HelpSheet extends Control:
 		["[คลิกซ้าย]", "ต่อย / ฟาดอาวุธ"], ["[1]–[8]", "เลือกช่องของ"],
 		["[คลิกขวา]", "เตะ ผลักซอมบี้ออก"], ["[F]", "ใช้ของ (กิน / รักษา)"],
 		["[ลูกกลิ้ง]", "ซูมกล้อง"], ["[G]", "ทิ้งของ"],
+		["[Shift]", "วิ่ง (ใช้แรง ทำให้หิวเร็วขึ้น)"], ["[H]", "เปิด / ปิดหน้านี้"],
 	]
 
 	func _draw() -> void:
