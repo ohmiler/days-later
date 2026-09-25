@@ -79,6 +79,16 @@ func run() -> void:
 	check(Body.statuses(me).any(func(s): return s.icon == "sprain"), "and shows as a status")
 	me.sprint = false
 
+	# Where you are: hunted, or safe up top.
+	var hunter := zombie_at(me.position + Vector2(60, 0))
+	hunter.state = 2
+	check(Body.statuses(me)[0].icon == "chased", "a zombie that has seen you shows first")
+	hunter.queue_free()
+	main.zombies.erase(hunter.zid)
+	me.on_roof = true
+	check(Body.statuses(me).any(func(st): return st.icon == "safe"), "up on a roof shows as safe")
+	me.on_roof = false
+
 	# Saved with you.
 	main._save_all()
 	await close_game()
