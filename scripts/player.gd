@@ -224,7 +224,8 @@ func bite(dmg: float) -> void:
 	var armored := worn.keys().filter(func(k): return worn[k] != null and Items.def(worn[k].id).get("armor", 0.0) > 0.0)
 	if armored.is_empty():
 		return
-	var slot: String = armored.pick_random()
+	# The outer layer takes the teeth first; under it only once it is gone.
+	var slot: String = "over" if "over" in armored else armored.pick_random()
 	worn[slot].hp -= 1
 	if worn[slot].hp <= 0:
 		torn = Items.display_name(worn[slot].id)

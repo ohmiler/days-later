@@ -47,8 +47,9 @@ func _ready() -> void:
 
 func _slots() -> Array:
 	var out := []  # [ref, rect, title]
+	var step := minf(SLOT + GAP, (H - 118.0) / Items.SLOTS.size())  # all the layers fit above the info line
 	for i in Items.SLOTS.size():
-		out.append([["worn", Items.SLOTS[i]], Rect2(24, 64 + i * (SLOT + GAP), SLOT, SLOT)])
+		out.append([["worn", Items.SLOTS[i]], Rect2(24, 64 + i * step, step - 4, step - 4)])
 	var x0 := 200.0
 	for i in inv.size():
 		var row := i / COLS

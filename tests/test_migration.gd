@@ -60,6 +60,15 @@ func run() -> void:
 	check(FileAccess.file_exists(_path() + ".bak"), "the save before it is kept as .bak")
 	await close_game()
 
+	# --- A version 5 player wore a vest in the shirt's place: it moves over. ---
+	pl = _raw(ppath)
+	pl.version = 5
+	pl.worn = {body = {id = "vest", n = 1, hp = 50}}
+	_store(ppath, pl)
+	await host(9322, true, false)
+	check(me.wear_ids.get("over") == "vest" and not me.wear_ids.has("body"), "an old save's vest moves to the layer over the shirt")
+	await close_game()
+
 	# --- A damaged save falls back to its backup. ---
 	var f := FileAccess.open(_path(), FileAccess.WRITE)
 	f.store_string("this is not a save file")

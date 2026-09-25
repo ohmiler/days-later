@@ -8,8 +8,9 @@ const DATA := "res://data/items.cfg"  # (exports must include *.cfg: Export > Re
 const INV_SIZE := 8  # the hotbar; a bag adds slots after these, reached from the bag screen (Tab)
 
 ## Places on the body something can be worn, and what they're called.
-const SLOTS := ["head", "body", "legs", "feet", "back"]
-const SLOT_NAMES := {head = "หัว", body = "ตัว", legs = "ขา", feet = "เท้า", back = "หลัง"}
+## "over" is a second layer on the body: a vest goes on top of a shirt.
+const SLOTS := ["head", "body", "over", "legs", "feet", "back"]
+const SLOT_NAMES := {head = "หัว", body = "ตัว", over = "ทับเสื้อ", legs = "ขา", feet = "เท้า", back = "หลัง"}
 const MAX_ARMOR := 0.6
 
 ## Kilograms a survivor carries before slowing down (a bag adds its `carry`).
@@ -168,16 +169,16 @@ static func zombie_wear(zid: int) -> Dictionary:
 	var roll := rng.randf()
 	if roll < 0.06:
 		out.head = "helmet"
-		out.body = "rider"
+		out.over = "rider"
 	elif roll < 0.1:
 		out.head = "helmet"
 	elif roll < 0.16:
 		out.head = "cap"
 	roll = rng.randf()
-	if not out.has("body"):
-		if roll < 0.02:
-			out.body = "vest"
-		elif roll < 0.1:
+	if not out.has("over") and roll < 0.02:
+		out.over = "vest"
+	elif not out.has("over"):
+		if roll < 0.1:
 			out.body = "hoodie"
 		elif roll < 0.15:
 			out.body = "jacket"

@@ -51,6 +51,23 @@ func run() -> void:
 	main.inventory.req_move(["inv", h], ["worn", "head"])
 	check(me.wear_ids.get("head") == "helmet", "a helmet goes on the head")
 
+	# Layers: a vest goes over a shirt, and bites hit the outer layer first.
+	main.inventory._give(me, "hoodie")
+	main.inventory._give(me, "vest")
+	var hd := me.inv.find(me.inv.filter(func(x): return x != null and x.id == "hoodie")[0])
+	main.inventory.req_move(["inv", hd], ["worn", "body"])
+	var v := me.inv.find(me.inv.filter(func(x): return x != null and x.id == "vest")[0])
+	main.inventory.req_move(["inv", v], ["worn", "body"])
+	check(me.wear_ids.get("body") == "hoodie", "a vest does not go in the shirt's place")
+	main.inventory.req_move(["inv", v], ["worn", "over"])
+	check(me.wear_ids.get("body") == "hoodie" and me.wear_ids.get("over") == "vest", "a vest goes on over the hoodie")
+	var vest_hp: int = me.worn.over.hp
+	var hood_hp: int = me.worn.body.hp
+	me.bite(1.0)
+	check(me.worn.over.hp == vest_hp - 1 and me.worn.body.hp == hood_hp, "a bite wears the vest, not the hoodie under it")
+	main.inventory.req_move(["worn", "over"], ["inv", -1])
+	main.inventory.req_move(["worn", "body"], ["inv", -1])
+
 	# A backpack adds slots; taking it off shrinks the bag and keeps what fits.
 	main.inventory._give(me, "backpack")
 	var b := me.inv.find(me.inv.filter(func(x): return x != null and x.id == "backpack")[0])

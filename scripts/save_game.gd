@@ -13,7 +13,7 @@ class_name SaveGame
 ## (world.save.v1 and so on). A save that cannot be read, or that comes from a
 ## newer game, is never written over: the game says so and leaves it alone.
 
-const VERSION := 5
+const VERSION := 6
 const GAME_VERSION := "0.4"  # shown to people; not used for compatibility
 
 ## [kind, from version] -> the function that upgrades it one step.
@@ -23,6 +23,8 @@ const MIGRATIONS := {
 	"player:2": "_player_2_to_3",
 	"world:3": "_world_3_to_4",
 	"player:4": "_player_4_to_5",
+	"player:5": "_player_5_to_6",
+	"world:5": "_world_5_to_6",
 }
 
 
@@ -223,6 +225,27 @@ static func _player_2_to_3(d: Dictionary) -> Dictionary:
 ## v5 remembers the bed a survivor calls home.
 static func _player_4_to_5(d: Dictionary) -> Dictionary:
 	d.merge({bed = -1}, false)
+	return d
+
+
+## v6 wears vests over shirts: the "over" slot. Vests worn in "body" move up.
+const _OVER := ["vest", "rider"]
+
+
+static func _player_5_to_6(d: Dictionary) -> Dictionary:
+	var worn: Dictionary = d.get("worn", {})
+	if worn.get("body") != null and worn.body.id in _OVER:
+		worn.over = worn.body
+		worn.erase("body")
+	return d
+
+
+## ...and so do the clothes of survivors who turned (zombie outfits).
+static func _world_5_to_6(d: Dictionary) -> Dictionary:
+	for e in d.zombies:
+		if e[3] is Array and e[3].size() > 3 and e[3][3].get("body", "") in _OVER:
+			e[3][3].over = e[3][3].body
+			e[3][3].erase("body")
 	return d
 
 
