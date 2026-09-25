@@ -15,6 +15,7 @@ const GUN_COOLDOWN := 0.25
 # Melee: [range, damage, cooldown, stun, knockback]
 const PUNCH := [18.0, 12.0, 0.35, 0.35, 2.5]
 const KICK := [20.0, 22.0, 0.8, 0.7, 16.0]
+const MELEE_SLACK := 3.0  # extra reach so a blow that looks like it lands, lands
 const PUNCH_WINDUP := 0.08  # the hit lands when the fist is out, not on the click
 const KICK_WINDUP := 0.18  # matches the foot snapping out in Look.kick_pose
 
@@ -465,17 +466,38 @@ func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	if not p.alive() or p.on_roof:
 		return
+	# Reach is measured to the edge of the body, not its middle.
+	var reach: float = stats[0] + Zombie.RADIUS + MELEE_SLACK
 	var dir := p.aim.normalized()
+	# The cursor is where the player clicked on screen. If it is on a zombie's
+	# drawn body (head to feet), that is the one they meant, whichever part they hit.
+	var cursor := p.position + Look.CHEST + p.aim
+	var picked: Zombie = null
 	var hits: Array = []
 	for z: Zombie in zombies.values():
 		var v := z.position - p.position
-		if v.length() < stats[0] and v.normalized().dot(dir) > 0.3:
+		if v.length() > reach:
+			continue
+		if Rect2(z.position + Vector2(-8, -31), Vector2(16, 35)).has_point(cursor):
+			if picked == null or v.length() < (picked.position - p.position).length():
+				picked = z
+		# In front of you, or so close it is pressed against you.
+		var facing := v.normalized().dot(dir)
+		if facing > 0.3 or (v.length() < 12.0 and facing > -0.3):
 			hits.append(z)
+	if picked:
+		dir = (picked.position - p.position).normalized()
+		if not hits.has(picked):
+			hits.append(picked)
 	if hits.is_empty():
 		return
 	var wid := p.held_weapon() if kind == Look.SWING else ""
 	var cleave: bool = kind == Look.KICK or Items.def(wid).get("cleave", false)
-	if not cleave:
+	if cleave:
+		hits = hits.filter(func(z): return z == picked or (z.position - p.position).normalized().dot(dir) > 0.0 or z.position.distance_to(p.position) < 12.0)
+	elif picked:
+		hits = [picked]
+	else:
 		hits.sort_custom(func(a, b): return (a.position - p.position).normalized().dot(dir) > (b.position - p.position).normalized().dot(dir))
 		hits = [hits[0]]
 	var how: String = Items.def(wid).get("draw", {}).get("kind", "")

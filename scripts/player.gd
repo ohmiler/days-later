@@ -3,7 +3,7 @@ extends Node2D
 ## A connected player. The server simulates it; clients predict their own
 ## player and interpolate everyone else toward the server snapshot.
 
-const SPEED := 90.0
+const SPEED := 55.0  # walking; zombies shamble at 25-38, runners at 64, so only sprinting outruns those
 const RADIUS := 5.0
 const MAX_HP := 100.0
 const RESPAWN_TIME := 5.0
@@ -131,7 +131,7 @@ func speed_mult() -> float:
 	if sneak:
 		m = 0.5
 	elif sprint and not exhausted and stamina > 0.0:
-		m = 1.6
+		m = 1.75
 	if infection > 60.0:
 		m *= 0.85
 	for slot in wear_ids:
@@ -222,7 +222,7 @@ func _process(delta: float) -> void:
 	var step := position.distance_to(last_pos)
 	last_pos = position
 	moving = step > 0.05
-	phase = phase + step * 0.45 if moving else 0.0
+	phase = phase + step * 0.3 if moving else 0.0  # longer strides
 	flashlight.rotation = aim.angle()
 	lift = lerpf(lift, world.roof_height(position) if on_roof else 0.0, minf(1.0, 12.0 * delta))
 	flashlight.position = Look.CHEST + Vector2(0, -lift)
