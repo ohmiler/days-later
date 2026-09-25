@@ -72,7 +72,7 @@ var phase := 0.0
 var sleeping := false  # lying on a bed: can't move, heals, the night goes faster
 var bed := -1  # the bed (container id) this survivor calls home: where they wake after dying
 var sleep_check := 0.0  # server: time to the next look around while asleep
-var sleep_bed := -1  # server: the bed slept in now
+var sleep_bed := -1  # the bed slept in now (-1: the floor)
 var sleep_safe := false  # server: that bed's building is shut tight (checked each second)
 var view := [Look.FRONT, false]
 var moving := false
@@ -183,6 +183,10 @@ func armor() -> float:
 	for slot in wear_ids:
 		a += Items.def(wear_ids[slot]).get("armor", 0.0)
 	return minf(a, Items.MAX_ARMOR)
+
+
+func in_long_bed() -> bool:
+	return sleep_bed >= 0 and sleep_bed < world.container_nodes.size() 			and world.container_nodes[sleep_bed].data.get("long", 0) == 2
 
 
 ## Where this survivor comes back: beside their bed if they have one, else anywhere.
@@ -314,9 +318,17 @@ func _draw() -> void:
 		Look.draw(self, {view = [Look.SIDE, fall_dir > 0], fall = clampf(death_t / 0.75, 0.001, 1.0), fall_dir = fall_dir}, look)
 		return
 	if sleeping:  # lying down, as on the ground but breathing
-		Look.lift = Vector2(30, -3)  # head on the pillow, body along the bed
-		Look.draw(self, {view = [Look.SIDE, false], fall = 1.0, fall_dir = -1.0}, look)
-		Look.lift = Vector2.ZERO
+		if in_long_bed():
+			# Down the room, seen from above: head on the pillow, the rest under a blanket.
+			draw_circle(Vector2(0, -25), 3.6, skin)
+			draw_circle(Vector2(0, -26.2), 3.4, hair)
+			draw_rect(Rect2(-5.5, -22, 11, 3), shirt)
+			draw_rect(Rect2(-7, -20, 14, 17), Color("6a7a94"))
+			draw_rect(Rect2(-4.5, -19, 9, 15), Color("75869f"))  # the body's shape under it
+		else:
+			Look.lift = Vector2(30, -3)  # head on the pillow, body along the bed
+			Look.draw(self, {view = [Look.SIDE, false], fall = 1.0, fall_dir = -1.0}, look)
+			Look.lift = Vector2.ZERO
 		var t := fmod(Time.get_ticks_msec() / 1000.0, 3.0)
 		draw_string(UiTheme.heading(), Vector2(4 + t * 3, -14 - t * 5), "z", HORIZONTAL_ALIGNMENT_LEFT, -1, 9,
 				Color(0.9, 0.9, 1.0, 0.8 * (1.0 - t / 3.0)))

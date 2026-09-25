@@ -3,6 +3,8 @@ extends Node2D
 ## One tree, drawn standing up. Origin is the trunk base so it y-sorts
 ## correctly against characters.
 
+const SCALE := 1.4  # drawn this much bigger than the sketch below
+
 var cell := Vector2i.ZERO
 
 
