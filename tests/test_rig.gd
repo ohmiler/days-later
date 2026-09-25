@@ -79,6 +79,44 @@ func run() -> void:
 			var rel: Vector2 = off.hand - h
 			far = maxf(far, absf(rel.cross(dir)))  # how far off the handle's line
 		check(far < 0.3, "%s: the other hand stays on the handle (%.2f off)" % [id, far])
+		# Facing the camera, held low in both hands: the arms come down to it in a V
+		# (left hand left of the right), not folded across the chest.
+		var fr := Rig.build({view = [Look.FRONT, false], angle = PI / 2, weapon = weapons[id]}, {})
+		var l: Vector2 = _arm_by_idx(fr, 0).hand
+		var rh: Vector2 = _arm_by_idx(fr, 1).hand
+		check(l.x <= rh.x and l.y > -17.0 and rh.y > -17.0, "%s from the front: held low, arms not crossed (%s, %s)" % [id, l, rh])
+
+
+	# Easing: raising the fists eases in over BLEND_TIME instead of jumping.
+	var mem := {}
+	var idle_st := {view = [Look.SIDE, false]}
+	var guard_st := {view = [Look.SIDE, false], guard = true}
+	var idle_r := Rig.build_eased(idle_st, {}, mem, 10.0)
+	var target := Rig.build(guard_st, {})
+	Rig.build_eased(guard_st, {}, mem, 10.02)  # the first frame asking for the guard: the ease starts
+	var mid := Rig.build_eased(guard_st, {}, mem, 10.02 + Rig.BLEND_TIME * 0.5)
+	var h0: Vector2 = _arm_by_idx(idle_r, 1).hand
+	var h1: Vector2 = _arm_by_idx(target, 1).hand
+	var hm: Vector2 = _arm_by_idx(mid, 1).hand
+	check(hm.distance_to(h0) > 0.5 and hm.distance_to(h1) > 0.5, "fists come up part way, not in one frame")
+	var ok := true
+	for a in mid.arms_back + mid.arms_front:
+		ok = ok and (a.elbow as Vector2).distance_to(a.sh) <= Rig.UPPER_ARM + EPS and (a.hand as Vector2).distance_to(a.elbow) <= Rig.FOREARM + EPS
+	check(ok, "arms don't stretch part way between poses")
+	var done := Rig.build_eased(guard_st, {}, mem, 10.02 + Rig.BLEND_TIME * 1.5)
+	check((_arm_by_idx(done, 1).hand as Vector2).is_equal_approx(h1), "and end up exactly in the new pose")
+	# Turning to face another way changes the whole drawing at once.
+	var front := Rig.build_eased({view = [Look.FRONT, false], angle = PI / 2}, {}, mem, 11.0)
+	Rig.build_eased({view = [Look.FRONT, false], angle = PI / 2, guard = true}, {}, mem, 12.0)
+	var turned := Rig.build_eased({view = [Look.SIDE, false]}, {}, mem, 12.01)
+	check((_arm_by_idx(turned, 1).hand as Vector2).is_equal_approx(h0), "turning around doesn't ease (%s)" % front.view)
+	# Standing still, the chest rises and falls; walking, it doesn't breathe on top.
+	var b0 := Rig.build({view = [Look.SIDE, false], breath = -PI / 2}, {})
+	var b1 := Rig.build({view = [Look.SIDE, false], breath = PI / 2}, {})
+	check(absf(b0.upper.y - b1.upper.y) > 0.1, "breathing moves the chest")
+	var w0 := Rig.build({view = [Look.SIDE, false], moving = true, phase = 1.0, breath = -PI / 2}, {})
+	var w1 := Rig.build({view = [Look.SIDE, false], moving = true, phase = 1.0, breath = PI / 2}, {})
+	check(is_equal_approx(w0.upper.y, w1.upper.y), "but not while walking")
 
 
 func _arm_by_idx(r: Dictionary, i: int) -> Dictionary:

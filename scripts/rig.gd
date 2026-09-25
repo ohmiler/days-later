@@ -9,7 +9,8 @@ class_name Rig
 
 ## `st` keys (all optional except view): view [view, flip], angle, phase,
 ## moving, zombie, attack, ext, guard, weapon (draw dict), fall, fall_dir,
-## girth, recoil, crouch, anchors.
+## girth, recoil, crouch, anchors, breath (a clock: standing still, the chest
+## rises and falls with it).
 ## `anchors` poses the body by where it touches something instead of by an
 ## action: {seat, hands: [far, near], feet: [far, near]}, in the same space
 ## (facing +x side-on). The hips sit on `seat`, and elbows and knees bend to
@@ -90,6 +91,8 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 			lunge += -f * 1.6 * clampf(bite / 0.6, 0, 1) if bite < 0.6 else f * 4.5 * sin(clampf((bite - 0.6) / 0.4, 0, 1) * PI)
 		if scream > 0.0:
 			crouch -= 1.0 * sin(clampf(scream, 0, 1) * PI)  # rises up to scream
+	if st.has("breath") and not moving and fall <= 0.0:
+		bob += (sin(st.get("breath", 0.0)) * 0.5 + 0.5) * 0.35  # breathing, so standing still isn't frozen
 	r.upper = Vector2(lean * sx, -bob + sink * (1.0 - tip) + crouch) + lunge + recoil
 
 	# Fists come up when fighting; otherwise arms hang and swing with the walk.
@@ -344,8 +347,15 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 		var behind := view == Look.BACK or (view == Look.SIDE and i == 0)
 		var dim := 0.25 if behind and view == Look.SIDE else 0.0
 		if i == 1 and not weapon.is_empty():
+			# Held in both hands, a weapon swings from the middle of the body, not
+			# from one shoulder: otherwise the other arm has to reach right across.
+			# Facing the camera or away, it's held low, by the belly, so the arms
+			# hang down to it in a V instead of folding across the chest.
+			var pivot: Vector2 = sh[1]
+			if two_hands:
+				pivot = (sh[0] + sh[1]) * 0.5 + (Vector2.ZERO if view == Look.SIDE else Vector2(0, 3.0))
 			var main_arm := _weapon_arm(d, sh[1], Look.SWING if attack == Look.SWING else Look.NONE, ext, weapon, behind, dim,
-					_elbow_pref(view, 1), _elbow_bend(view))
+					_elbow_pref(view, 1), _elbow_bend(view), pivot)
 			if two_hands:
 				# The other hand holds the handle lower down, so both arms follow the swing.
 				var far := view == Look.BACK or view == Look.SIDE
@@ -427,7 +437,8 @@ static func stab_reach(t: float) -> float:
 
 ## The weapon hand: holds the weapon ready, or moves it through its attack.
 static func _weapon_arm(d: Vector2, sh: Vector2, attack: int, t: float, weapon: Dictionary, behind: bool, dim: float,
-		elbow_pref: Vector2, bend: float) -> Dictionary:
+		elbow_pref: Vector2, bend: float, pivot := Vector2.INF) -> Dictionary:
+	var at := sh if pivot == Vector2.INF else pivot  # what the weapon moves around
 	var grip: String = weapon.get("grip", "swing")
 	var base := atan2(d.y, d.x)
 	var trail := PackedVector2Array()
@@ -444,13 +455,13 @@ static func _weapon_arm(d: Vector2, sh: Vector2, attack: int, t: float, weapon: 
 		var a := base + (grip_angle(grip, t) if attack == Look.SWING else (g[0] as float))
 		dv = Vector2.from_angle(a)
 		dv = Vector2(dv.x, dv.y * (1.0 if grip != "sweep" else 0.7)).normalized()
-		hand = sh + Vector2(dv.x, dv.y * (g[4] as float)) * (g[3] as float) + Vector2(0, 1.0)
+		hand = at + Vector2(dv.x, dv.y * (g[4] as float)) * (g[3] as float) + Vector2(0, 1.0)
 		if attack == Look.SWING and t > 0.3 and t < 0.62:
 			# Motion trail along the arc the weapon tip just travelled.
 			var reach: float = (g[3] as float) + weapon.len
 			for i in 7:
 				var ak := lerpf(base + (g[1] as float), a, i / 6.0)
-				trail.append(sh + Vector2(cos(ak), sin(ak) * (g[4] as float)) * reach)
+				trail.append(at + Vector2(cos(ak), sin(ak) * (g[4] as float)) * reach)
 	var arm := _reach_arm(sh, hand, elbow_pref, behind,
 			{fist = true, dim = dim, sleeve_dark = 0.05 + dim, sleeve_dim = 0.0, weapon = {dir = dv, draw = weapon, trail = trail}}, bend)
 	if grip == "stab" and attack == Look.SWING and k > 0.5:
@@ -506,3 +517,85 @@ static func _zombie_arms(view: int, phase: float, girth: float, breed := "normal
 				out.append(_reach_arm(sh, hand, Vector2(s, 0.2), false, extra, _elbow_bend(view)))
 			return out
 	return []  # from behind, the arms reach away from the camera, hidden by the body
+
+
+# --- Easing between poses ------------------------------------------------------------
+# Most moves are animated from one end to the other, but some changes happen in
+# a frame: raising the fists, stopping mid-stride, drawing a weapon, crouching.
+# ease_into eases the joints over from the pose that was showing instead.
+
+const BLEND_TIME := 0.1  # seconds
+
+
+## What kind of pose `st` asks for: a change of kind starts an ease.
+static func pose_kind(st: Dictionary) -> Array:
+	var fight: bool = st.get("attack", Look.NONE) != Look.NONE or st.get("guard", false) 			or not st.get("weapon", {}).is_empty() or not st.get("weapon_l", {}).is_empty()
+	return [fight, st.get("weapon", {}).get("kind", ""), st.get("weapon_l", {}).get("kind", ""),
+			st.get("moving", false), st.get("crouch", 0.0) > 0.0]
+
+
+## Build `st`'s rig, eased in from what this character last showed. `mem` is the
+## character's own (an empty dictionary to start); `now` a clock in seconds.
+## Turning to another view, falling or sitting on something doesn't ease: those
+## change the whole drawing.
+static func build_eased(st: Dictionary, lk: Dictionary, mem: Dictionary, now: float) -> Dictionary:
+	var r := build(st, lk)
+	if st.get("fall", 0.0) > 0.0 or st.has("anchors"):
+		mem.clear()
+		return r
+	var kind := pose_kind(st)
+	var seen := [r.view, r.sx]
+	if mem.get("seen", []) != seen:
+		mem.erase("from")  # a new view: nothing to ease from
+	elif mem.get("kind", []) != kind:
+		mem.from = mem.shown  # (mid-ease too: carry on from where it had got to)
+		mem.t0 = now
+	mem.kind = kind
+	mem.seen = seen
+	if mem.has("from"):
+		var k := (now - (mem.t0 as float)) / BLEND_TIME
+		if k >= 1.0:
+			mem.erase("from")
+		else:
+			r = blend(mem.from, r, smoothstep(0.0, 1.0, k))
+	mem.shown = r
+	return r
+
+
+## Part way (k in 0..1) from rig `a` to rig `b`, both of the same view. Joints
+## move in straight lines; a limb between two poses can only come out shorter,
+## never stretched. Anything not a position is `b`'s.
+static func blend(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
+	var out := b.duplicate()
+	for key in ["upper", "head", "hips"]:
+		if a.has(key) and b.has(key):
+			out[key] = (a[key] as Vector2).lerp(b[key], k)
+	var was := {}
+	for arm in a.arms_back + a.arms_front:
+		was[arm.idx] = arm
+	var arms := []
+	for arm in b.arms_back + b.arms_front:
+		var m: Dictionary = arm
+		if was.has(arm.idx):
+			var p: Dictionary = was[arm.idx]
+			m = arm.duplicate()
+			for j in ["sh", "elbow", "hand"]:
+				m[j] = (p[j] as Vector2).lerp(arm[j], k)
+			if not p.weapon.is_empty() and not arm.weapon.is_empty():
+				m.weapon = arm.weapon.duplicate()
+				m.weapon.dir = (p.weapon.dir as Vector2).slerp(arm.weapon.dir, k)
+		arms.append(m)
+	out.arms_back = arms.filter(func(x): return x.behind)
+	out.arms_front = arms.filter(func(x): return not x.behind)
+	if a.legs.size() == b.legs.size():
+		var legs := []
+		for i in b.legs.size():
+			var leg: Dictionary = b.legs[i].duplicate()
+			for j in ["hip", "knee", "foot"]:
+				leg[j] = (a.legs[i][j] as Vector2).lerp(b.legs[i][j], k)
+			if leg.type == "rect":  # (a column is drawn from x and lift)
+				leg.x = (leg.hip as Vector2).x - 1.4
+				leg.lift = -(leg.foot as Vector2).y
+			legs.append(leg)
+		out.legs = legs
+	return out

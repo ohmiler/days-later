@@ -117,6 +117,12 @@ static func draw(ci: CanvasItem, st: Dictionary, lk: Dictionary) -> void:
 	draw_rig(ci, Rig.build(st, lk), lk)
 
 
+## Draw, easing between poses (see Rig.build_eased). `mem` belongs to the
+## character: an empty dictionary it keeps between frames.
+static func draw_eased(ci: CanvasItem, st: Dictionary, lk: Dictionary, mem: Dictionary) -> void:
+	draw_rig(ci, Rig.build_eased(st, lk, mem, Time.get_ticks_msec() / 1000.0), lk)
+
+
 ## Paint a rig in layers, back to front: shadow, legs, far arms, torso, head,
 ## near arms (with whatever they hold), and a leg kicking at the camera.
 static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
