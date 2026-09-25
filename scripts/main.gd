@@ -331,7 +331,7 @@ func _server_tick(delta: float) -> void:
 	if autosave_t <= 0.0:
 		autosave_t = AUTOSAVE_EVERY
 		_save_all()
-	time += delta / DAY_LENGTH
+	time += delta * survival.time_speed() / DAY_LENGTH
 	if time >= 1.0:
 		time -= 1.0
 		day += 1
@@ -382,7 +382,7 @@ func _server_tick(delta: float) -> void:
 		var ps := []
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof],
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed],
 					p.app_code, p.wear_ids])
 		var zs := []
 		for z: Zombie in zombies.values():
@@ -614,7 +614,7 @@ func _process(delta: float) -> void:
 			me.kicking = kick
 		else:
 			net.send_input.rpc_id(1, move, aim, punch, kick, me.sprint, me.sneak)
-			if me.alive():
+			if me.alive() and not me.sleeping:
 				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof)
 		camera.position = me.position + Look.CHEST + Vector2(0, -me.lift)
 		camera.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake
@@ -732,6 +732,9 @@ func _update_prompt(me: Player) -> void:
 	for f: FurnitureProp in world.container_nodes:
 		f.set_highlight(false)
 	if not me.alive():
+		return
+	if me.sleeping:
+		prompt = "หลับอยู่ · เดินเพื่อลุกขึ้น"
 		return
 	var t := Interact.target(self, me)
 	var list := Interact.actions(self, me, t)
@@ -924,6 +927,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		elif k == KEY_M:
 			ui.toggle_map()
+		elif k == KEY_Z:
+			_request(&"req_sleep", [])
 		elif k == KEY_C:
 			sneak_toggle = not sneak_toggle
 			ui.push_feed("ย่อง: เงียบ ช้า มองเห็นยาก" if sneak_toggle else "เลิกย่อง")

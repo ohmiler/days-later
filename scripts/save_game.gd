@@ -13,7 +13,7 @@ class_name SaveGame
 ## (world.save.v1 and so on). A save that cannot be read, or that comes from a
 ## newer game, is never written over: the game says so and leaves it alone.
 
-const VERSION := 4
+const VERSION := 5
 const GAME_VERSION := "0.4"  # shown to people; not used for compatibility
 
 ## [kind, from version] -> the function that upgrades it one step.
@@ -22,6 +22,7 @@ const MIGRATIONS := {
 	"player:1": "_player_1_to_2",
 	"player:2": "_player_2_to_3",
 	"world:3": "_world_3_to_4",
+	"player:4": "_player_4_to_5",
 }
 
 
@@ -140,7 +141,7 @@ static func save_player(p: Player) -> void:
 		version = VERSION, name = p.pname, alive = p.alive(),
 		pos = p.position, on_roof = p.on_roof, hp = p.hp, kills = p.kills,
 		hunger = p.hunger, thirst = p.thirst, infection = p.infection, bleeding = p.bleeding, stamina = p.stamina,
-		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash,
+		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash, bed = p.bed,
 	})
 
 
@@ -156,6 +157,7 @@ static func load_player_into(p: Player, name: String) -> bool:
 	if r.state != "ok":
 		return false
 	var d: Dictionary = r.data
+	p.bed = d.bed  # kept even after dying: the next survivor wakes there
 	if not d.get("alive", false):
 		return false  # they were dead when they left: a new survivor
 	p.position = d.pos
@@ -215,6 +217,12 @@ static func _player_1_to_2(d: Dictionary) -> Dictionary:
 ## come back with that name claims it.
 static func _player_2_to_3(d: Dictionary) -> Dictionary:
 	d.merge({secret_hash = ""}, false)
+	return d
+
+
+## v5 remembers the bed a survivor calls home.
+static func _player_4_to_5(d: Dictionary) -> Dictionary:
+	d.merge({bed = -1}, false)
 	return d
 
 

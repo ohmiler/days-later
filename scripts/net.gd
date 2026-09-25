@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 3
+const PROTOCOL := 4
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -88,6 +88,9 @@ func _claim_name(p: Player, wanted: String, secret: String) -> void:
 		main._toast(p, "ชื่อ %s มีเจ้าของแล้ว · ใช้ชื่อ %s แทน" % [asked, wanted])
 	elif SaveGame.load_player_into(p, wanted):
 		main._toast(p, "ยินดีต้อนรับกลับ %s" % wanted)
+	elif p.bed >= 0:
+		p.position = p.home_spawn()  # died last time: the new survivor starts at the old bed
+		main._toast(p, "ตื่นขึ้นที่เตียงประจำ")
 
 
 ## Send a newly accepted player the city as it is now and give them a body.
@@ -213,6 +216,8 @@ func snapshot(ps: Array, zs: Array, t: float, d: int, rain := false) -> void:
 			p.sprint = n[6]
 			p.sneak = n[7]
 		p.on_roof = n[8]
+		p.sleeping = n[9]
+		p.bed = n[10]
 	for id in main.players.keys():
 		if not seen.has(id):
 			main.players[id].queue_free()
