@@ -3,7 +3,7 @@ extends CanvasLayer
 ## Everything on screen that isn't the world: title menu, HUD (vitals, clock,
 ## hotbar, message feed), the step-by-step tutorial, help sheet and death screen.
 
-signal host_requested(player_name: String)
+signal host_requested(player_name: String, resume: bool)
 signal join_requested(address: String, player_name: String)
 
 const TUTORIAL := [
@@ -367,12 +367,23 @@ func _build_menu() -> void:
 	form.add_child(_label("ชื่อผู้รอดชีวิต", UiTheme.body(), 15, Color(UiTheme.PAPER, 0.7)))
 	name_edit = _line_edit(cfg.get_value("player", "name", ""), "ใส่ชื่อของคุณ")
 	form.add_child(name_edit)
-	var host := _button("เล่นคนเดียว / เปิดห้อง", true)
-	host.pressed.connect(func():
-		cfg.set_value("player", "name", player_name())
-		cfg.save(SETTINGS)
-		host_requested.emit(player_name()))
-	form.add_child(host)
+	# Carry on in the saved city, or start a new one (which replaces it).
+	var info := SaveGame.world_info()
+	if not info.is_empty():
+		var cont := _button("เล่นต่อ · วันที่ %d" % info.day, true)
+		cont.pressed.connect(func():
+			_remember_name()
+			host_requested.emit(player_name(), true))
+		form.add_child(cont)
+	var fresh := _button("เริ่มเมืองใหม่", info.is_empty())
+	fresh.pressed.connect(func():
+		if not info.is_empty() and not fresh.has_meta("confirm"):
+			fresh.set_meta("confirm", true)
+			fresh.text = "กดอีกครั้งเพื่อยืนยัน · เมืองเดิมจะหายไป"
+			return
+		_remember_name()
+		host_requested.emit(player_name(), false))
+	form.add_child(fresh)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	address_edit = _line_edit("127.0.0.1", "ที่อยู่เซิร์ฟเวอร์")
@@ -380,8 +391,7 @@ func _build_menu() -> void:
 	row.add_child(address_edit)
 	var join := _button("เข้าร่วม", false)
 	join.pressed.connect(func():
-		cfg.set_value("player", "name", player_name())
-		cfg.save(SETTINGS)
+		_remember_name()
 		join_requested.emit(address_edit.text.strip_edges(), player_name()))
 	row.add_child(join)
 	form.add_child(row)
@@ -393,6 +403,11 @@ func _build_menu() -> void:
 	ver.offset_left = 90
 	ver.offset_top = -50
 	menu.add_child(ver)
+
+
+func _remember_name() -> void:
+	cfg.set_value("player", "name", player_name())
+	cfg.save(SETTINGS)
 
 
 func _line_edit(text: String, placeholder: String) -> LineEdit:

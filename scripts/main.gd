@@ -31,6 +31,8 @@ var day := 1
 var last_kills := 0
 var dmg_numbers: Array = []  # [pos, text, crit, age]
 var outfits := {}  # zid -> [shirt, pants, hair] for zombies that were players
+const AUTOSAVE_EVERY := 60.0
+var autosave_t := AUTOSAVE_EVERY
 var drip_t := 0.0
 # Survival tuning, per second. A full stomach lasts about two in-game days.
 const HUNGER_RATE := 100.0 / 480.0
@@ -104,9 +106,9 @@ func _ready() -> void:
 	post.add_child(grade)
 	ui = GameUI.new()
 	add_child(ui)
-	ui.host_requested.connect(func(n: String):
+	ui.host_requested.connect(func(n: String, resume: bool):
 		player_name = n
-		_host(false))
+		_host(false, resume))
 	ui.join_requested.connect(func(addr: String, n: String):
 		player_name = n
 		_join(addr))
@@ -119,7 +121,7 @@ func _ready() -> void:
 			player_name = arg.trim_prefix("--name=")
 	for arg in args:
 		if arg == "--server":
-			_host(true)
+			_host(true, SaveGame.has_world() and not args.has("--new"))
 			return
 		elif arg.begins_with("--join="):
 			_join(arg.trim_prefix("--join="))
@@ -149,7 +151,8 @@ func _clear_backdrop() -> void:
 
 # --- Connection -------------------------------------------------------------
 
-func _host(dedicated: bool) -> void:
+## Start a server. `resume` loads the saved city; otherwise a new one replaces it.
+func _host(dedicated: bool, resume := false) -> void:
 	var peer := WebSocketMultiplayerPeer.new()
 	if peer.create_server(port) != OK:
 		ui.set_status("เปิดพอร์ต %d ไม่ได้ (มีเกมอื่นเปิดอยู่หรือเปล่า?)" % port)
@@ -157,17 +160,25 @@ func _host(dedicated: bool) -> void:
 	multiplayer.multiplayer_peer = peer
 	_connect_once(multiplayer.peer_connected, _on_peer_connected)
 	_connect_once(multiplayer.peer_disconnected, _on_peer_disconnected)
-	world_seed = randi()
+	var saved := SaveGame.read_world() if resume else {}
+	if not resume:
+		SaveGame.wipe()
+	world_seed = saved.get("seed", randi())
 	_loot_rng.randomize()
 	_clear_backdrop()
 	_make_world(world_seed)
 	in_game = true
 	time = 0.3
-	for i in 25:
-		_spawn_zombie()
+	if not saved.is_empty() and SaveGame.load_world_into(self, saved):
+		decals.queue_redraw()
+		print("Loaded saved city: day %d" % day)
+	else:
+		for i in 25:
+			_spawn_zombie()
 	if not dedicated:
 		var p := _add_player(1)
 		p.pname = player_name if player_name != "" else ui.player_name()
+		SaveGame.load_player_into(p, p.pname)
 		_send_inv(p)
 	ui.show_menu(false)
 	print("Server listening on port %d" % port)
@@ -236,6 +247,7 @@ func _on_peer_connected(id: int) -> void:
 
 func _on_peer_disconnected(id: int) -> void:
 	if players.has(id):
+		SaveGame.save_player(players[id])
 		players[id].queue_free()
 		players.erase(id)
 	print("Player %d left (%d online)" % [id, players.size()])
@@ -307,8 +319,17 @@ func _add_zombie(id: int, pos: Vector2) -> Zombie:
 @rpc("any_peer", "call_remote", "reliable")
 func req_set_name(n: String) -> void:
 	var p := _sender()
-	if p:
-		p.pname = n.strip_edges().left(16)
+	if p == null:
+		return
+	var wanted := n.strip_edges().left(16)
+	# Two people online can't be the same survivor.
+	var taken := players.values().filter(func(q): return q != p and q.pname == wanted)
+	if not taken.is_empty():
+		wanted = "%s %d" % [wanted.left(13), randi_range(2, 99)]
+	p.pname = wanted
+	if SaveGame.load_player_into(p, wanted):
+		_toast(p, "ยินดีต้อนรับกลับ %s" % wanted)
+	_send_inv(p)
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
@@ -323,7 +344,23 @@ func send_input(move: Vector2, aim: Vector2, punch: bool, kick: bool, sprint: bo
 		p.kicking = kick
 
 
+func _save_all() -> void:
+	SaveGame.save_world(self)
+	for p: Player in players.values():
+		SaveGame.save_player(p)
+
+
+func _notification(what: int) -> void:
+	# Closing the window saves before the game quits.
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and in_game and multiplayer.is_server():
+		_save_all()
+
+
 func _server_tick(delta: float) -> void:
+	autosave_t -= delta
+	if autosave_t <= 0.0:
+		autosave_t = AUTOSAVE_EVERY
+		_save_all()
 	time += delta / DAY_LENGTH
 	if time >= 1.0:
 		time -= 1.0
