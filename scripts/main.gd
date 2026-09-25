@@ -18,6 +18,7 @@ var doors: Doors
 var survival: Survival
 var net: Net
 var actions: Actions
+var things: Things
 var port := PORT  # override with -- --port=N
 var world: World
 var camera: Camera2D
@@ -86,6 +87,7 @@ func _ready() -> void:
 	survival = _module(Survival.new(), "Survival")
 	net = _module(Net.new(), "Net")
 	actions = _module(Actions.new(), "Actions")
+	things = _module(Things.new(), "Things")
 	y_sort_enabled = true  # characters and trees are drawn back-to-front by their feet
 	shade = CanvasModulate.new()
 	add_child(shade)
@@ -317,6 +319,7 @@ func _warm_glyphs() -> void:
 
 
 func _server_tick(delta: float) -> void:
+	things.server_tick(delta)
 	survival._tick_weather(delta)
 	for id in net.pending.keys():
 		net.pending[id] += delta
@@ -452,7 +455,7 @@ func _module(m: Node, node_name: String) -> Node:
 func _handler(method: StringName) -> Node:
 	if has_method(method):
 		return self
-	for m in [combat, inventory, doors, survival, net, actions]:
+	for m in [combat, inventory, doors, survival, net, actions, things]:
 		if m.has_method(method):
 			return m
 	push_error("No handler for %s" % method)

@@ -24,6 +24,7 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | `test_actions` | What E does through the real path: doors, searching and reopening furniture, stomping, picking up, nothing out of reach |
 | `test_city` | The city from a seed is exactly the same as before (saved cities depend on it), every door can be walked to |
 | `test_combat` | Punch/kick/weapon hits, clicking the body, knock-downs, cut-off arms, weapon wear, death styles |
+| `test_things` | Taps run dry, radios draw zombies, vending machines break open; only changes are saved, they survive a reload, joiners get them |
 | `test_zombie` | The telegraphed bite, interrupting it, armour, chasing, getting back up |
 | `test_inventory` | Stack sizes, quick heal, drag/merge/split/drop, clothes slots, backpack size |
 | `test_doors` | Opening, not shutting on someone, boarding, smashing windows |

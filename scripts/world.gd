@@ -65,6 +65,8 @@ var roads: Array = []  # {rect: Rect2i, horizontal: bool}
 var intersections: Array = []  # Rect2i
 var wires: Array = []  # [from, to] pole tops
 var checkpoint := Rect2i()  # the junction the army held
+var things: Array = []  # {id, kind, cell, state}: taps, radios, vending machines (see Things)
+var thing_nodes: Array = []
 var bts_row := -1
 var spawn_cell := Vector2i(W / 2, H / 2)
 
@@ -161,6 +163,13 @@ func _spawn_props() -> void:
 		f.z_index = 1
 		prop_parent.add_child(f)
 		container_nodes.append(f)
+	for th in things:
+		var tp := ThingProp.new()
+		tp.thing = th
+		tp.position = to_pos(th.cell) + Vector2(0, TILE * 0.45)
+		tp.z_index = 1
+		prop_parent.add_child(tp)
+		thing_nodes.append(tp)
 	for rec in street_props:
 		var p := StreetProp.new()
 		p.data = rec

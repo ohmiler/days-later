@@ -40,6 +40,9 @@ func req_act(kind: String, id: Variant, verb: String) -> void:
 
 
 func _do_action(p: Player, t: Dictionary, verb: String) -> void:
+	if t.get("kind") == "thing":
+		main.things.act(p, t.id, verb)
+		return
 	match verb:
 		"up", "down":
 			p.on_roof = verb == "up"

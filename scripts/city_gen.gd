@@ -76,6 +76,7 @@ static func build(w: World, rng: RandomNumberGenerator) -> void:
 	w.spawn_cell = Vector2i(XS[2] - 2, YS[1] + ROAD_W)  # a street corner in the middle of town
 	# Last, so everything above comes out the same for a given seed as it always has.
 	_aftermath(w, rng)
+	Things.place_all(w, rng)
 
 
 static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGenerator) -> void:
@@ -136,6 +137,8 @@ static func _make_enterable(w: World, rec: Dictionary, rng: RandomNumberGenerato
 		rooms = [Rect2i(inner.position.x, wall_y + 1, inner.size.x, inner.end.y - wall_y - 1),
 				Rect2i(inner.position.x, inner.position.y, inner.size.x, wall_y - inner.position.y)]
 	var keep_clear := [door, back, inner_door]  # columns that stay walkable
+	rec.rooms = rooms  # (kept for Things to place taps and radios later)
+	rec.keep_clear = keep_clear
 	_furnish(w, rooms[0], Items.FURNITURE[rec.table], rec.table, keep_clear)
 	if rooms.size() > 1:
 		_furnish(w, rooms[1], Items.FURNITURE["home"], "home", keep_clear)

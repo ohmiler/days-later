@@ -67,6 +67,10 @@ static func _candidates(main: Node, p: Player) -> Array:
 			title = "ประตูพัง"
 		out.append({kind = "window" if win else "door", id = door, pos = w.to_pos(d.cell), title = title})
 	var here: BuildingProp = w.building_at.get(w.to_cell(p.position))
+	for th in w.things:
+		var at := w.to_pos(th.cell)
+		if p.position.distance_to(at) < Things.REACH and w.building_at.get(th.cell) == here:
+			out.append({kind = "thing", id = th.id, pos = at, title = Things.title_of(th)})
 	for f: FurnitureProp in w.container_nodes:
 		# Furniture in the same building as you: no reaching through walls.
 		if p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here:
@@ -115,6 +119,8 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 				out.append(_act("board", "ตอกไม้ปิดหน้าต่าง", has_wood(p), "ต้องมีไม้กระดาน", "R"))
 			else:
 				out.append(_board(p, d))
+		"thing":
+			out.append_array(main.things.actions_for(p, t.id))
 		"container":
 			if w.container_nodes[t.id].searched:
 				out.append(_act("look", "เปิดดู"))

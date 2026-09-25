@@ -13,7 +13,7 @@ class_name SaveGame
 ## (world.save.v1 and so on). A save that cannot be read, or that comes from a
 ## newer game, is never written over: the game says so and leaves it alone.
 
-const VERSION := 3
+const VERSION := 4
 const GAME_VERSION := "0.4"  # shown to people; not used for compatibility
 
 ## [kind, from version] -> the function that upgrades it one step.
@@ -21,6 +21,7 @@ const MIGRATIONS := {
 	"world:1": "_world_1_to_2",
 	"player:1": "_player_1_to_2",
 	"player:2": "_player_2_to_3",
+	"world:3": "_world_3_to_4",
 }
 
 
@@ -80,6 +81,7 @@ static func save_world(main: Node) -> void:
 		seed = main.world_seed, day = main.day, time = main.time,
 		next_zid = main.next_zid, next_pickup = main.next_pickup,
 		doors = doors, searched = searched, boxes = boxes, pickups = items, zombies = zs,
+		things = main.things.changed(),
 	})
 
 
@@ -108,6 +110,7 @@ static func load_world_into(main: Node, w: Dictionary) -> bool:
 			var items: Array = w.boxes[id]
 			items.resize(FurnitureProp.SIZE)
 			world.container_nodes[id].items = items
+	main.things.restore(w.things)
 	for id in w.searched:
 		if id < world.container_nodes.size():
 			world.container_nodes[id].set_searched(true)
@@ -194,6 +197,12 @@ static func _world_1_to_2(d: Dictionary) -> Dictionary:
 	for e in d.zombies:
 		while e.size() < 5:
 			e.append({} if e.size() == 3 else 0)  # outfit, then lost-arm bits
+	return d
+
+
+## v4 saves the state of taps, radios and the like.
+static func _world_3_to_4(d: Dictionary) -> Dictionary:
+	d.merge({things = {}}, false)
 	return d
 
 
