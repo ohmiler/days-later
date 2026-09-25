@@ -8,9 +8,12 @@ const DATA := "res://data/items.cfg"  # (exports must include *.cfg: Export > Re
 const INV_SIZE := 8  # the hotbar; a bag adds slots after these, reached from the bag screen (Tab)
 
 ## Places on the body something can be worn, and what they're called.
-## "over" is a second layer on the body: a vest goes on top of a shirt.
-const SLOTS := ["head", "body", "over", "legs", "feet", "back"]
-const SLOT_NAMES := {head = "หัว", body = "ตัว", over = "ทับเสื้อ", legs = "ขา", feet = "เท้า", back = "หลัง"}
+## "over" is a second layer on the body: a vest goes on top of a shirt. The
+## rest are for things worn with anything: masks and glasses, gloves, knee
+## pads, a bag across the shoulder. (How each is drawn: see Clothes.)
+const SLOTS := ["head", "face", "body", "over", "hands", "legs", "knees", "feet", "back", "strap"]
+const SLOT_NAMES := {head = "หัว", face = "หน้า", body = "ตัว", over = "ทับเสื้อ", hands = "มือ", legs = "ขา",
+		knees = "เข่า", feet = "เท้า", back = "หลัง", strap = "สะพาย"}
 const MAX_ARMOR := 0.6
 
 ## Kilograms a survivor carries before slowing down (a bag adds its `carry`).
@@ -105,6 +108,11 @@ static func problems() -> Array:
 					out.append("%s: unknown slot %s" % [id, d.get("slot")])
 				if not d.has("draw") or not d.has("hp"):
 					out.append("%s: clothes need draw and hp" % id)
+				else:
+					for part in Clothes.parts(d.draw):
+						var sh: String = part.get("shape", "")
+						if sh not in Clothes.BASE_SHAPES and not Clothes.TEMPLATES.has(sh):
+							out.append("%s: no way to draw shape '%s' (see Clothes)" % [id, sh])
 			_:
 				if d.get("icon", {}).get("shape") not in ICONS:
 					out.append("%s: unknown icon shape %s" % [id, d.get("icon", {}).get("shape")])
@@ -445,7 +453,8 @@ static func _shape_icon(ci: CanvasItem, r: Rect2, icon: Dictionary) -> void:
 static func _wear_icon(ci: CanvasItem, r: Rect2, d: Dictionary) -> void:
 	var c := r.get_center()
 	var s := r.size.x / 40.0
-	var w: Dictionary = d.draw
+	var w: Dictionary = d.draw.duplicate()
+	w.shape = w.get("icon_shape", w.get("shape", ""))  # (a garment made of parts names its icon)
 	var col: Color = w.col
 	var dark := col.darkened(0.3)
 	var P := func(pts: Array) -> PackedVector2Array:
@@ -493,6 +502,34 @@ static func _wear_icon(ci: CanvasItem, r: Rect2, d: Dictionary) -> void:
 			ci.draw_colored_polygon(P.call([Vector2(-8, 8 - tall - 4), Vector2(0, 8 - tall - 4), Vector2(1, 2),
 					Vector2(12, 4), Vector2(12, 9), Vector2(-8, 9)]), col)
 			ci.draw_rect(Rect2(c + Vector2(-8, 8) * s, Vector2(20, 2) * s), dark if w.shape == "boots" else Color("f0f0e8"))
+		"mask":
+			ci.draw_colored_polygon(P.call([Vector2(-12, -6), Vector2(12, -6), Vector2(10, 7), Vector2(0, 10), Vector2(-10, 7)]), col)
+			for i in 3:
+				ci.draw_line(c + Vector2(-10, -2 + i * 4) * s, c + Vector2(10, -2 + i * 4) * s, dark, 1.0)
+			ci.draw_line(c + Vector2(-12, -5) * s, c + Vector2(-16, -10) * s, dark, 1.2)
+			ci.draw_line(c + Vector2(12, -5) * s, c + Vector2(16, -10) * s, dark, 1.2)
+		"glasses":
+			for sx in [-1.0, 1.0]:
+				ci.draw_rect(Rect2(c + Vector2(-1 + sx * 7 - 5, -4) * s, Vector2(10, 8) * s), col)
+			ci.draw_line(c + Vector2(-16, -3) * s, c + Vector2(16, -3) * s, Color("1a1a1a"), 1.5)
+		"gloves":
+			for sx in [-1.0, 1.0]:
+				ci.draw_rect(Rect2(c + Vector2(sx * 7 - 5, -8) * s, Vector2(10, 14) * s), col)
+				ci.draw_rect(Rect2(c + Vector2(sx * 7 - 5, 4) * s, Vector2(10, 4) * s), dark)
+		"kneepads":
+			for sx in [-1.0, 1.0]:
+				ci.draw_rect(Rect2(c + Vector2(sx * 7 - 5, -8) * s, Vector2(10, 16) * s), col)
+				ci.draw_rect(Rect2(c + Vector2(sx * 7 - 4, -6) * s, Vector2(8, 3) * s), col.lightened(0.25))
+		"satchel":
+			ci.draw_line(c + Vector2(-12, -14) * s, c + Vector2(8, 2) * s, dark, 2.0)
+			ci.draw_rect(Rect2(c + Vector2(-2, -2) * s, Vector2(16, 13) * s), col)
+			ci.draw_rect(Rect2(c + Vector2(-2, -2) * s, Vector2(16, 5) * s), dark)
+		"raincoat":
+			var coat: PackedVector2Array = P.call([Vector2(-7, -14), Vector2(7, -14), Vector2(16, -8), Vector2(16, 4), Vector2(11, 4),
+					Vector2(12, 17), Vector2(-12, 17), Vector2(-11, 4), Vector2(-16, 4), Vector2(-16, -8)])
+			ci.draw_colored_polygon(coat, col)
+			ci.draw_colored_polygon(P.call([Vector2(-6, -14), Vector2(0, -8), Vector2(6, -14), Vector2(0, -18)]), dark)
+			ci.draw_line(c + Vector2(0, -12) * s, c + Vector2(0, 17) * s, dark, 1.0)
 		"pack":
 			var hw := 11.0 if w.get("big", false) else 9.0
 			ci.draw_rect(Rect2(c + Vector2(-hw, -12) * s, Vector2(hw * 2, 26) * s), col)

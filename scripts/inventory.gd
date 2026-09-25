@@ -243,7 +243,7 @@ func req_unequip(slot: String) -> void:
 		return
 	var it: Dictionary = p.worn[slot]
 	# Taking the bag off loses its slots, so the item must fit in what is left.
-	var room := Items.INV_SIZE if slot == "back" else p.inv.size()
+	var room: int = p.inv.size() - int(Items.def(it.id).get("bag", 0))
 	var free := -1
 	for i in room:
 		if p.inv[i] == null:

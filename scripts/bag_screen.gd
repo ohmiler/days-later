@@ -51,9 +51,11 @@ func _ready() -> void:
 
 func _slots() -> Array:
 	var out := []  # [ref, rect, title]
-	var step := minf(SLOT + GAP, (H - 118.0) / Items.SLOTS.size())  # all the layers fit above the info line
+	# Two columns of worn slots, so every one fits above the info line.
+	var rows := ceili(Items.SLOTS.size() / 2.0)
+	var step := minf(SLOT + GAP, (H - 118.0) / rows)
 	for i in Items.SLOTS.size():
-		out.append([["worn", Items.SLOTS[i]], Rect2(24, 64 + i * step, step - 4, step - 4)])
+		out.append([["worn", Items.SLOTS[i]], Rect2(24 + (i % 2) * (step + 2), 64 + (i / 2) * step, step - 4, step - 4)])
 	var x0 := 200.0
 	for i in inv.size():
 		var row := i / COLS
@@ -250,7 +252,10 @@ func _draw() -> void:
 	var kg := 0.0
 	for it in inv + worn.values():
 		kg += Items.weight_of(it)
-	var limit := Items.CARRY + float(Items.def(worn.back.id if worn.get("back") != null else "").get("carry", 0.0))
+	var limit := Items.CARRY
+	for k in worn:
+		if worn[k] != null:
+			limit += float(Items.def(worn[k].id).get("carry", 0.0))
 	var load_line := "%d / %d ช่อง · หนัก %.1f / %.0f กก." % [used, inv.size(), kg, limit]
 	if kg > limit:
 		load_line += " · หนักเกิน เดินช้าลง"
@@ -288,8 +293,9 @@ func _draw() -> void:
 			if ref != drag:
 				_draw_item(r, it)
 		if ref[0] == "worn":
-			draw_string(body, r.position + Vector2(SLOT + 8, 32), Items.SLOT_NAMES[ref[1]] if it == null else Items.display_name(it.id),
-					HORIZONTAL_ALIGNMENT_LEFT, 110, 13, Color(UiTheme.PAPER, 0.4 if it == null else 0.85))
+			if it == null:  # (two columns: no room for names beside them; hover shows what's worn)
+				draw_string(body, r.position + Vector2(0, r.size.y * 0.5 + 4), Items.SLOT_NAMES[ref[1]],
+						HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 11, Color(UiTheme.PAPER, 0.4))
 		elif ref[0] == "inv" and ref[1] < Items.INV_SIZE:
 			draw_string(head, r.position + Vector2(5, 14), str(ref[1] + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
 					Color(UiTheme.INK, 0.55) if it != null else Color(UiTheme.PAPER, 0.3))

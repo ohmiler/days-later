@@ -139,33 +139,28 @@ static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
 		_draw_leg(ci, leg, lk)
 	_rect(ci, Rect2(Vector2(-3.3, -11.5) + r.get("hips", Vector2.ZERO), Vector2(6.6, 2.6)), pants.darkened(0.06))  # hips join the legs to the body
 
+	Clothes.draw_layer(ci, "knee", r, lk)  # (worn things are drawn by Clothes at each layer)
+
 	_xf(ci, r.upper, Vector2(sx, 1))
-	var pack: Dictionary = wear.get("back", {})
-	if not pack.is_empty() and r.view == SIDE:
-		_pack_side(ci, pack)  # behind everything, on the far side of the body
+	Clothes.draw_layer(ci, "back_side", r, lk)  # behind everything, on the far side of the body
+	Clothes.draw_layer(ci, "coat", r, lk)
 	var missing: int = lk.get("missing", 0)
 	for a in r.arms_back:
 		_draw_arm_or_stump(ci, a, lk, missing)
-	var body: Dictionary = wear.get("body", {})
-	if body.get("shape") == "hoodie" and r.view != BACK:
-		_dot(ci, Vector2(-0.6 if r.view == SIDE else 0.0, -20.6), 3.4, (lk.shirt as Color).darkened(0.2))  # hood, behind the head
+	Clothes.draw_layer(ci, "behind_head", r, lk)
 	_torso(ci, r.view, lk.shirt, pants, r.zombie)
 	if lk.get("gore", -1) >= 0 and not low_gore:
 		_wounds(ci, r.view, lk.gore)
-	var over: Dictionary = wear.get("over", {})
-	if over.get("shape") == "vest":
-		_vest(ci, r.view, over)  # on top of the shirt
-	if not pack.is_empty() and r.view != SIDE:
-		_pack(ci, r.view, pack)
+	Clothes.draw_layer(ci, "torso", r, lk)
+	Clothes.draw_layer(ci, "strap", r, lk)
 	if missing & LOST_HEAD:
 		_neck_stump(ci, lk.skin)
 	else:
 		_head(ci, r.view, r.head, lk.skin, lk.hair, lk.get("hair_style", "short"), r.zombie, r.closed, wear.get("head", {}),
-				lk.get("mouth", 0.0), true, lk.get("gore", -1) >= 0 and int(lk.gore) % 2 == 0 and not low_gore)
+				lk.get("mouth", 0.0), true, lk.get("gore", -1) >= 0 and int(lk.gore) % 2 == 0 and not low_gore, wear.get("face", {}))
 		if lk.get("crushed", false) and not low_gore:
 			_crushed(ci, r.head)
-	if body.get("shape") == "hoodie" and r.view == BACK:
-		_poly(ci, _arc(Vector2(0, -20.2), 3.6, 0.0, PI), (lk.shirt as Color).darkened(0.12))  # hood down the back
+	Clothes.draw_layer(ci, "back_head", r, lk)
 	for a in r.arms_front:
 		_draw_arm_or_stump(ci, a, lk, missing)
 	if lk.get("spurt", 0.0) > 0.0 and not low_gore:
@@ -198,6 +193,10 @@ static func _dress(lk: Dictionary, zombie: bool) -> Dictionary:
 	if not feet.is_empty():
 		out.shoes = (feet.col as Color).darkened(grime)
 		out.boots = feet.shape == "boots"
+	var over: Dictionary = wear.get("over", {})
+	if over.get("covers", false):  # a coat over everything: its colour on the body and sleeves
+		out.shirt = (over.col as Color).darkened(grime)
+		out.long_sleeves = true
 	return out
 
 
@@ -402,9 +401,12 @@ static func _draw_arm(ci: CanvasItem, a: Dictionary, lk: Dictionary) -> void:
 	_arm(ci, a.sh, a.elbow, a.hand, sleeve, skin, a.fist, lk.get("long_sleeves", false))
 	if a.big_hand:
 		_dot(ci, a.hand, 1.7, skin)
+	var gloves: Dictionary = lk.get("wear", {}).get("hands", {})
+	if not gloves.is_empty():
+		Clothes.glove(ci, a.hand, a.fist, gloves)
 	if not held.is_empty():
 		_draw_weapon(ci, a.hand, held.dir, held.draw)
-		_dot(ci, a.hand, 1.5, skin)  # fingers wrap over the handle
+		_dot(ci, a.hand, 1.5, skin if gloves.is_empty() else (gloves.col as Color))  # fingers wrap over the handle
 
 
 ## Shirt with rounded shoulders, lit from the top-left.
@@ -427,90 +429,6 @@ static func _torso(ci: CanvasItem, view: int, shirt: Color, pants: Color, zombie
 		_polyline(ci, hem, shirt.darkened(0.45), 0.9)  # ragged hem
 		for p in [] if low_gore else [Vector2(w * 0.2, -15.5), Vector2(w * 0.45, -14.3), Vector2(w * 0.05, -13.6), Vector2(-w * 0.3, -16.4)]:
 			_dot(ci, p, 0.9, Color(0.33, 0.05, 0.04, 0.8))  # dried blood
-
-
-## Armour vest (or a hi-vis rider's vest) over the shirt: panel front and back.
-static func _vest(ci: CanvasItem, view: int, v: Dictionary) -> void:
-	var w := (3.2 if view == SIDE else 4.5) * _girth
-	var col: Color = v.col
-	var pts := PackedVector2Array([Vector2(-w + 1.6, -19.8), Vector2(-w * 0.35, -19.8), Vector2(-w * 0.2, -18.2),
-			Vector2(w * 0.2, -18.2), Vector2(w * 0.35, -19.8), Vector2(w - 1.6, -19.8), Vector2(w, -18.2),
-			Vector2(w * 0.88, -11.2), Vector2(-w * 0.88, -11.2), Vector2(-w, -18.2)])
-	if view != FRONT:
-		pts = PackedVector2Array([Vector2(-w + 1.4, -19.9), Vector2(w - 1.4, -19.9), Vector2(w, -18.2),
-				Vector2(w * 0.88, -11.2), Vector2(-w * 0.88, -11.2), Vector2(-w, -18.2)])
-	_poly(ci, pts, col)
-	_polyline(ci, pts + PackedVector2Array([pts[0]]), col.darkened(0.35), 0.5)
-	if v.get("plate", false):
-		# Pouches and a light strip where the plate sits.
-		_rect(ci, Rect2(-w * 0.7, -14.2, w * 1.4, 2.2), col.darkened(0.2))
-		for i in 3:
-			_line(ci, Vector2(-w * 0.7 + (i + 1) * w * 0.35, -14.2), Vector2(-w * 0.7 + (i + 1) * w * 0.35, -12.0), col.darkened(0.45), 0.4)
-		_line(ci, Vector2(-w * 0.6, -18.0), Vector2(w * 0.6, -18.0), col.lightened(0.18), 0.5)
-	else:
-		# Hi-vis strips, like Bangkok's motorbike taxi vests.
-		_line(ci, Vector2(-w * 0.9, -14.8), Vector2(w * 0.9, -14.8), Color("e8e4d0"), 0.8)
-		_line(ci, Vector2(-w * 0.88, -12.6), Vector2(w * 0.88, -12.6), Color("e8e4d0"), 0.6)
-
-
-## Backpack seen from the front (only the straps) or from behind (the whole bag).
-static func _pack(ci: CanvasItem, view: int, p: Dictionary) -> void:
-	var col: Color = p.col
-	var big: bool = p.get("big", false)
-	if view == FRONT:
-		for sx in [-1.0, 1.0]:
-			_line(ci, Vector2(2.9 * sx * _girth, -19.6), Vector2(2.6 * sx * _girth, -12.8), col.darkened(0.25), 1.0)
-		return
-	var h := 9.5 if big else 7.0
-	var hw := (3.8 if big else 3.2)
-	var r := Rect2(-hw, -19.8, hw * 2, h)
-	_rect(ci, Rect2(r.position + Vector2(0.3, 0.6), r.size), Color(0, 0, 0, 0.25))
-	_rect(ci, r, col)
-	_rect(ci, Rect2(r.position, Vector2(r.size.x, 2.6)), col.darkened(0.18))  # flap
-	_rect(ci, Rect2(-1.6, r.end.y - 3.6, 3.2, 2.4), col.darkened(0.12))  # front pocket
-	_line(ci, Vector2(-hw, r.position.y + 2.6), Vector2(hw, r.position.y + 2.6), col.darkened(0.4), 0.4)
-	if big:
-		_rect(ci, Rect2(-hw - 0.4, -21.2, hw * 2 + 0.8, 1.6), Color("6a5a3a"))  # rolled mat on top
-
-
-## Side view: the bag sits against the back, the strap crosses the shoulder.
-static func _pack_side(ci: CanvasItem, p: Dictionary) -> void:
-	var col: Color = p.col
-	var big: bool = p.get("big", false)
-	var h := 9.5 if big else 7.0
-	var d := 3.4 if big else 2.6
-	var x := -3.0 * _girth
-	_rect(ci, Rect2(x - d, -19.8, d + 1.0, h), col.darkened(0.08))
-	_rect(ci, Rect2(x - d, -19.8, d + 1.0, 2.2), col.darkened(0.22))
-	if big:
-		_rect(ci, Rect2(x - d - 0.2, -21.2, d + 1.4, 1.6), Color("6a5a3a"))
-
-
-## Hats and helmets, over the hair.
-static func _headwear(ci: CanvasItem, view: int, c: Vector2, h: Dictionary) -> void:
-	var col: Color = h.col
-	match h.shape:
-		"helmet":
-			# Open-face motorbike helmet: a shell over the crown, a visor rim, a chin strap.
-			_poly(ci, _arc(c + Vector2(0, -0.5), 5.0, PI, TAU), col)
-			_rect(ci, Rect2(c.x - 5.0, c.y - 0.9, 10.0, 1.2), col.darkened(0.12))
-			_poly(ci, _arc(c + Vector2(-1.4, -2.6), 1.4, PI, TAU), col.lightened(0.3))  # shine
-			if view == SIDE:
-				_rect(ci, Rect2(c.x + 2.2, c.y - 1.6, 3.2, 0.9), Color("2a3036"))  # visor edge
-				_line(ci, c + Vector2(-0.6, 0.2), c + Vector2(1.6, 3.8), Color("2a2a2a"), 0.4)
-			elif view == FRONT:
-				_rect(ci, Rect2(c.x - 3.8, c.y - 1.6, 7.6, 0.8), Color("2a3036"))
-				for sx in [-1.0, 1.0]:
-					_line(ci, c + Vector2(4.0 * sx, 0.2), c + Vector2(2.2 * sx, 3.8), Color("2a2a2a"), 0.4)
-		"cap":
-			_poly(ci, _arc(c + Vector2(0, -0.9), 4.5, PI, TAU), col)
-			match view:
-				FRONT:
-					_rect(ci, Rect2(c.x - 3.6, c.y - 1.5, 7.2, 1.1), col.darkened(0.25))  # brim, from underneath
-				SIDE:
-					_rect(ci, Rect2(c.x + 2.4, c.y - 1.6, 3.8, 0.9), col.darkened(0.15))
-				BACK:
-					_rect(ci, Rect2(c.x - 1.2, c.y - 1.2, 2.4, 0.7), col.darkened(0.3))  # strap
 
 
 ## An arm, or what is left of it when it has been cut off.
@@ -579,7 +497,7 @@ static func _spurt(ci: CanvasItem, r: Dictionary, missing: int, left: float, see
 
 
 static func _head(ci: CanvasItem, view: int, c: Vector2, skin: Color, hair: Color, style: String,
-		zombie: bool, closed := false, hat := {}, mouth := 0.0, neck := true, drip := false) -> void:
+		zombie: bool, closed := false, hat := {}, mouth := 0.0, neck := true, drip := false, face := {}) -> void:
 	if neck:
 		_rect(ci, Rect2(-1.2, -21, 2.4, 2), skin.darkened(0.25))  # neck
 	_dot(ci, c, 4.2, skin.darkened(0.18))
@@ -648,8 +566,10 @@ static func _head(ci: CanvasItem, view: int, c: Vector2, skin: Color, hair: Colo
 			_rect(ci, Rect2(c.x + 2.3, c.y + 2.3, 1.3 + mouth * 0.4, 0.45 + mouth * 1.3), Color("3a1a16") if zombie else dark)
 			if zombie and drip:
 				_rect(ci, Rect2(c.x + 2.8, c.y + 2.8, 0.45, 1.6), BLOOD)
+	if not face.is_empty():
+		Clothes.face(ci, view, c, face)
 	if not hat.is_empty():
-		_headwear(ci, view, c, hat)
+		Clothes.hat(ci, view, c, hat)
 
 
 static func _arc(c: Vector2, r: float, a0: float, a1: float) -> PackedVector2Array:

@@ -68,6 +68,19 @@ func run() -> void:
 	main.inventory.req_move(["worn", "over"], ["inv", -1])
 	main.inventory.req_move(["worn", "body"], ["inv", -1])
 
+	# Things worn with anything: a mask, gloves, knee pads, and a shoulder bag that adds slots.
+	me.inv.fill(null)
+	for id in ["mask", "gloves", "kneepads", "satchel"]:
+		main.inventory._give(me, id)
+		var k := me.inv.find(me.inv.filter(func(x): return x != null and x.id == id)[0])
+		main.inventory.req_move(["inv", k], ["worn", Items.def(id).slot])
+	check(me.wear_ids.get("face") == "mask" and me.wear_ids.get("hands") == "gloves" and me.wear_ids.get("knees") == "kneepads",
+			"a mask, gloves and knee pads each have their own place")
+	check(me.inv.size() == Items.INV_SIZE + 2, "a shoulder bag adds 2 slots (%d)" % me.inv.size())
+	for slot in ["face", "hands", "knees", "strap"]:
+		main.inventory.req_move(["worn", slot], ["inv", -1])
+	check(me.inv.size() == Items.INV_SIZE, "and taking it off takes them away")
+
 	# A backpack adds slots; taking it off shrinks the bag and keeps what fits.
 	main.inventory._give(me, "backpack")
 	var b := me.inv.find(me.inv.filter(func(x): return x != null and x.id == "backpack")[0])

@@ -179,7 +179,10 @@ func load_kg() -> float:
 
 ## Kilograms you carry before slowing down: your own strength plus a bag's.
 func carry_limit() -> float:
-	return Items.CARRY + float(Items.def(wear_ids.get("back", "")).get("carry", 0.0))
+	var kg := Items.CARRY
+	for slot in wear_ids:
+		kg += float(Items.def(wear_ids[slot]).get("carry", 0.0))
+	return kg
 
 
 ## 1.0 up to the limit, then slower the more you're over it.
@@ -274,7 +277,10 @@ func home_spawn() -> Vector2:
 
 ## Hotbar slots: the base eight plus whatever the bag on your back holds.
 func bag_size() -> int:
-	return Items.INV_SIZE + Items.def(wear_ids.get("back", "")).get("bag", 0)
+	var n := Items.INV_SIZE
+	for slot in wear_ids:  # a backpack, a shoulder bag...
+		n += int(Items.def(wear_ids[slot]).get("bag", 0))
+	return n
 
 
 ## Server: after `worn` changes, update the ids everyone sees.
