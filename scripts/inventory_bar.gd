@@ -1,10 +1,12 @@
 class_name InventoryBar
 extends Control
-## The 8-slot bar at the bottom of the screen. Slot contents come from the
-## server as an array of null or {id, n, hp}.
+## The 8-slot hotbar at the bottom of the screen, styled like cardboard.
+## The selected slot lifts up and its name shows above the bar.
+## Slot contents come from the server as an array of null or {id, n, hp}.
 
-const SLOT := 58.0
-const GAP := 6.0
+const SLOT := 64.0
+const GAP := 8.0
+const LIFT := 10.0
 
 var slots: Array = []
 var selected := 0
@@ -19,8 +21,8 @@ func _ready() -> void:
 	anchor_bottom = 1.0
 	offset_left = -w / 2
 	offset_right = w / 2
-	offset_top = -SLOT - 34
-	offset_bottom = -8
+	offset_top = -SLOT - 84
+	offset_bottom = -20
 
 
 func show_inventory(inv: Array, sel: int) -> void:
@@ -30,25 +32,52 @@ func show_inventory(inv: Array, sel: int) -> void:
 
 
 func _draw() -> void:
-	var font := Look.thai_font()
+	var top := size.y - SLOT
 	for i in Items.INV_SIZE:
-		var r := Rect2(i * (SLOT + GAP), 22, SLOT, SLOT)
-		var sel := i == selected
-		draw_rect(r, Color(0.05, 0.05, 0.05, 0.65))
-		draw_rect(r, Color(1, 0.85, 0.4) if sel else Color(1, 1, 1, 0.25), false, 3.0 if sel else 1.0)
-		draw_string(font, r.position + Vector2(5, 15), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.6))
 		var it = slots[i] if i < slots.size() else null
+		var sel := i == selected
+		var r := Rect2(i * (SLOT + GAP), top - (LIFT if sel else 0.0), SLOT, SLOT)
 		if it == null:
+			draw_style_box(UiTheme.box(Color(0.11, 0.1, 0.08, 0.65), 6, UiTheme.WARN if sel else Color(0.23, 0.2, 0.17), 2), r)
+			draw_string(UiTheme.heading(), r.position + Vector2(6, 16), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+					Color(UiTheme.PAPER, 0.35))
 			continue
-		Items.draw_icon(self, r.grow(-10), it.id)
+		# Cardboard slot with a drop shadow; a glow ring when selected.
+		draw_style_box(UiTheme.box(Color(0, 0, 0, 0.35), 6), Rect2(r.position + Vector2(0, 3), r.size))
+		var card := UiTheme.box(Color("ad9870"), 6, UiTheme.WARN if sel else Color("6e5b3c"), 2)
+		if sel:
+			card.shadow_color = Color(0.95, 0.76, 0.19, 0.35)
+			card.shadow_size = 6
+		draw_style_box(card, r)
+		draw_rect(Rect2(r.position + Vector2(3, 3), Vector2(r.size.x - 6, 3)), Color(1, 1, 1, 0.1))
+		draw_string(UiTheme.heading(), r.position + Vector2(6, 16), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+				Color(UiTheme.INK, 0.6))
+		Items.draw_icon(self, r.grow(-12), it.id)
 		if it.n > 1:
-			draw_string(font, r.end - Vector2(16, 5), "x%d" % it.n, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+			draw_string(UiTheme.heading(), r.end - Vector2(24, 6), "x%d" % it.n, HORIZONTAL_ALIGNMENT_RIGHT, 20, 14, UiTheme.INK)
 		var d := Items.def(it.id)
 		if d.get("type") == "weapon":
 			var frac: float = float(it.hp) / d.hp
-			draw_rect(Rect2(r.position.x + 4, r.end.y - 6, (SLOT - 8), 3), Color(0, 0, 0, 0.6))
-			draw_rect(Rect2(r.position.x + 4, r.end.y - 6, (SLOT - 8) * frac, 3),
-					Color("7ad15a") if frac > 0.3 else Color("e0603a"))
-		if sel:
-			draw_string(font, Vector2(r.get_center().x - 80, 14), Items.display_name(it.id),
-					HORIZONTAL_ALIGNMENT_CENTER, 160, 16, Color.WHITE)
+			var bar := Rect2(r.position.x + 7, r.end.y - 9, SLOT - 14, 4)
+			draw_rect(bar, Color(0, 0, 0, 0.35))
+			draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), Color("4f9a3a") if frac > 0.3 else Color("c8502a"))
+
+	# Name of the held item, with what it does.
+	var cur = slots[selected] if selected < slots.size() else null
+	var name := "มือเปล่า"
+	var info := "คลิกซ้ายต่อย · คลิกขวาเตะ"
+	if cur != null:
+		var d := Items.def(cur.id)
+		name = Items.display_name(cur.id)
+		match d.get("type"):
+			"weapon":
+				info = "ทนทาน %d / %d · คลิกซ้ายฟาด" % [cur.hp, d.hp]
+			"use":
+				info = "กด F ใช้ · เลือด +%d" % int(d.get("heal", 0))
+			_:
+				info = "เก็บไว้แลกของ"
+	var cx := size.x / 2
+	draw_string_outline(UiTheme.medium(), Vector2(0, 26), name, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, 8, Color(0, 0, 0, 0.6))
+	draw_string(UiTheme.medium(), Vector2(0, 26), name, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, UiTheme.PAPER)
+	draw_string_outline(UiTheme.body(), Vector2(0, 46), info, HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, 6, Color(0, 0, 0, 0.6))
+	draw_string(UiTheme.body(), Vector2(0, 46), info, HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, Color(UiTheme.PAPER, 0.75))

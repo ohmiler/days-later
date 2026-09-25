@@ -22,14 +22,9 @@ static var _base := Transform2D.IDENTITY  # whole-body transform (used to topple
 static var _font: Font
 
 
-## A system font that has Thai glyphs, rendered as MSDF so it stays sharp when zoomed.
+## Thai font for text drawn in the world (shop signs), rendered as MSDF so it stays sharp when zoomed.
 static func thai_font() -> Font:
-	if _font == null:
-		var f := SystemFont.new()
-		f.font_names = PackedStringArray(["Leelawadee UI", "Leelawadee", "Tahoma", "Noto Sans Thai", "Sarabun", "sans-serif"])
-		f.multichannel_signed_distance_field = true
-		_font = f
-	return _font
+	return UiTheme.world("Kanit-Medium")
 
 
 ## Pick a view from a facing angle. Returns [view, flip]. `prev` adds

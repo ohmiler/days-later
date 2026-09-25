@@ -23,10 +23,13 @@ var world: World
 var camera: Camera2D
 var shade: CanvasModulate
 var fx: Node2D
-var hud: Label
-var menu: PanelContainer
-var address: LineEdit
-var status: Label
+var ui: GameUI
+var in_game := false  # false while the title menu shows a backdrop city
+var backdrop_nodes: Array = []
+var player_name := ""
+var day := 1
+var last_kills := 0
+var dmg_numbers: Array = []  # [pos, text, crit, age]
 var players := {}  # peer_id -> Player
 var zombies := {}  # zid -> Zombie
 var next_zid := 1
@@ -43,17 +46,12 @@ const INTERACT_RANGE := 20.0
 const SEARCH_TIME := 1.6
 var pickups := {}  # id -> {pos, item: {id, n, hp}} items lying on the ground
 var next_pickup := 1
-var inv_bar: InventoryBar
-var toast: Label
-var toast_t := 0.0
 var search_until := 0.0  # client: progress bar for our own search
 var search_total := 1.0
 var hidden_building: BuildingProp  # the roof we lifted off because we are inside
 var prompt := ""  # "press E" hint drawn above whatever is in reach
 var prompt_pos := Vector2.ZERO
 var grade_mat: ShaderMaterial
-var death_label: Label
-var death_sub: Label
 var play_zoom := Vector2(4, 4)  # zoom to go back to after the death close-up
 
 
@@ -78,88 +76,49 @@ func _ready() -> void:
 	grade_mat.shader = load("res://shaders/post.gdshader")
 	grade.material = grade_mat
 	post.add_child(grade)
-	var layer := CanvasLayer.new()
-	layer.layer = 2
-	add_child(layer)
-	hud = Label.new()
-	hud.position = Vector2(10, 10)
-	hud.add_theme_constant_override("outline_size", 4)
-	hud.add_theme_color_override("font_outline_color", Color.BLACK)
-	layer.add_child(hud)
-	inv_bar = InventoryBar.new()
-	layer.add_child(inv_bar)
-	toast = Label.new()
-	toast.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	toast.offset_top = -150
-	toast.offset_bottom = -110
-	toast.offset_left = -300
-	toast.offset_right = 300
-	toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	toast.add_theme_font_override("font", Look.thai_font())
-	toast.add_theme_font_size_override("font_size", 20)
-	toast.add_theme_constant_override("outline_size", 6)
-	toast.add_theme_color_override("font_outline_color", Color.BLACK)
-	layer.add_child(toast)
-	death_label = _center_label(-60, 64, Color("d8342a"))
-	death_label.text = "คุณตายแล้ว"
-	layer.add_child(death_label)
-	death_sub = _center_label(20, 22, Color(1, 1, 1, 0.9))
-	layer.add_child(death_sub)
-	_build_menu(layer)
+	ui = GameUI.new()
+	add_child(ui)
+	ui.host_requested.connect(func(n: String):
+		player_name = n
+		_host(false))
+	ui.join_requested.connect(func(addr: String, n: String):
+		player_name = n
+		_join(addr))
 
-	for arg in OS.get_cmdline_user_args():
+	var args := OS.get_cmdline_user_args()
+	for arg in args:
 		if arg.begins_with("--port="):
 			port = int(arg.trim_prefix("--port="))
-	for arg in OS.get_cmdline_user_args():
+		elif arg.begins_with("--name="):
+			player_name = arg.trim_prefix("--name=")
+	for arg in args:
 		if arg == "--server":
 			_host(true)
+			return
 		elif arg.begins_with("--join="):
-			address.text = arg.trim_prefix("--join=")
-			_join()
+			_join(arg.trim_prefix("--join="))
+			return
+	_make_backdrop()
 
 
-func _center_label(y: float, size: int, col: Color) -> Label:
-	var l := Label.new()
-	l.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	l.offset_left = -400
-	l.offset_right = 400
-	l.offset_top = y - size
-	l.offset_bottom = y + size
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.add_theme_font_override("font", Look.thai_font())
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", col)
-	l.add_theme_constant_override("outline_size", 10)
-	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	l.modulate.a = 0.0
-	return l
+## A real city at dusk behind the title menu, slowly drifting past.
+func _make_backdrop() -> void:
+	var before := get_children()
+	_make_world(20260924)
+	for c in get_children():
+		if not before.has(c):
+			backdrop_nodes.append(c)
+	camera.position = world.to_pos(Vector2i(70, 50))
+	camera.zoom = Vector2(2.4, 2.4)
+	time = 0.8
 
 
-func _build_menu(layer: CanvasLayer) -> void:
-	menu = PanelContainer.new()
-	menu.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	layer.add_child(menu)
-	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(280, 0)
-	menu.add_child(box)
-	var title := Label.new()
-	title.text = "DAYS LATER"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(title)
-	var host_btn := Button.new()
-	host_btn.text = "Host (play + be the server)"
-	host_btn.pressed.connect(_host.bind(false))
-	box.add_child(host_btn)
-	address = LineEdit.new()
-	address.text = "127.0.0.1"
-	address.placeholder_text = "Server address"
-	box.add_child(address)
-	var join_btn := Button.new()
-	join_btn.text = "Join"
-	join_btn.pressed.connect(_join)
-	box.add_child(join_btn)
-	status = Label.new()
-	box.add_child(status)
+func _clear_backdrop() -> void:
+	for n in backdrop_nodes:
+		n.queue_free()
+	backdrop_nodes.clear()
+	world = null
+	camera.zoom = play_zoom
 
 
 # --- Connection -------------------------------------------------------------
@@ -167,33 +126,38 @@ func _build_menu(layer: CanvasLayer) -> void:
 func _host(dedicated: bool) -> void:
 	var peer := WebSocketMultiplayerPeer.new()
 	if peer.create_server(port) != OK:
-		status.text = "Could not open port %d" % port
+		ui.set_status("เปิดพอร์ต %d ไม่ได้ (มีเกมอื่นเปิดอยู่หรือเปล่า?)" % port)
 		return
 	multiplayer.multiplayer_peer = peer
 	_connect_once(multiplayer.peer_connected, _on_peer_connected)
 	_connect_once(multiplayer.peer_disconnected, _on_peer_disconnected)
 	world_seed = randi()
 	_loot_rng.randomize()
+	_clear_backdrop()
 	_make_world(world_seed)
+	in_game = true
+	time = 0.3
 	for i in 25:
 		_spawn_zombie()
 	if not dedicated:
-		_send_inv(_add_player(1))
-	menu.hide()
+		var p := _add_player(1)
+		p.pname = player_name if player_name != "" else ui.player_name()
+		_send_inv(p)
+	ui.show_menu(false)
 	print("Server listening on port %d" % port)
 
 
-func _join() -> void:
+func _join(address: String) -> void:
 	var peer := WebSocketMultiplayerPeer.new()
-	var url := "ws://%s:%d" % [address.text.strip_edges(), port]
+	var url := "ws://%s:%d" % [address, port]
 	if peer.create_client(url) != OK:
-		status.text = "Bad address"
+		ui.set_status("ที่อยู่ไม่ถูกต้อง")
 		return
 	multiplayer.multiplayer_peer = peer
 	_connect_once(multiplayer.connected_to_server, _on_connected)
 	_connect_once(multiplayer.connection_failed, _on_connection_failed)
 	_connect_once(multiplayer.server_disconnected, _on_server_lost)
-	status.text = "Connecting to %s..." % url
+	ui.set_status("กำลังเชื่อมต่อ %s ..." % url)
 
 
 ## Multiplayer signals live on the SceneTree and survive a scene reload,
@@ -204,11 +168,11 @@ func _connect_once(sig: Signal, callable: Callable) -> void:
 
 
 func _on_connected() -> void:
-	status.text = "Connected, loading world..."
+	ui.set_status("เชื่อมต่อแล้ว กำลังโหลดเมือง...")
 
 
 func _on_connection_failed() -> void:
-	status.text = "Connection failed"
+	ui.set_status("เชื่อมต่อไม่สำเร็จ")
 	multiplayer.multiplayer_peer = null
 
 
@@ -258,8 +222,11 @@ func sync_state(searched: Array, items: Array) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func init_world(seed_val: int) -> void:
+	_clear_backdrop()
 	_make_world(seed_val)
-	menu.hide()
+	in_game = true
+	ui.show_menu(false)
+	req_set_name.rpc_id(1, player_name if player_name != "" else ui.player_name())
 	print("Joined world, seed %d" % seed_val)
 
 
@@ -303,6 +270,13 @@ func _add_zombie(id: int, pos: Vector2) -> Zombie:
 
 # --- Server simulation ------------------------------------------------------
 
+@rpc("any_peer", "call_remote", "reliable")
+func req_set_name(n: String) -> void:
+	var p := _sender()
+	if p:
+		p.pname = n.strip_edges().left(16)
+
+
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func send_input(move: Vector2, aim: Vector2, punch: bool, kick: bool) -> void:
 	var p: Player = players.get(multiplayer.get_remote_sender_id())
@@ -314,7 +288,10 @@ func send_input(move: Vector2, aim: Vector2, punch: bool, kick: bool) -> void:
 
 
 func _server_tick(delta: float) -> void:
-	time = fmod(time + delta / DAY_LENGTH, 1.0)
+	time += delta / DAY_LENGTH
+	if time >= 1.0:
+		time -= 1.0
+		day += 1
 	for p: Player in players.values():
 		p.server_tick(delta)
 		if p.pending_kind != Look.NONE:
@@ -350,11 +327,11 @@ func _server_tick(delta: float) -> void:
 		snap_timer = SNAPSHOT_RATE
 		var ps := []
 		for p: Player in players.values():
-			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id])
+			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname])
 		var zs := []
 		for z: Zombie in zombies.values():
 			zs.append([z.zid, z.position, z.hp])
-		snapshot.rpc(ps, zs, time)
+		snapshot.rpc(ps, zs, time, day)
 
 
 ## Keep bodies from stacking: zombies push each other and get pushed off players.
@@ -411,7 +388,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		z.hp -= stats[1]
 		z.stun = stats[3]
 		z.position = world.slide(z.position, dir * stats[4], Zombie.RADIUS)
-		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""))
+		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), stats[1])
 		if z.hp <= 0:
 			fx_death.rpc(z.position, 1.0 if dir.x >= 0 else -1.0, z.skin, z.shirt, z.pants, z.hair)
 			zombies.erase(z.zid)
@@ -644,10 +621,11 @@ func _spawn_zombie() -> void:
 # --- Client side ------------------------------------------------------------
 
 @rpc("authority", "call_remote", "unreliable_ordered")
-func snapshot(ps: Array, zs: Array, t: float) -> void:
-	if world == null:
+func snapshot(ps: Array, zs: Array, t: float, d: int) -> void:
+	if world == null or not in_game:
 		return
 	time = t
+	day = d
 	var seen := {}
 	for e in ps:
 		var id: int = e[0]
@@ -662,6 +640,7 @@ func snapshot(ps: Array, zs: Array, t: float) -> void:
 		p.hp = e[3]
 		p.kills = e[4]
 		p.weapon_id = e[5]
+		p.pname = e[6]
 	for id in players.keys():
 		if not seen.has(id):
 			players[id].queue_free()
@@ -699,6 +678,8 @@ func fx_melee(peer_id: int, kind: int) -> void:
 	var p: Player = players.get(peer_id)
 	if p:
 		p.play_attack(kind)
+		if p.is_local:
+			ui.tutorial("kick" if kind == Look.KICK else "attack")
 		Sfx.play(self, "swing" if kind in [Look.SWING, Look.KICK] else "punch", p.position, -4.0)
 
 
@@ -714,13 +695,14 @@ func inv_sync(inv: Array, sel: int) -> void:
 		me.inv = inv
 		me.sel = sel
 		me.weapon_id = me.held_weapon()
-	inv_bar.show_inventory(inv, sel)
+		if me.weapon_id != "":
+			ui.tutorial("equip")
+	ui.set_inventory(inv, sel)
 
 
 @rpc("authority", "call_remote", "reliable")
 func show_toast(text: String) -> void:
-	toast.text = text
-	toast_t = 2.5
+	ui.push_feed(text)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -732,6 +714,9 @@ func search_started(duration: float) -> void:
 @rpc("authority", "call_local", "reliable")
 func container_searched(id: int) -> void:
 	world.container_nodes[id].set_searched(true)
+	var me: Player = players.get(multiplayer.get_unique_id())
+	if me and me.position.distance_to(world.container_nodes[id].position) < 30:
+		ui.tutorial("search")
 
 
 @rpc("authority", "call_local", "reliable")
@@ -747,7 +732,9 @@ func pickup_del(id: int) -> void:
 
 
 @rpc("authority", "call_local", "unreliable")
-func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, weapon_kind := "") -> void:
+func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, weapon_kind := "", dmg := 0.0) -> void:
+	if dmg > 0:
+		dmg_numbers.append([pos + Vector2(randf_range(-4, 4), -30), str(int(dmg)), dmg >= 30, 0.0])
 	var z: Zombie = zombies.get(zid)
 	if z:
 		z.flinch(dir)
@@ -785,6 +772,14 @@ func leave_corpse(pos: Vector2, fall_dir: float, skin: Color, shirt: Color, pant
 func _process(delta: float) -> void:
 	if world == null:
 		return
+	if not in_game:
+		camera.position += Vector2(9, 2) * delta  # drift over the rooftops
+		shade.color = Color(0.3, 0.3, 0.42)
+		if not world.is_night:
+			world.is_night = true
+			get_tree().call_group("night_glow", "set_visible", true)
+			get_tree().call_group("street_lights", "set_visible", true)
+		return
 	var me: Player = players.get(multiplayer.get_unique_id())
 	if me:
 		var move := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
@@ -809,6 +804,13 @@ func _process(delta: float) -> void:
 		_fade_trees_near(me.position)
 		_update_inside(me)
 		_update_prompt(me)
+		if me.moving:
+			ui.tutorial("move")
+		if hidden_building:
+			ui.tutorial("enter")
+		if me.kills > last_kills:
+			ui.push_feed("ฆ่าซอมบี้ · รวม %d ตัว" % me.kills, "kill")
+		last_kills = me.kills
 
 	if multiplayer.is_server():
 		_server_tick(delta)
@@ -830,15 +832,15 @@ func _process(delta: float) -> void:
 	fx.queue_redraw()
 
 
-	toast_t -= delta
-	toast.modulate.a = clampf(toast_t, 0.0, 1.0)
-
-	hud.text = "%s   Players: %d   Zombies: %d" % [
-		"NIGHT" if world.is_night else "Day", players.size(), zombies.size()]
-	if me:
-		hud.text = "HP %d   Kills %d   " % [me.hp, me.kills] + hud.text
+	for dn in dmg_numbers:
+		dn[3] += delta
+	dmg_numbers = dmg_numbers.filter(func(dn): return dn[3] < 0.9)
+	ui.update_hud(delta, me, day, time, players.size())
+	var hurt := 0.0
+	if me and me.alive() and me.hp < 35:
+		hurt = (35.0 - me.hp) / 35.0
+	grade_mat.set_shader_parameter("hurt", hurt)
 	_update_death_screen(me, delta)
-	hud.text += "\nWASD move | mouse aim | LMB attack | RMB kick | E search/pick up | 1-8 slot | F use | G drop"
 
 
 var faded: Array = []
@@ -850,10 +852,7 @@ func _update_death_screen(me: Player, delta: float) -> void:
 	var k := clampf((me.death_t - 0.6) / 1.2, 0.0, 1.0) if dead else 0.0
 	var cur: float = grade_mat.get_shader_parameter("death") if grade_mat.get_shader_parameter("death") != null else 0.0
 	grade_mat.set_shader_parameter("death", move_toward(cur, k, delta * (1.0 if dead else 2.5)))
-	death_label.modulate.a = k
-	death_sub.modulate.a = k
 	if dead:
-		death_sub.text = "ของที่ถืออยู่ร่วงอยู่ข้างศพ  ·  เกิดใหม่ใน %d วินาที" % ceili(me.respawn if multiplayer.is_server() else maxf(0.0, Player.RESPAWN_TIME - me.death_t))
 		camera.zoom = camera.zoom.lerp(play_zoom * 1.35, delta * 0.8)
 	elif me:
 		camera.zoom = camera.zoom.lerp(play_zoom, delta * 3.0) if camera.zoom.distance_to(play_zoom) > 0.01 else play_zoom
@@ -880,13 +879,13 @@ func _update_prompt(me: Player) -> void:
 		return
 	for pid in pickups:
 		if me.position.distance_to(pickups[pid].pos) < 14.0:
-			prompt = "E  เก็บ %s" % Items.display_name(pickups[pid].item.id)
+			prompt = "[E] เก็บ %s" % Items.display_name(pickups[pid].item.id)
 			prompt_pos = pickups[pid].pos + Vector2(0, -10)
 			return
 	var f := _container_near(me.position)
 	if f and not f.searched and (hidden_building != null or not world.building_at.has(world.to_cell(f.position))):
 		f.set_highlight(true)
-		prompt = "E  ค้นหา"
+		prompt = "[E] ค้นหา"
 		prompt_pos = f.position + Vector2(0, -26)
 
 
@@ -918,10 +917,26 @@ func _fade_trees_near(pos: Vector2) -> void:
 
 
 func _draw_fx() -> void:
-	var font := Look.thai_font()
+	var font := UiTheme.world("Kanit-Medium")
+	for p: Player in players.values():
+		if p.alive() and p.pname != "":
+			var w := font.get_string_size(p.pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 5).x + 6
+			var r := Rect2(p.position + Vector2(-w / 2, -41), Vector2(w, 7))
+			fx.draw_rect(r, Color(0, 0, 0, 0.45))
+			fx.draw_string(font, r.position + Vector2(0, 5.6), p.pname, HORIZONTAL_ALIGNMENT_CENTER, w, 5, UiTheme.PAPER)
+	for dn in dmg_numbers:
+		var k: float = dn[3] / 0.9
+		var pos: Vector2 = dn[0] + Vector2(0, -12 * ease(k, 0.4))
+		var size := 9 if dn[2] else 7
+		var col := Color(UiTheme.WARN, 1.0 - k * k) if dn[2] else Color(1, 1, 1, 1.0 - k * k)
+		fx.draw_string_outline(font, pos - Vector2(20, 0), "-" + dn[1], HORIZONTAL_ALIGNMENT_CENTER, 40, size, 3, Color(0.45, 0.06, 0.04, 1.0 - k * k))
+		fx.draw_string(font, pos - Vector2(20, 0), "-" + dn[1], HORIZONTAL_ALIGNMENT_CENTER, 40, size, col)
 	if prompt != "":
-		fx.draw_string_outline(font, prompt_pos + Vector2(-30, 0), prompt, HORIZONTAL_ALIGNMENT_CENTER, 60, 6, 2, Color.BLACK)
-		fx.draw_string(font, prompt_pos + Vector2(-30, 0), prompt, HORIZONTAL_ALIGNMENT_CENTER, 60, 6, Color(1, 0.92, 0.6))
+		var sz := 5
+		var tw := UiTheme.draw_rich(fx, Vector2.ZERO, prompt, font, sz, UiTheme.PAPER, true)
+		var origin := prompt_pos + Vector2(-tw / 2 - 3, 0)
+		fx.draw_style_box(UiTheme.box(UiTheme.CARD, 4, UiTheme.LINE, 0), Rect2(origin + Vector2(-3, -7.5), Vector2(tw + 12, 10)))
+		UiTheme.draw_rich(fx, origin + Vector2(3, 0), prompt, font, sz, UiTheme.PAPER)
 	var now := Time.get_ticks_msec() / 1000.0
 	var me: Player = players.get(multiplayer.get_unique_id())
 	if me and now < search_until:
@@ -968,9 +983,13 @@ func _draw_decals() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if world and event is InputEventKey and event.pressed and not event.echo:
+	if world and in_game and event is InputEventKey and event.pressed and not event.echo:
 		var k: int = event.keycode
-		if k == KEY_E:
+		if k == KEY_H:
+			ui.toggle_help()
+		elif k == KEY_ESCAPE and ui.help.visible:
+			ui.toggle_help()
+		elif k == KEY_E:
 			_request(&"req_interact", [])
 		elif k == KEY_F:
 			_request(&"req_use", [])

@@ -7,7 +7,8 @@ uniform vec3 tint = vec3(1.08, 1.06, 0.96);
 uniform float contrast = 1.05;
 uniform float vignette = 0.9;
 uniform float grain = 0.035;
-uniform float death = 0.0;  // 0..1 while the local player is dead
+uniform float death = 0.0;
+uniform float hurt = 0.0;  // 0..1 as health runs low  // 0..1 while the local player is dead
 
 void fragment() {
 	vec3 c = texture(screen_tex, SCREEN_UV).rgb;
@@ -16,6 +17,11 @@ void fragment() {
 	c = (c - 0.5) * contrast + 0.5;
 	vec2 d = SCREEN_UV - 0.5;
 	c *= 1.0 - dot(d, d) * vignette;
+	// Low health: a red vignette that throbs like a heartbeat, colour draining a little.
+	float beat = 0.6 + 0.4 * pow(abs(sin(TIME * 2.6)), 6.0);
+	float edge = smoothstep(0.18, 0.62, length(d * vec2(1.0, 0.8)));
+	c = mix(c, vec3(dot(c, vec3(0.3, 0.59, 0.11))), hurt * 0.35);
+	c = mix(c, vec3(0.55, 0.03, 0.02), edge * hurt * beat * 0.75);
 	// Death: drain the colour to a dim blood-red and close the vignette in.
 	float lum = dot(c, vec3(0.299, 0.587, 0.114));
 	c = mix(c, vec3(lum * 0.85, lum * 0.3, lum * 0.28), death * 0.9);

@@ -32,6 +32,8 @@ var search_id := -1  # server only: container being searched
 var search_t := 0.0
 var dropped := false  # server only: death bag already dropped this life
 var death_t := 0.0  # seconds since dying (every peer, drives the fall)
+var pname := ""  # shown above the head
+var life_t := 0.0  # seconds alive since the last respawn
 var fall_dir := 1.0
 var last_death_pos := Vector2.ZERO
 var shoot_cd := 0.0
@@ -127,6 +129,7 @@ func _process(delta: float) -> void:
 	flashlight.rotation = aim.angle()
 	view = Look.pick_view(aim.angle(), view)
 	anim_t += delta
+	life_t = life_t + delta if alive() else 0.0
 	if alive():
 		if death_t > 0.0:
 			# Respawned: leave the old body where it fell.
