@@ -319,9 +319,9 @@ func _build_help() -> void:
 	sheet.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	sheet.offset_left = -370
 	sheet.offset_right = 370
-	sheet.offset_top = -270
-	sheet.offset_bottom = 270
-	sheet.pivot_offset = Vector2(370, 270)
+	sheet.offset_top = -295
+	sheet.offset_bottom = 295
+	sheet.pivot_offset = Vector2(370, 295)
 	sheet.rotation = 0.01
 	help.add_child(sheet)
 
@@ -601,7 +601,8 @@ class HelpSheet extends Control:
 		["[คลิกขวา]", "เตะ ผลักซอมบี้ออก"], ["[F]", "ใช้ของ (กิน / รักษา)"],
 		["[ลูกกลิ้ง]", "ซูมกล้อง"], ["[G]", "ทิ้งของ"],
 		["[Shift]", "วิ่ง (เร็ว แต่เสียงดัง)"], ["[Ctrl]/[C]", "ย่อง (เงียบ ซอมบี้เห็นยาก)"],
-		["[R]", "ตอกไม้เสริม / ซ่อมประตู"], ["[H]", "เปิด / ปิดหน้านี้"],
+		["[R]", "ตอกไม้เสริม / ซ่อมประตู"], ["[E] ที่บันได", "ขึ้น / ลงดาดฟ้า"],
+		["[H]", "เปิด / ปิดหน้านี้"],
 	]
 
 	func _draw() -> void:

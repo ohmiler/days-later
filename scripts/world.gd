@@ -46,6 +46,7 @@ var containers: Array = []  # {id, kind, cell, table}, filled by CityGen
 var container_nodes: Array = []  # FurnitureProp, indexed by container id
 var doors: Array = []  # {id, cell, closed, hp, boards, broken}, filled by CityGen
 var decor: Array = []  # {kind, cell, seed, building}, filled by CityGen
+var stairs := {}  # cell -> true: stairwells up to the roof
 var door_at := {}  # cell -> door id
 var door_nodes: Array = []
 var overhead: Overhead
@@ -281,21 +282,35 @@ func to_pos(c: Vector2i) -> Vector2:
 
 
 ## Move a body by `v`, sliding along walls one axis at a time.
-func slide(pos: Vector2, v: Vector2, r: float) -> Vector2:
+func slide(pos: Vector2, v: Vector2, r: float, roof := false) -> Vector2:
 	var nx := pos + Vector2(v.x, 0)
-	if can_stand(nx, r):
+	if can_stand(nx, r, roof):
 		pos = nx
 	var ny := pos + Vector2(0, v.y)
-	if can_stand(ny, r):
+	if can_stand(ny, r, roof):
 		pos = ny
 	return pos
 
 
-func can_stand(p: Vector2, r: float) -> bool:
+## On the ground, stand anywhere not solid; on the roof, only on shophouse roofs.
+func can_stand(p: Vector2, r: float, roof := false) -> bool:
 	for o in [Vector2(-r, -r), Vector2(r, -r), Vector2(-r, r), Vector2(r, r)]:
-		if is_solid(to_cell(p + o)):
+		var c := to_cell(p + o)
+		if (not is_roof(c)) if roof else is_solid(c):
 			return false
 	return true
+
+
+## Flat shophouse roofs join up along a row, so you can walk from one to the next.
+func is_roof(c: Vector2i) -> bool:
+	var b: BuildingProp = building_at.get(c)
+	return b != null and b.data.kind in ["shop", "store"]
+
+
+## How far above the street the roof at `pos` is, in screen pixels.
+func roof_height(pos: Vector2) -> float:
+	var b: BuildingProp = building_at.get(to_cell(pos))
+	return b.h if b and b.data.kind in ["shop", "store"] else 0.0
 
 
 func spawn_point() -> Vector2:

@@ -42,6 +42,8 @@ var stamina := 100.0
 var exhausted := false  # ran dry: no sprinting until stamina recovers
 var sprint := false
 var sneak := false  # Ctrl / C: slow, quiet, harder to spot
+var on_roof := false  # up on the shophouse roofs: zombies can't follow
+var lift := 0.0  # current drawn height above the street (eases between roofs)
 var step_t := 0.0  # server: time to the next footstep noise
 var bitten := false  # server: set by a zombie bite, handled by main
 var turned := false  # died of the infection and got back up as a zombie
@@ -111,7 +113,7 @@ func server_tick(delta: float) -> void:
 			warned.clear()
 			position = world.spawn_point()
 		return
-	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS)
+	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof)
 
 
 ## Sprinting is faster; a bad infection drags your feet.
@@ -158,6 +160,9 @@ func _process(delta: float) -> void:
 	moving = step > 0.05
 	phase = phase + step * 0.45 if moving else 0.0
 	flashlight.rotation = aim.angle()
+	lift = lerpf(lift, world.roof_height(position) if on_roof else 0.0, minf(1.0, 12.0 * delta))
+	flashlight.position = Look.CHEST + Vector2(0, -lift)
+	z_index = 2 if on_roof or lift > 1.0 else 1  # above the buildings while up there
 	view = Look.pick_view(aim.angle(), view)
 	anim_t += delta
 	if alive():
@@ -196,7 +201,11 @@ func _draw() -> void:
 		ext = sin(anim_t / dur * PI) if anim in [Look.PUNCH_L, Look.PUNCH_R] else anim_t / dur
 	# Sneaking: crouched low, a slow creep.
 	var crouch := Vector2(0, 3.0) if sneak else Vector2.ZERO
+	Look.lift = Vector2(0, -lift)
 	Look.draw_human(self, view, aim.angle(), phase * (0.6 if sneak else 1.0), moving and ext == 0.0, skin, shirt, pants, hair, false,
 			anim if ext > 0.0 else Look.NONE, ext, false, anim != Look.NONE and anim_t < 1.2, crouch,
 			wdef.get("draw", {}))
+	Look.lift = Vector2.ZERO
+	draw_set_transform(Vector2(0, -lift))
 	Look.draw_hp(self, hp / MAX_HP)
+	draw_set_transform(Vector2.ZERO)

@@ -19,7 +19,8 @@ enum { NONE, PUNCH_L, PUNCH_R, KICK, SWING }  # attack poses
 
 static var _cone: Texture2D
 static var _base := Transform2D.IDENTITY
-static var _girth := 1.0  # body width multiplier (fat and skinny zombies)  # whole-body transform (used to topple a falling body)
+static var _girth := 1.0  # body width multiplier (fat and skinny zombies)
+static var lift := Vector2.ZERO  # draw everything this far up (standing on a roof); caller sets and resets  # whole-body transform (used to topple a falling body)
 static var _font: Font
 
 
@@ -67,7 +68,7 @@ static func draw_human(ci: CanvasItem, vf: Array, angle: float, phase: float, mo
 		bob += maxf(0.0, sin(phase * 0.5)) * 0.8  # limp
 
 	# Contact shadow, stretching out under the body as it falls.
-	ci.draw_set_transform(Vector2(fall_dir * 12.0 * tip, 0), 0, Vector2(1 + 1.6 * tip, 0.38))
+	ci.draw_set_transform(lift + Vector2(fall_dir * 12.0 * tip, 0), 0, Vector2(1 + 1.6 * tip, 0.38))
 	ci.draw_circle(Vector2.ZERO, 7.5, Color(0, 0, 0, 0.35))
 
 	# Legs stay planted; everything above them bobs.
@@ -110,7 +111,7 @@ const SHOE := Color("1e1a16")
 
 ## Set the drawing transform for a body part, on top of the whole-body transform.
 static func _xf(ci: CanvasItem, pos: Vector2, scale: Vector2) -> void:
-	ci.draw_set_transform_matrix(_base * Transform2D(0.0, scale, 0.0, pos))
+	ci.draw_set_transform_matrix(Transform2D(0.0, lift) * _base * Transform2D(0.0, scale, 0.0, pos))
 
 
 ## Pool of blood spreading from a body lying toward `dir` (k grows 0..1 over time).

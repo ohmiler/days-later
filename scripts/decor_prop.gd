@@ -78,6 +78,15 @@ func _draw() -> void:
 			for i in 5:
 				var p := Vector2(rng.randf_range(-7, 7), rng.randf_range(-6, 0))
 				draw_rect(Rect2(p, Vector2(rng.randf_range(1.5, 3), 1.2)), Color.from_hsv(rng.randf(), 0.3, rng.randf_range(0.5, 0.9)))
+		"stairs":
+			# Concrete steps climbing to a hatch in the ceiling.
+			_shadow(7)
+			for i in 5:
+				var y := -2.0 - i * 3.0
+				draw_rect(Rect2(-6 + i * 1.5, y - 2.5, 11 - i * 1.5, 3), Color("9a968e").darkened(i * 0.06))
+				draw_rect(Rect2(-6 + i * 1.5, y - 2.5, 11 - i * 1.5, 0.8), Color("b8b4ac"))
+			draw_line(Vector2(6, -1), Vector2(6, -17), Color("5a5a5a"), 0.8)  # handrail
+			draw_rect(Rect2(-2, -21, 8, 3), Color("2a2622"))  # the hatch above
 		"bulb":
 			draw_line(Vector2(0, -40), Vector2(0, -24), Color("1e1e1e"), 0.5)  # hanging from the ceiling
 			draw_circle(Vector2(0, -23), 1.6, Color("f0e0a0"))

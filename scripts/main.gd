@@ -367,7 +367,7 @@ func _server_tick(delta: float) -> void:
 		var ps := []
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak]])
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof]])
 		var zs := []
 		for z: Zombie in zombies.values():
 			zs.append([z.zid, z.position, z.hp, z.state])
@@ -390,7 +390,7 @@ func _separate() -> void:
 		for p: Player in players.values():
 			var v := a.position - p.position
 			var dist := v.length()
-			if p.alive() and dist < 10.0 and dist > 0.01:
+			if p.alive() and not p.on_roof and dist < 10.0 and dist > 0.01:
 				a.position = world.slide(a.position, v / dist * (10.0 - dist), Zombie.RADIUS)
 
 
@@ -410,7 +410,7 @@ func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 ## Punch hits the zombie in front that is closest to the aim; a kick hits
 ## everything in front. Generous cone so a blow that looks like it lands, lands.
 func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
-	if not p.alive():
+	if not p.alive() or p.on_roof:
 		return
 	var dir := p.aim.normalized()
 	var hits: Array = []
@@ -746,6 +746,9 @@ func req_drop() -> void:
 	var p := _sender()
 	if p == null or p.inv[p.sel] == null:
 		return
+	if p.on_roof:
+		_toast(p, "วางของบนหลังคาไม่ได้")
+		return
 	_spawn_pickup(p.position + p.aim.normalized() * 8, p.inv[p.sel])
 	p.inv[p.sel] = null
 	_send_inv(p)
@@ -756,6 +759,24 @@ func req_drop() -> void:
 func req_interact() -> void:
 	var p := _sender()
 	if p == null or not p.alive():
+		return
+	# Stairs up or down, or jumping off the roof edge.
+	var st := _stairs_near(p.position)
+	if st != Vector2i(-1, -1):
+		p.on_roof = not p.on_roof
+		p.position = world.to_pos(st)
+		fx_sound.rpc("door", p.position)
+		_toast(p, "ขึ้นมาบนดาดฟ้า · ซอมบี้ตามขึ้นมาไม่ได้" if p.on_roof else "ลงมาข้างล่าง")
+		return
+	if p.on_roof:
+		var drop := _jump_spot(p.position)
+		if drop != Vector2.INF:
+			p.on_roof = false
+			p.position = drop
+			p.take_damage(10)
+			fx_sound.rpc("kick", drop)
+			_make_noise(drop, NOISE_RUN)
+			_toast(p, "กระโดดลงมา! เจ็บขา")
 		return
 	var best := -1
 	var best_d := 14.0
@@ -794,6 +815,25 @@ func req_interact() -> void:
 		fx_sound.rpc("rustle", f.position)
 		_make_noise(f.position, NOISE_SEARCH)
 		_notify(p.peer_id, &"search_started", [SEARCH_TIME])
+
+
+func _stairs_near(pos: Vector2) -> Vector2i:
+	var c := world.to_cell(pos)
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var s := c + Vector2i(dx, dy)
+			if world.stairs.has(s) and pos.distance_to(world.to_pos(s)) < 13.0:
+				return s
+	return Vector2i(-1, -1)
+
+
+## A spot on the street right next to the roof edge, to jump down to.
+func _jump_spot(pos: Vector2) -> Vector2:
+	for d in [Vector2(0, 20), Vector2(0, -20), Vector2(20, 0), Vector2(-20, 0)]:
+		var p: Vector2 = pos + d
+		if not world.is_roof(world.to_cell(p)) and world.can_stand(p, 5):
+			return p
+	return Vector2.INF
 
 
 ## The door E would use: one you're standing in, or any close one when
@@ -960,6 +1000,7 @@ func snapshot(ps: Array, zs: Array, t: float, d: int) -> void:
 		if not p.is_local:
 			p.sprint = n[6]
 			p.sneak = n[7]
+		p.on_roof = n[8]
 	for id in players.keys():
 		if not seen.has(id):
 			players[id].queue_free()
@@ -1119,11 +1160,12 @@ func _process(delta: float) -> void:
 		else:
 			send_input.rpc_id(1, move, aim, punch, kick, me.sprint, me.sneak)
 			if me.alive():
-				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS)
-		camera.position = me.position + Look.CHEST
+				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof)
+		camera.position = me.position + Look.CHEST + Vector2(0, -me.lift)
 		camera.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake
 		shake = move_toward(shake, 0.0, delta * 14.0)
-		_fade_trees_near(me.position)
+		if not me.on_roof:
+			_fade_trees_near(me.position)
 		_update_inside(me)
 		_update_prompt(me)
 		if me.moving:
@@ -1195,7 +1237,7 @@ func _update_death_screen(me: Player, delta: float) -> void:
 ## Walking into a building lifts its roof and front wall off so you can see inside.
 func _update_inside(me: Player) -> void:
 	var b: BuildingProp = world.building_at.get(world.to_cell(me.position))
-	if b and not b.data.get("enter", false):
+	if b and (not b.data.get("enter", false) or me.on_roof or me.lift > 1.0):
 		b = null
 	if b != hidden_building:
 		if hidden_building:
@@ -1210,6 +1252,16 @@ func _update_prompt(me: Player) -> void:
 	for f: FurnitureProp in world.container_nodes:
 		f.set_highlight(false)
 	if not me.alive():
+		return
+	var st := _stairs_near(me.position)
+	if st != Vector2i(-1, -1):
+		prompt = "[E] ลงบันได" if me.on_roof else "[E] ขึ้นดาดฟ้า"
+		prompt_pos = world.to_pos(st) + Vector2(0, -26 - me.lift)
+		return
+	if me.on_roof:
+		if _jump_spot(me.position) != Vector2.INF:
+			prompt = "[E] กระโดดลง (เจ็บ · เสียงดัง)"
+			prompt_pos = me.position + Vector2(0, -40 - me.lift)
 		return
 	for pid in pickups:
 		if me.position.distance_to(pickups[pid].pos) < 14.0:
@@ -1275,7 +1327,7 @@ func _draw_fx() -> void:
 	for p: Player in players.values():
 		if p.alive() and p.pname != "":
 			var w := font.get_string_size(p.pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 5).x + 6
-			var r := Rect2(p.position + Vector2(-w / 2, -41), Vector2(w, 7))
+			var r := Rect2(p.position + Vector2(-w / 2, -41 - p.lift), Vector2(w, 7))
 			fx.draw_rect(r, Color(0, 0, 0, 0.45))
 			fx.draw_string(font, r.position + Vector2(0, 5.6), p.pname, HORIZONTAL_ALIGNMENT_CENTER, w, 5, UiTheme.PAPER)
 	for dn in dmg_numbers:

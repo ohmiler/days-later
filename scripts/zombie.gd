@@ -153,7 +153,7 @@ func _nearest_player(max_dist: float) -> Player:
 	var best: Player = null
 	var best_d := INF
 	for p: Player in players.values():
-		if not p.alive():
+		if not p.alive() or p.on_roof:
 			continue
 		var d := position.distance_to(p.position)
 		var reach := max_dist * (0.5 if p.sneak else 1.0)

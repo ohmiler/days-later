@@ -140,6 +140,13 @@ static func _dress(w: World, rec: Dictionary, inner: Rect2i, door: int, back: in
 			var c := Vector2i(x, y)
 			if x != door and x != back and not w.blocked.has(c):
 				free.append(c)
+	if not free.is_empty():
+		# A stairwell up to the roof, in a corner of the room.
+		free.sort_custom(func(a, b): return a.x + a.y * 0.1 < b.x + b.y * 0.1)
+		var st: Vector2i = free.pop_at(0 if rng.randf() < 0.5 else free.size() - 1)
+		rec.stairs = st
+		w.stairs[st] = true
+		w.decor.append({kind = "stairs", cell = st, seed = 0, building = rec})
 	for i in mini(free.size(), rng.randi_range(1, 3)):
 		var c: Vector2i = free.pop_at(rng.randi() % free.size())
 		w.decor.append({kind = kinds[rng.randi() % kinds.size()], cell = c, seed = rng.randi(), building = rec})
