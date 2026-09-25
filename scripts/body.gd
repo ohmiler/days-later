@@ -110,6 +110,26 @@ static func tick(p: Player, delta: float) -> String:
 	return msg
 
 
+## How far a wound is from healing: [share healed 0..1, game hours left], or
+## [0, -1] if it won't heal as it is (an open bite).
+static func progress(w: Dictionary) -> Array:
+	var k: Dictionary = KINDS[w.kind]
+	var need: float = k.heal if w.bandaged else k.bare
+	if need <= 0.0:
+		return [0.0, -1.0]
+	var hour := Main.DAY_LENGTH / 24.0
+	return [clampf(w.t / need, 0.0, 1.0), maxf(0.0, need - w.t) / hour]
+
+
+## "หายในอีกราว 6 ชม." (game hours), or "" if it won't heal as it is.
+static func heal_text(w: Dictionary) -> String:
+	var pr := progress(w)
+	if pr[1] < 0.0:
+		return ""
+	var h := ceili(pr[1])
+	return "ใกล้หายแล้ว" if h <= 1 else "หายในอีกราว %d ชม." % h
+
+
 static func sprained(wounds: Array) -> bool:
 	return wounds.any(func(w): return w.kind == "sprain")
 
@@ -128,7 +148,7 @@ static func statuses(p: Player) -> Array:
 			"scratch":
 				out.append({icon = "scratch", level = 1, text = "%s · ยังไม่พันแผล" % title(w)})
 			"sprain":
-				out.append({icon = "sprain", level = 1, text = "%s · วิ่งไม่ได้ เดินช้าลง" % title(w)})
+				out.append({icon = "sprain", level = 1, text = "%s · วิ่งไม่ได้ เดินช้าลง · %s" % [title(w), heal_text(w)]})
 	if p.bleeding:
 		out.append({icon = "bleed", level = 2, text = "เลือดออก · พันแผลด่วน"})
 	if p.infection > 0.0:

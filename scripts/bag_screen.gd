@@ -718,19 +718,19 @@ func _body_rows() -> Array:
 		match w.kind:
 			"bite", "scratch":
 				if w.bandaged:
-					sub = "พันแผลแล้ว · กำลังหาย"
+					sub = "พันแผลแล้ว · " + Body.heal_text(w)
 					level = 0
 				else:
-					sub = ("เลือดออก · " if w.bleeding else "") + ("ยังไม่พันแผล · เสี่ยงติดเชื้อ" if w.kind == "bite" else "ยังไม่พันแผล")
+					sub = ("เลือดออก · " if w.bleeding else "") + ("ยังไม่พันแผล · ไม่หายเองถ้าไม่พัน · เสี่ยงติดเชื้อ" if w.kind == "bite" 							else "ยังไม่พันแผล · " + Body.heal_text(w) + " (พันแล้วเร็วขึ้น)")
 					level = 2 if w.kind == "bite" or w.bleeding else 1
 					button = "treat" if has_bandage else ""
 			"sprain":
-				sub = "วิ่งไม่ได้ เดินช้าลง · หายเอง นอนแล้วหายเร็วขึ้น"
+				sub = "วิ่งไม่ได้ เดินช้าลง · " + Body.heal_text(w) + " · นอนจะเร็วขึ้น"
 			"bruise":
-				sub = "ของที่ใส่กันไว้ได้ · หายเอง"
+				sub = "ของที่ใส่กันไว้ได้ · " + Body.heal_text(w)
 				level = 0
 		out.append({i = out.size(), wound = k, icon = "bandaged" if w.bandaged else w.kind, level = level, title = Body.title(w),
-				sub = sub, button = button, slot = -1})
+				sub = sub, button = button, slot = -1, healing = Body.progress(w)})
 	if me.infection > 0.0:
 		var stage := Body.infection_stage(me.infection)
 		var slot := -1
@@ -770,6 +770,8 @@ func _draw_body(head: Font, body: Font) -> void:
 		draw_string(body, r.position + Vector2(40, 36), _fit(row.sub, body, 11, tw), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, DIM)
 		if row.has("infection"):
 			_bar(Rect2(r.position.x + 40, r.end.y - 4, tw, 3), row.infection / 100.0, col)
+		elif row.has("healing") and row.healing[1] >= 0.0:
+			_bar(Rect2(r.position.x + 40, r.end.y - 4, tw, 3), row.healing[0], Color("6ab04a"))  # how far it's healed
 		if row.button != "":
 			var br := _body_button(row.i)
 			var lit := br.has_point(get_local_mouse_position())
