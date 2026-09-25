@@ -109,37 +109,21 @@ static func _draw(ci: CanvasItem, layer: String, shape: String, p: Dictionary, r
 			if view != Look.BACK:
 				Look._rect(ci, Rect2(w * 0.25, -18.4, 1.6, 4.0), col.darkened(0.12))  # the loose end
 		["shinguards", "knee"]:
-			for leg in r.legs:
-				var k := _knee_of(leg)
-				if k == Vector2.INF:
-					continue
-				var foot: Vector2 = leg.foot if leg.has("foot") else Vector2(leg.get("x", 0.0) + 1.4, -leg.get("lift", 0.0))
-				var a := k.lerp(foot, 0.15)
-				var b := k.lerp(foot, 0.75)
+			for leg in r.legs:  # (every leg from the rig says where its knee and foot are)
+				var k: Vector2 = leg.knee
+				var a := k.lerp(leg.foot, 0.15)
+				var b := k.lerp(leg.foot, 0.75)
 				Look._limb(ci, a, b, 3.0, 2.6, (p.col as Color).darkened(0.2 if leg.far else 0.0))
 		["kneepads", "knee"]:
 			for leg in r.legs:
-				var k := _knee_of(leg)
-				if k != Vector2.INF:
-					Look._rect(ci, Rect2(k + Vector2(-1.6, -1.2), Vector2(3.2, 2.2)), (p.col as Color).darkened(0.2 if leg.far else 0.0))
-					Look._rect(ci, Rect2(k + Vector2(-1.2, -1.0), Vector2(2.4, 0.6)), (p.col as Color).lightened(0.25))
+				var k: Vector2 = leg.knee
+				Look._rect(ci, Rect2(k + Vector2(-1.6, -1.2), Vector2(3.2, 2.2)), (p.col as Color).darkened(0.2 if leg.far else 0.0))
+				Look._rect(ci, Rect2(k + Vector2(-1.2, -1.0), Vector2(2.4, 0.6)), (p.col as Color).lightened(0.25))
 
 
 ## A hoodie's hood is the shirt's colour; a raincoat's is the coat's.
 static func _hood_col(shape: String, p: Dictionary, lk: Dictionary) -> Color:
 	return ((lk.shirt as Color) if shape == "hoodie" else (p.col as Color)).darkened(0.2)
-
-
-## Where a leg's knee is, however the rig drew that leg.
-static func _knee_of(leg: Dictionary) -> Vector2:
-	match leg.type:
-		"rect":
-			return Vector2(leg.x + 1.4, -5.6 - leg.lift * 0.5)
-		"line":
-			return (leg.hip as Vector2).lerp(leg.foot, 0.5) + Vector2(0.8, 0)
-		"limb":
-			return leg.knee
-	return Vector2.INF
 
 
 # --- On the head (called by Look._head) ---------------------------------------------

@@ -71,7 +71,8 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	# The upper body bobs with the walk, leans in (zombies), lunges into punches,
 	# rocks back from kicks and hits, and drops when crouching.
 	var lean := 1.2 if zombie and view == Look.SIDE else 0.0
-	var lunge := Vector2.from_angle(angle) * Vector2(1.6, 1.0) * ext if attack in [Look.PUNCH_L, Look.PUNCH_R] else Vector2.ZERO
+	# (A punch puts the shoulder into it: the arm alone only reaches so far.)
+	var lunge := Vector2.from_angle(angle) * Vector2(3.0, 1.0) * ext if attack in [Look.PUNCH_L, Look.PUNCH_R] else Vector2.ZERO
 	if attack == Look.KICK:
 		var k := Look.kick_pose(ext)
 		lunge = -Vector2.from_angle(angle) * Vector2(1.4, 0.7) * k.y + Vector2(0, 0.7 * k.x)
@@ -95,15 +96,15 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	# A falling body's arms go limp, even a zombie's.
 	var arms: Array
 	if zombie and fall <= 0.0 and breed == "runner" and moving and bite < 0.0:
-		arms = _idle_arms(view, s * 1.8)  # sprinting, arms pumping, like it still remembers how to run
+		arms = _idle_arms(view, s * 1.8, girth)  # sprinting, arms pumping, like it still remembers how to run
 		for a in arms:
 			a.merge({sleeve_dark = 0.1, skin_dark = 0.1}, true)
 	elif zombie and fall <= 0.0:
 		arms = _zombie_arms(view, phase, girth, breed, vary, bite, scream)
 	elif not zombie and (attack != Look.NONE or guard or not weapon.is_empty() or not weapon_l.is_empty()):
-		arms = _fist_arms(view, angle, sx, attack, ext, weapon, weapon_l)
+		arms = _fist_arms(view, angle, sx, attack, ext, weapon, weapon_l, girth)
 	else:
-		arms = _idle_arms(view, s)
+		arms = _idle_arms(view, s, girth)
 	for i in arms.size():
 		arms[i].idx = i  # 0 = left (far side-on), 1 = right: lets Look leave off a missing arm
 	r.arms_back = arms.filter(func(a): return a.behind)
@@ -119,12 +120,16 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	return r
 
 
-# --- Anchored poses ------------------------------------------------------------------
+# --- Skeleton --------------------------------------------------------------------
+# Every limb is two bones of fixed length. Poses say where a hand or foot should
+# go; _reach bends the elbow or knee to get it there, so nothing ever stretches.
 
+const HIP_Y := -10.0  # where the legs join the body (feet at 0)
 const THIGH := 5.2
 const SHIN := 5.2
 const UPPER_ARM := 4.4
 const FOREARM := 4.2
+const ARM := UPPER_ARM + FOREARM
 
 
 ## Where the middle joint of a two-part limb goes for its end to reach `target`
@@ -140,10 +145,57 @@ static func _reach(root: Vector2, target: Vector2, l1: float, l2: float, bend: f
 	return [mid, end]
 
 
+## _reach, bent whichever way puts the elbow or knee more toward `pref`.
+static func _bend_toward(root: Vector2, target: Vector2, l1: float, l2: float, pref: Vector2) -> Array:
+	var a := _reach(root, target, l1, l2, 1.0)
+	var b := _reach(root, target, l1, l2, -1.0)
+	return a if ((a[0] as Vector2) - root).dot(pref) >= ((b[0] as Vector2) - root).dot(pref) else b
+
+
+## An arm from `sh` reaching for `target`, the elbow bending toward `pref`.
+## Out of reach, the arm goes straight and the hand stops at its full length.
+## `bend` caps how far the elbow sticks out from the line shoulder to hand: seen
+## from the front or back, most of a bent arm's bend is toward or away from the
+## camera, so it shows as a shorter arm, not a wide elbow.
+static func _reach_arm(sh: Vector2, target: Vector2, pref: Vector2, behind: bool, extra := {}, bend := INF) -> Dictionary:
+	var k := _bend_toward(sh, target, UPPER_ARM, FOREARM, pref)
+	var hand: Vector2 = k[1]
+	var elbow: Vector2 = k[0]
+	if bend < INF and hand.distance_to(sh) > 0.01:
+		# The same elbow, pulled in toward the line (which only shortens both bones).
+		var dir := (hand - sh).normalized()
+		var foot := sh + dir * (elbow - sh).dot(dir)
+		elbow = foot + (elbow - foot).limit_length(bend)
+	return _arm(sh, elbow, hand, behind, extra)
+
+
+## Which way an elbow points: down and a little back side-on, down and out
+## from the front or back.
+static func _elbow_pref(view: int, i: int) -> Vector2:
+	if view == Look.SIDE:
+		return Vector2(-0.4, 1.0)
+	return Vector2(-0.7 if i == 0 else 0.7, 1.0)
+
+
+## How far an elbow can stick out, as seen from this view (see _reach_arm).
+static func _elbow_bend(view: int) -> float:
+	return INF if view == Look.SIDE else 1.2
+
+
+## A leg from `hip` to `foot`, the knee bending toward `pref` (forward, side-on).
+static func _leg(hip: Vector2, foot: Vector2, far: bool, pref := Vector2.RIGHT, extra := {}) -> Dictionary:
+	var k := _bend_toward(hip, foot, THIGH, SHIN, pref)
+	var leg := {type = "line", hip = hip, knee = k[0], foot = k[1], far = far}
+	leg.merge(extra, true)
+	return leg
+
+
+# --- Anchored poses ------------------------------------------------------------------
+
 ## Sat on something with hands and feet on its holds (see build's `anchors`).
 static func _anchored(r: Dictionary, an: Dictionary, view: int) -> Dictionary:
-	var seat: Vector2 = an.get("seat", Vector2(0, -10))
-	var up := seat - Vector2(0, -10)  # hips normally sit at y -10
+	var seat: Vector2 = an.get("seat", Vector2(0, HIP_Y))
+	var up := seat - Vector2(0, HIP_Y)
 	r.upper = Vector2(up.x * r.sx, up.y)  # (the body is placed unmirrored; its parts are drawn mirrored)
 	r.hips = up
 	var feet: Array = an.get("feet", [])
@@ -152,20 +204,19 @@ static func _anchored(r: Dictionary, an: Dictionary, view: int) -> Dictionary:
 	# Legs: from each hip down to its foothold, knees forward (side-on) or out.
 	r.legs = []
 	for i in 2:
-		var hip := up + (Vector2(-0.3 + 0.6 * i, -10) if side else Vector2(-1.7 + 3.4 * i, -10))
-		var foot: Vector2 = feet[i] if i < feet.size() else hip + Vector2(0, 10)
-		var bend := -1.0 if side else (1.0 if i == 0 else -1.0)
-		var k := _reach(hip, foot, THIGH, SHIN, bend)
-		r.legs.append({type = "limb", hip = hip, knee = k[0], foot = k[1], far = side and i == 0, shoe = "rect", e = 0.0})
+		var hip := up + (Vector2(-0.3 + 0.6 * i, HIP_Y) if side else Vector2(-1.7 + 3.4 * i, HIP_Y))
+		var foot: Vector2 = feet[i] if i < feet.size() else hip + Vector2(0, -HIP_Y)
+		var pref := Vector2.RIGHT if side else Vector2(-1.0 if i == 0 else 1.0, 0)
+		r.legs.append(_leg(hip, foot, side and i == 0, pref, {type = "limb", shoe = "rect", e = 0.0}))
 	# Arms: from the shoulders (which ride with the upper body) to each hold.
 	var arms := []
-	var shs := shoulders(view)
+	var shs := shoulders(view, r.girth)
 	for i in 2:
 		var sh: Vector2 = shs[i]
 		var hand: Vector2 = (hands[i] if i < hands.size() else up + sh + Vector2(0, 8)) - up
-		var bend := 1.0 if side else (-1.0 if i == 0 else 1.0)  # elbows down, or out
-		var k := _reach(sh, hand, UPPER_ARM, FOREARM, bend)
-		arms.append(_arm(sh, k[0], k[1], side and i == 0, {dim = 0.25 if side and i == 0 else 0.0, fist = true, idx = i}))
+		# (Elbows down side-on; out to the sides from the front or back.)
+		var pref := Vector2(0, 1) if side else Vector2(-1.0 if i == 0 else 1.0, 0)
+		arms.append(_reach_arm(sh, hand, pref, side and i == 0, {dim = 0.25 if side and i == 0 else 0.0, fist = true, idx = i}))
 	r.arms_back = arms.filter(func(a): return a.behind)
 	r.arms_front = arms.filter(func(a): return not a.behind)
 	r.head = Look.HEAD
@@ -179,28 +230,36 @@ static func local_dir(angle: float, sx: float) -> Vector2:
 	return Vector2(d.x * sx, d.y * 0.85)
 
 
-## Where the arms attach. Side-on, both shoulders sit near the middle of the body.
-static func shoulders(view: int) -> Array:
+## Where the arms attach. Side-on, both shoulders sit near the middle of the
+## body; from the front or back they sit at its edges, so a broader build has
+## them further apart.
+static func shoulders(view: int, girth := 1.0) -> Array:
 	if view == Look.SIDE:
 		return [Vector2(-0.6, -18.6), Vector2(0.6, -18.3)]
-	return [Vector2(-4.0, -18.6), Vector2(4.0, -18.6)]
+	return [Vector2(-4.0 * girth, -18.6), Vector2(4.0 * girth, -18.6)]
 
 
 # --- Legs ------------------------------------------------------------------------
-# Leg entries, in draw order:
-#   {type = "rect", x, lift, far}           straight down, front/back view
-#   {type = "line", hip, foot, far}         side view, knee bent a little forward
-#   {type = "limb", hip, knee, foot, far, shoe, e}   kicking
+# Every leg has hip, knee, foot and far; `type` says how Look draws it:
+#   "rect"  a straight column, front/back view (plus x, lift)
+#   "line"  side view, bent at the knee
+#   "limb"  kicking or sat on something (plus shoe, e)
 
 static func _legs(view: int, s: float, angle: float, sx: float, attack: int, ext: float) -> Array:
 	if attack == Look.KICK:
 		return _kick_legs(view, angle, sx, ext)
 	if view == Look.SIDE:
 		# Pendulum legs from the hip; whichever foot swings forward lifts a little.
-		return [{type = "line", hip = Vector2(-0.3, -10), foot = Vector2(-0.3 - s * 4.0, -maxf(0.0, -s) * 1.5), far = true},
-				{type = "line", hip = Vector2(0.3, -10), foot = Vector2(0.3 + s * 4.0, -maxf(0.0, s) * 1.5), far = false}]
-	return [{type = "rect", x = -3.1, lift = maxf(0.0, s) * 2.2, far = false},
-			{type = "rect", x = 0.3, lift = maxf(0.0, -s) * 2.2, far = false}]
+		return [_leg(Vector2(-0.3, HIP_Y), Vector2(-0.3 - s * 4.0, -maxf(0.0, -s) * 1.5), true),
+				_leg(Vector2(0.3, HIP_Y), Vector2(0.3 + s * 4.0, -maxf(0.0, s) * 1.5), false)]
+	return [_rect_leg(-3.1, maxf(0.0, s) * 2.2), _rect_leg(0.3, maxf(0.0, -s) * 2.2)]
+
+
+## A front/back leg: a column from the hip down, its foot lifted by `lift`.
+static func _rect_leg(x: float, lift: float, far := false) -> Dictionary:
+	var c := x + 1.4
+	return {type = "rect", x = x, lift = lift, far = far,
+			hip = Vector2(c, HIP_Y - 0.5), knee = Vector2(c, -5.6 - lift * 0.5), foot = Vector2(c, -lift)}
 
 
 static func _kick_legs(view: int, angle: float, sx: float, t: float) -> Array:
@@ -209,17 +268,17 @@ static func _kick_legs(view: int, angle: float, sx: float, t: float) -> Array:
 	var e := k.y
 	var d := local_dir(angle, sx)
 	if view == Look.SIDE:
-		# Standing leg braces back a little as the weight shifts.
-		var hip := Vector2(0.6, -10)
-		return [{type = "line", hip = Vector2(-0.3, -10), foot = Vector2(-1.8 * c, 0), far = true},
-				{type = "limb", hip = hip, far = false, shoe = "side_kick", e = e,
-				knee = (hip + Vector2(0.8, 5)).lerp(hip + Vector2(5.5, -2.5), c).lerp(hip + Vector2(6.2, -1.2 + d.y * 2.5), e),
-				foot = (hip + Vector2(0, 10)).lerp(hip + Vector2(4.0, 3.5), c).lerp(hip + Vector2(12.5, -1.0 + d.y * 5.0), e)}]
+		# Standing leg braces back a little as the weight shifts. The kicking foot
+		# chambers up by the knee, then snaps out; the knee follows it.
+		var hip := Vector2(0.6, HIP_Y)
+		var foot := (hip + Vector2(0, 10)).lerp(hip + Vector2(4.0, 3.5), c).lerp(hip + Vector2(12.5, -1.0 + d.y * 5.0), e)
+		return [_leg(Vector2(-0.3, HIP_Y), Vector2(-1.8 * c, 0), true),
+				_leg(hip, foot, false, Vector2(1.0, -1.0), {type = "limb", shoe = "side_kick", e = e})]
 	if view == Look.FRONT:
-		return [{type = "rect", x = -3.1, lift = 0.0, far = true}]  # the kicking leg is drawn over the body later
+		return [_rect_leg(-3.1, 0.0, true)]  # the kicking leg is drawn over the body later
 	# Kicking away from the camera: the leg drives up the screen, mostly behind the body.
-	var hip := Vector2(1.7, -10)
-	return [{type = "rect", x = -3.1, lift = 0.0, far = true},
+	var hip := Vector2(1.7, HIP_Y)
+	return [_rect_leg(-3.1, 0.0, true),
 			{type = "limb", hip = hip, far = false, shoe = "rect", e = e,
 			knee = (hip + Vector2(0.3, 5)).lerp(hip + Vector2(0.8, 1.0), c).lerp(hip + Vector2(0.6 + d.x * 1.5, 2.0), e),
 			foot = (hip + Vector2(0, 10)).lerp(hip + Vector2(0.6, 5.0), c).lerp(hip + Vector2(2.0 + d.x * 3.5, -2.0), e)}]
@@ -232,7 +291,7 @@ static func _front_kick(angle: float, sx: float, t: float) -> Dictionary:
 	var c := k.x
 	var e := k.y
 	var d := local_dir(angle, sx)
-	var hip := Vector2(1.7, -10.5)
+	var hip := Vector2(1.7, HIP_Y - 0.5)
 	return {hip = hip, e = e,
 			knee = (hip + Vector2(0.3, 5)).lerp(hip + Vector2(0.8, -3.5), c).lerp(hip + Vector2(0.6 + d.x * 1.5, -1.0), e),
 			foot = (hip + Vector2(0, 10)).lerp(hip + Vector2(0.6, 2.5), c).lerp(hip + Vector2(d.x * 3.5, 3.0), e)}
@@ -250,27 +309,30 @@ static func _arm(sh: Vector2, elbow: Vector2, hand: Vector2, behind: bool, extra
 
 
 ## Relaxed arms, swinging opposite to the legs.
-static func _idle_arms(view: int, s: float) -> Array:
-	if view == Look.SIDE:
-		var out := []
-		for behind in [true, false]:
-			var sw := s if behind else -s
-			var sh := Vector2(0.3, -18.4)
-			var elbow := sh + Vector2(sw * 1.8, 4.3)
-			out.append(_arm(sh, elbow, elbow + Vector2(sw * 2.4 + 0.6, 3.9), behind, {dim = 0.25 if behind else 0.0}))
-		return out
+static func _idle_arms(view: int, s: float, girth := 1.0) -> Array:
+	var shs := shoulders(view, girth)
 	var out := []
-	for side in [-1.0, 1.0]:
-		out.append(_arm(Vector2(4.0 * side, -18.6), Vector2(4.9 * side, -14.6), Vector2(5.0 * side, -10.9 + s * side * 1.3), false))
+	if view == Look.SIDE:
+		for i in 2:
+			var behind := i == 0
+			var sw := s if behind else -s
+			var hand: Vector2 = shs[i] + Vector2(sw * 4.2 + 0.6, 8.2)
+			out.append(_reach_arm(shs[i], hand, _elbow_pref(view, i), behind, {dim = 0.25 if behind else 0.0}, _elbow_bend(view)))
+		return out
+	for i in 2:
+		var side := -1.0 if i == 0 else 1.0
+		var hand: Vector2 = shs[i] + Vector2(1.0 * side, 7.7 + s * side * 1.3)
+		out.append(_reach_arm(shs[i], hand, _elbow_pref(view, i), false, {}, _elbow_bend(view)))
 	return out
 
 
 ## Boxing guard with fists by the chin; a punch drives one fist straight out
 ## along the aim. With a weapon, the right hand holds it instead.
-static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: float, weapon: Dictionary, weapon_l := {}) -> Array:
+static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: float, weapon: Dictionary,
+		weapon_l := {}, girth := 1.0) -> Array:
 	var d := local_dir(angle, sx)
 	var side := d.orthogonal().normalized()
-	var sh := shoulders(view)
+	var sh := shoulders(view, girth)
 	var chin := Vector2(0, -19.5) + d * 3.0
 	var guard := [chin + side * 2.4, chin - side * 2.4 + d * 1.2]
 	var reach := [Look.PUNCH_L, Look.PUNCH_R]
@@ -282,29 +344,49 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 		var behind := view == Look.BACK or (view == Look.SIDE and i == 0)
 		var dim := 0.25 if behind and view == Look.SIDE else 0.0
 		if i == 1 and not weapon.is_empty():
-			var main_arm := _weapon_arm(d, sh[1], Look.SWING if attack == Look.SWING else Look.NONE, ext, weapon, behind, dim)
+			var main_arm := _weapon_arm(d, sh[1], Look.SWING if attack == Look.SWING else Look.NONE, ext, weapon, behind, dim,
+					_elbow_pref(view, 1), _elbow_bend(view))
 			if two_hands:
 				# The other hand holds the handle lower down, so both arms follow the swing.
 				var far := view == Look.BACK or view == Look.SIDE
 				var dim0 := 0.25 if view == Look.SIDE else 0.0
-				var off: Vector2 = main_arm.hand - (main_arm.weapon.dir as Vector2) * 2.6
-				var off_arm := _arm(sh[0], sh[0].lerp(off, 0.5) + Vector2(0, 1.6), off, far, {fist = true, dim = dim0})
+				var off := _on_handle(sh[0], main_arm.hand, main_arm.weapon.dir, -2.6, weapon.get("len", 10.0))
+				var off_arm := _reach_arm(sh[0], off, _elbow_pref(view, 0), far, {fist = true, dim = dim0}, _elbow_bend(view))
 				out.insert(0, off_arm)  # replaces the guard arm
 				out.remove_at(1)
 			out.append(main_arm)
 			continue
 		if i == 0 and not weapon_l.is_empty() and not two_hands:
 			# A second weapon in the left hand: held and swung the same way, from the left shoulder.
-			out.append(_weapon_arm(d, sh[0], Look.SWING if attack == Look.SWING_L else Look.NONE, ext, weapon_l, behind, dim))
+			out.append(_weapon_arm(d, sh[0], Look.SWING if attack == Look.SWING_L else Look.NONE, ext, weapon_l, behind, dim,
+					_elbow_pref(view, 0), _elbow_bend(view)))
 			continue
 		var fist: Vector2 = guard[i]
 		if attack == reach[i]:
-			# Full reach sideways; foreshortened when punching toward or away from the camera.
+			# Straight out along the aim; foreshortened when punching toward or away from the camera.
 			fist = fist.lerp(sh[i] + Vector2(d.x * 13.0, d.y * 6.0) + Vector2(0, 2.0 * absf(d.y)), ext)
-		var bend := 1.0 - (ext if attack == reach[i] else 0.0)
-		var elbow: Vector2 = sh[i].lerp(fist, 0.5) + Vector2(0, 2.6 * bend) - side * (1.0 if i == 0 else -1.0) * 0.8 * bend
-		out.append(_arm(sh[i], elbow, fist, behind, {fist = true, dim = dim}))
+		out.append(_reach_arm(sh[i], fist, _elbow_pref(view, i), behind, {fist = true, dim = dim}, _elbow_bend(view)))
 	return out
+
+
+## Where a second hand grips a handle held at `hand` pointing along `dir`:
+## `want` along it (negative = toward the butt), or as near to that as an arm
+## from `sh` reaches. It stays on the handle either way.
+static func _on_handle(sh: Vector2, hand: Vector2, dir: Vector2, want: float, length: float) -> Vector2:
+	var lo := -3.0
+	var hi := length * 0.6
+	# Where along the handle is within reach: |hand + dir * t - sh| <= ARM.
+	var w := hand - sh
+	var b := w.dot(dir)
+	var disc := b * b - w.length_squared() + ARM * ARM
+	if disc < 0.0:
+		return hand + dir * clampf(-b, lo, hi)  # nowhere: as close as the handle comes
+	var root := sqrt(disc)
+	var t0 := maxf(lo, -b - root)
+	var t1 := minf(hi, -b + root)
+	if t0 > t1:
+		return hand + dir * (lo if -b < lo else hi)
+	return hand + dir * clampf(want, t0, t1)
 
 
 ## How each grip moves, as angles from the aim direction (radians):
@@ -344,20 +426,19 @@ static func stab_reach(t: float) -> float:
 
 
 ## The weapon hand: holds the weapon ready, or moves it through its attack.
-static func _weapon_arm(d: Vector2, sh: Vector2, attack: int, t: float, weapon: Dictionary, behind: bool, dim: float) -> Dictionary:
+static func _weapon_arm(d: Vector2, sh: Vector2, attack: int, t: float, weapon: Dictionary, behind: bool, dim: float,
+		elbow_pref: Vector2, bend: float) -> Dictionary:
 	var grip: String = weapon.get("grip", "swing")
 	var base := atan2(d.y, d.x)
 	var trail := PackedVector2Array()
 	var dv: Vector2
 	var hand: Vector2
+	var k := 0.0
 	if grip == "stab":
 		# Blade held low and forward, point toward the target; the thrust drives straight out.
-		var k := stab_reach(t) if attack == Look.SWING else 0.0
+		k = stab_reach(t) if attack == Look.SWING else 0.0
 		dv = Vector2.from_angle(base + 0.35 * (1.0 - maxf(k, 0.0)))
-		hand = sh + Vector2(d.x, d.y * 0.8) * (4.0 + 8.0 * k) + Vector2(0, 3.0 - 1.5 * maxf(k, 0.0))
-		if attack == Look.SWING and k > 0.5:
-			var tip: Vector2 = hand + dv * (weapon.len as float)
-			trail = PackedVector2Array([tip - dv * 6.0, tip])  # a short streak behind the point
+		hand = sh + Vector2(d.x, d.y * 0.8) * (4.0 + 4.5 * k) + Vector2(0, 3.0 - 1.5 * maxf(k, 0.0))
 	else:
 		var g: Array = GRIPS.get(grip, GRIPS.swing)
 		var a := base + (grip_angle(grip, t) if attack == Look.SWING else (g[0] as float))
@@ -367,11 +448,15 @@ static func _weapon_arm(d: Vector2, sh: Vector2, attack: int, t: float, weapon: 
 		if attack == Look.SWING and t > 0.3 and t < 0.62:
 			# Motion trail along the arc the weapon tip just travelled.
 			var reach: float = (g[3] as float) + weapon.len
-			for k in 7:
-				var ak := lerpf(base + (g[1] as float), a, k / 6.0)
+			for i in 7:
+				var ak := lerpf(base + (g[1] as float), a, i / 6.0)
 				trail.append(sh + Vector2(cos(ak), sin(ak) * (g[4] as float)) * reach)
-	return _arm(sh, sh.lerp(hand, 0.5) + Vector2(0, 1.4), hand, behind,
-			{fist = true, dim = dim, sleeve_dark = 0.05 + dim, sleeve_dim = 0.0, weapon = {dir = dv, draw = weapon, trail = trail}})
+	var arm := _reach_arm(sh, hand, elbow_pref, behind,
+			{fist = true, dim = dim, sleeve_dark = 0.05 + dim, sleeve_dim = 0.0, weapon = {dir = dv, draw = weapon, trail = trail}}, bend)
+	if grip == "stab" and attack == Look.SWING and k > 0.5:
+		var tip: Vector2 = (arm.hand as Vector2) + dv * (weapon.len as float)
+		arm.weapon.trail = PackedVector2Array([tip - dv * 6.0, tip])  # a short streak behind the point
+	return arm
 
 
 ## Arms reaching for you. Fat ones hang heavy by their sides, a screamer throws
@@ -387,28 +472,28 @@ static func _zombie_arms(view: int, phase: float, girth: float, breed := "normal
 	if bite >= 0.0:
 		grab = -0.4 * clampf(bite / 0.6, 0, 1) if bite < 0.6 else sin(clampf((bite - 0.6) / 0.4, 0, 1) * PI)
 	var howl := sin(clampf(scream, 0, 1) * PI)
+	var shs := shoulders(view, girth)
 	match view:
 		Look.SIDE:
 			var out := []
 			for i in 2:
 				var behind := i == 0
-				var y := -17.8 + (0.0 if behind else 0.8)
-				var sh := Vector2(0.4, y)
-				var hand := Vector2(10.0, y + 0.5 + arm_y + (sway if behind else -sway))
+				var sh: Vector2 = shs[i] + Vector2(0.6, 0.9)  # slumped forward
+				var hand := Vector2(10.0, sh.y + 0.5 + arm_y + (sway if behind else -sway))
 				if breed == "fat" or droop == i:
 					hand = Vector2(2.2, -10.8 + (sway if behind else -sway) * 0.4)
 				hand += Vector2(3.0 * grab, -1.5 * maxf(grab, 0.0))
 				hand = hand.lerp(Vector2(-3.0, -12.5), howl)
 				var extra := z.duplicate()
 				extra.dim = 0.25 if behind else 0.0
-				out.append(_arm(sh, sh.lerp(hand, 0.5) + Vector2(0, 0.6), hand, behind, extra))
+				out.append(_reach_arm(sh, hand, Vector2(0, 1), behind, extra))
 			return out
 		Look.FRONT:
 			var out := []
 			for i in 2:
 				var s := -1.0 if i == 0 else 1.0
 				# Reaching toward the camera: foreshortened, hands big and low.
-				var sh := Vector2(4.0 * s * girth, -18.6)
+				var sh: Vector2 = shs[i]
 				var hand := Vector2(2.8 * s * girth, -12.3 + sway * s + arm_y * 0.5)
 				var big := true
 				if breed == "fat" or droop == i:
@@ -418,6 +503,6 @@ static func _zombie_arms(view: int, phase: float, girth: float, breed := "normal
 				hand = hand.lerp(Vector2(6.5 * s * girth, -12.0), howl)
 				var extra := z.duplicate()
 				extra.big_hand = big and howl < 0.5
-				out.append(_arm(sh, sh.lerp(hand, 0.5) + Vector2(0.6 * s, 0), hand, false, extra))
+				out.append(_reach_arm(sh, hand, Vector2(s, 0.2), false, extra, _elbow_bend(view)))
 			return out
 	return []  # from behind, the arms reach away from the camera, hidden by the body
