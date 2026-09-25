@@ -66,6 +66,7 @@ var intersections: Array = []  # Rect2i
 var wires: Array = []  # [from, to] pole tops
 var checkpoint := Rect2i()  # the junction the army held
 var city_seed := 0  # the seed this city was built from
+var vehicles: Array = []  # bikes you can ride (see Vehicles)
 var things: Array = []  # {id, kind, cell, state}: taps, radios, vending machines (see Things)
 var thing_nodes: Array = []
 var bts_row := -1
@@ -82,6 +83,7 @@ func generate(seed_val: int) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_val
 	CityGen.build(self, rng)
+	Vehicles.setup(self)
 
 	astar.region = Rect2i(0, 0, W, H)
 	astar.cell_size = Vector2(TILE, TILE)
@@ -185,6 +187,8 @@ func _spawn_props() -> void:
 		if rec.kind in StreetProp.VEHICLES:
 			p.scale = Vector2.ONE * StreetProp.VEHICLE_SCALE  # vehicles the size of vehicles
 		prop_parent.add_child(p)
+		if rec.has("vehicle"):
+			vehicles[rec.vehicle].node = p
 	overhead = Overhead.new()
 	overhead.world = self
 	overhead.z_index = 4
@@ -367,8 +371,9 @@ func to_pos(c: Vector2i) -> Vector2:
 
 
 ## Move a body by `v`, sliding along walls one axis at a time.
-func slide(pos: Vector2, v: Vector2, r: float, roof := false) -> Vector2:
-	var stuck := _solid_corner_cells(pos, r, roof)
+## `road`: for a bike, which can't go indoors (floors and doorways are walls to it).
+func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false) -> Vector2:
+	var stuck := _solid_corner_cells(pos, r, roof, road)
 	if not stuck.is_empty():
 		# Already overlapping something solid (a door shut on us): only allow
 		# moves heading away from it, never deeper in or along it.
@@ -377,32 +382,34 @@ func slide(pos: Vector2, v: Vector2, r: float, roof := false) -> Vector2:
 			centre += to_pos(c) / stuck.size()
 		var away := pos - centre
 		for step in [v, Vector2(v.x, 0), Vector2(0, v.y)]:
-			if step.dot(away) > 0.0 and _solid_corner_cells(pos + step, r, roof).size() <= stuck.size():
+			if step.dot(away) > 0.0 and _solid_corner_cells(pos + step, r, roof, road).size() <= stuck.size():
 				return pos + step
 		return pos
 	var nx := pos + Vector2(v.x, 0)
-	if can_stand(nx, r, roof):
+	if can_stand(nx, r, roof, road):
 		pos = nx
 	var ny := pos + Vector2(0, v.y)
-	if can_stand(ny, r, roof):
+	if can_stand(ny, r, roof, road):
 		pos = ny
 	return pos
 
 
-func _solid_corner_cells(p: Vector2, r: float, roof: bool) -> Array:
+func _solid_corner_cells(p: Vector2, r: float, roof: bool, road := false) -> Array:
 	var out := []
 	for o in [Vector2(-r, -r), Vector2(r, -r), Vector2(-r, r), Vector2(r, r)]:
 		var c := to_cell(p + o)
-		if (not is_roof(c)) if roof else is_solid(c):
+		if (not is_roof(c)) if roof else (is_solid(c) or road and get_tile(c) in [FLOOR, DOOR]):
 			out.append(c)
 	return out
 
 
 ## On the ground, stand anywhere not solid; on the roof, only on shophouse roofs.
-func can_stand(p: Vector2, r: float, roof := false) -> bool:
+func can_stand(p: Vector2, r: float, roof := false, road := false) -> bool:
 	for o in [Vector2(-r, -r), Vector2(r, -r), Vector2(-r, r), Vector2(r, r)]:
 		var c := to_cell(p + o)
 		if (not is_roof(c)) if roof else is_solid(c):
+			return false
+		if road and get_tile(c) in [FLOOR, DOOR]:
 			return false
 	return true
 

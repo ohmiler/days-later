@@ -13,7 +13,7 @@ class_name SaveGame
 ## (world.save.v1 and so on). A save that cannot be read, or that comes from a
 ## newer game, is never written over: the game says so and leaves it alone.
 
-const VERSION := 8
+const VERSION := 9
 const GAME_VERSION := "0.4"  # shown to people; not used for compatibility
 
 ## [kind, from version] -> the function that upgrades it one step.
@@ -28,6 +28,7 @@ const MIGRATIONS := {
 	"world:6": "_world_6_to_7",
 	"world:7": "_world_7_to_8",
 	"player:7": "_player_7_to_8",
+	"world:8": "_world_8_to_9",
 }
 
 
@@ -92,7 +93,7 @@ static func save_world(main: Node) -> void:
 		seed = main.world_seed, gen = CityGen.GEN, day = main.day, time = main.time,
 		next_zid = main.next_zid, next_pickup = main.next_pickup,
 		doors = doors, searched = searched, stripped = stripped, boxes = boxes, pickups = items, zombies = zs,
-		things = main.things.changed(),
+		things = main.things.changed(), vehicles = main.vehicles.changed(),
 	})
 
 
@@ -139,6 +140,7 @@ static func load_world_into(main: Node, w: Dictionary) -> bool:
 			items.resize(FurnitureProp.SIZE)
 			world.container_nodes[id].items = items
 	main.things.restore(w.things)
+	main.vehicles.restore(w.vehicles)
 	for id in w.searched:
 		if id < world.container_nodes.size():
 			world.container_nodes[id].set_searched(true)
@@ -295,6 +297,12 @@ static func _world_7_to_8(d: Dictionary) -> Dictionary:
 
 static func _player_7_to_8(d: Dictionary) -> Dictionary:
 	d.merge({city = 0}, false)
+	return d
+
+
+## v9 remembers bikes that were ridden, fuelled or hotwired.
+static func _world_8_to_9(d: Dictionary) -> Dictionary:
+	d.merge({vehicles = {}}, false)
 	return d
 
 

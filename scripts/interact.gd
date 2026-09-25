@@ -66,6 +66,9 @@ static func _candidates(main: Node, p: Player) -> Array:
 		elif d.broken:
 			title = "ประตูพัง"
 		out.append({kind = "window" if win else "door", id = door, pos = w.to_pos(d.cell), title = title})
+	for v in w.vehicles:
+		if v.rider == 0 and p.position.distance_to(v.pos) < Vehicles.REACH:
+			out.append({kind = "vehicle", id = v.id, pos = v.pos + Vector2(0, -8), title = Vehicles.title_of(v)})
 	var here: BuildingProp = w.building_at.get(w.to_cell(p.position))
 	for th in w.things:
 		var at := w.to_pos(th.cell)
@@ -140,6 +143,8 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 					out.append(_act("claim", "ตั้งเป็นเตียงประจำ (ตายแล้วตื่นที่นี่)"))
 		"zombie":
 			out.append(_act("stomp", "เหยียบหัวให้ตาย"))
+		"vehicle":
+			out.append_array(main.vehicles.actions_for(p, t.id))
 	return out
 
 

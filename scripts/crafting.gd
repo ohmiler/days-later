@@ -181,6 +181,8 @@ func server_tick(p: Player, delta: float) -> void:
 			_finish_repair(p, job)
 		"strip":
 			_finish_strip(p, job.id)
+		"hotwire":
+			main.vehicles.finish_hotwire(p, job.id)
 	main.inventory._send_inv(p)
 
 

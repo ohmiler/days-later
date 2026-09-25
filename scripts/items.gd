@@ -26,7 +26,7 @@ const RARITY := {common = 4, uncommon = 2, rare = 1}
 const RARITY_NAMES := {common = "ธรรมดา", uncommon = "ไม่บ่อย", rare = "หายาก"}
 const RARITY_COLORS := {common = Color("c8c4b8"), uncommon = Color("6ab0e0"), rare = Color("e0b840")}
 ## Icon shapes an item's `icon` can use (drawn in draw_icon).
-const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain", "rag", "nails", "tape", "scrap", "magazine"]
+const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain", "rag", "nails", "tape", "scrap", "magazine", "jerrycan"]
 
 ## id -> fields, read from DATA the first time Items is used.
 static var DEFS: Dictionary = _load_defs()
@@ -427,6 +427,12 @@ static func _shape_icon(ci: CanvasItem, r: Rect2, icon: Dictionary) -> void:
 			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-12, 2) * s, c + Vector2(-4, -10) * s,
 					c + Vector2(9, -6) * s, c + Vector2(12, 6) * s, c + Vector2(-2, 10) * s]), col)
 			ci.draw_circle(c + Vector2(3, 2) * s, 3 * s, col2)  # rust
+		"jerrycan":
+			ci.draw_rect(Rect2(c - Vector2(9, 9) * s, Vector2(18, 21) * s), col)
+			ci.draw_rect(Rect2(c + Vector2(-9, -13) * s, Vector2(8, 4) * s), col.darkened(0.25))  # handle
+			ci.draw_rect(Rect2(c + Vector2(3, -13) * s, Vector2(4, 4) * s), col2)  # spout
+			ci.draw_line(c + Vector2(-7, -5) * s, c + Vector2(7, 9) * s, col.darkened(0.2), 1.5 * s)
+			ci.draw_line(c + Vector2(7, -5) * s, c + Vector2(-7, 9) * s, col.darkened(0.2), 1.5 * s)
 		"magazine":
 			ci.draw_rect(Rect2(c - Vector2(9, 12) * s, Vector2(18, 24) * s), col)
 			ci.draw_rect(Rect2(c - Vector2(9, 12) * s, Vector2(18, 7) * s), col2)

@@ -74,6 +74,8 @@ var sleeping := false  # lying on a bed: can't move, heals, the night goes faste
 var bed := -1  # the bed (container id) this survivor calls home: where they wake after dying
 var sleep_check := 0.0  # server: time to the next look around while asleep
 var sleep_bed := -1  # the bed slept in now (-1: the floor)
+var riding := -1  # the bike (World.vehicles id) being ridden, or -1
+var ride_vel := Vector2.ZERO  # a rider's speed and heading (server, and the rider's own machine)
 var sleep_safe := false  # server: that bed's building is shut tight (checked each second)
 var view := [Look.FRONT, false]
 var moving := false
@@ -138,6 +140,8 @@ func server_tick(delta: float) -> void:
 			sleeping = false  # getting up
 		else:
 			return
+	if riding >= 0:
+		return  # the bike moves them (Vehicles.server_tick)
 	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof)
 
 
@@ -277,7 +281,7 @@ func _process(delta: float) -> void:
 	if not multiplayer.is_server():
 		if is_local:
 			# Trust local prediction, but drift toward the server and snap on big errors.
-			if position.distance_to(net_pos) > 40:
+			if position.distance_to(net_pos) > (120.0 if riding >= 0 else 40.0):  # a bike outruns the snapshots
 				position = net_pos
 			else:
 				position = position.lerp(net_pos, minf(1.0, 2.0 * delta))
@@ -335,6 +339,14 @@ func _draw() -> void:
 		draw_string(UiTheme.heading(), Vector2(4 + t * 3, -14 - t * 5), "z", HORIZONTAL_ALIGNMENT_LEFT, -1, 9,
 				Color(0.9, 0.9, 1.0, 0.8 * (1.0 - t / 3.0)))
 		queue_redraw()
+		return
+	if riding >= 0 and riding < world.vehicles.size():
+		# Astride the bike: sitting up, hands forward on the bars, facing where it goes.
+		var dir: float = world.vehicles[riding].dir
+		Look.lift = Vector2(-2.0 * dir, -5.0)
+		Look.draw(self, {view = [Look.SIDE, dir < 0.0], angle = 0.0 if dir > 0.0 else PI, moving = false,
+				crouch = 4.0, guard = true}, look)
+		Look.lift = Vector2.ZERO
 		return
 	var wdef := Items.def(weapon_id)
 	var dur := 0.22
