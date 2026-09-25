@@ -144,7 +144,126 @@ func _wear_weapon(p: Player) -> void:
 	main.inventory._send_inv(p)
 
 
-## Guns come back later as loot; kept here for that milestone.
+## A shot from the gun in `hand`: each pellet flies along the aim, spread by
+## how steady you are, stops at the first wall or zombie. Loud enough to bring
+## the street. Worn guns jam; an empty one clicks.
+## How wide a gun's shots can fall (radians, each side): walking, a gun in one
+## hand with something in the other, a wounded arm all shake it. The aim guide
+## draws the same cone.
+## Where a shot along `dir` first meets a body standing at `feet`, or -1.
+## The body is the whole drawn figure, feet to head (not just its middle), so
+## a shot at the head or the legs lands.
+const BODY_W := 8.0
+static func body_hit(from: Vector2, dir: Vector2, feet: Vector2) -> float:
+	var best := -1.0
+	for y in [-3.0, -9.0, -15.0, -21.0, -27.0]:
+		var c := feet + Vector2(0, y)
+		var t := (c - from).dot(dir)
+		if t > 0 and (from + dir * t).distance_to(c) < BODY_W and (best < 0 or t < best):
+			best = t
+	return best
+
+
+## Aim help: with the cursor on a zombie's figure, aim at its middle.
+static func snap_aim(from: Vector2, mouse: Vector2, zombies: Array) -> Vector2:
+	var best := mouse
+	var best_d := 1e9
+	for z in zombies:
+		var d: Vector2 = mouse - z.position
+		if absf(d.x) < 12.0 and d.y > -32.0 and d.y < 4.0 and d.length() < best_d:
+			best_d = d.length()
+			best = z.position + Vector2(0, -14)
+	return best - from
+
+
+static func spread_of(p: Player, hand: String, moving: bool) -> float:
+	var gun = p.worn.get("hand_" + hand)
+	if gun == null:
+		return 0.0
+	var spread: float = deg_to_rad(Items.def(gun.id).get("spread", 3.0))
+	if Items.def(gun.id).get("pellets", 1) <= 1:
+		spread *= 0.25  # a steady single shot goes where you point it
+	if moving:
+		spread *= 1.8
+	if not Items.two_handed(gun.id) and p.worn.get("hand_" + ("l" if hand == "r" else "r")) != null:
+		spread *= 1.5
+	if p.wounds.any(func(w): return w.part in ["arms", "hands"] and not w.bandaged):
+		spread *= 1.5
+	return spread
+
+
+func fire(p: Player, hand: String) -> void:
+	var slot := "hand_" + hand
+	var gun = p.worn.get(slot)
+	if gun == null or p.aim == Vector2.ZERO:
+		return
+	var d := Items.def(gun.id)
+	p.shoot_cd = d.cd
+	if p.craft.get("kind", "") == "reload":
+		return  # hands busy
+	if gun.get("ammo", 0) <= 0:
+		p.shoot_cd = 0.4
+		fx_sound_at.rpc("gun_click", p.position)
+		main._toast(p, "กระสุนหมด · กด R บรรจุ")
+		return
+	if gun.hp < d.hp * 0.25 and randf() < 0.12:
+		fx_sound_at.rpc("gun_click", p.position)
+		main._toast(p, "ปืนติด! · ซ่อมด้วยเศษเหล็ก")
+		return
+	gun.ammo -= 1
+	gun.hp -= 1
+	var spread := spread_of(p, hand, p.move.length() > 0.1)
+	# The gun is where you're drawn: on a roof, lifted above your feet (aim is measured from there too).
+	var from := p.position + Look.CHEST + Vector2(0, -(main.world.roof_height(p.position) if p.on_roof else 0.0))
+	var base := p.aim.normalized()
+	var ends := []
+	var hit_any := false
+	for i in int(d.pellets):
+		var dir := base.rotated(randf_range(-spread, spread))
+		var length: float = d.range if p.on_roof else main.world.ray_length(from, dir, d.range)  # (from a roof you shoot over the street)
+		var hit: Zombie = null
+		for z: Zombie in main.zombies.values():
+			if p.on_roof and main.world.building_at.has(main.world.to_cell(z.position)):
+				continue  # indoors, under the roof: out of sight
+			var t := body_hit(from, dir, z.position)
+			if t > 0 and t < length:
+				length = t
+				hit = z
+		ends.append(from + dir * length)
+		if hit:
+			hit_any = true
+			var dmg: float = d.dmg * (1.0 if length < d.range * 0.5 else 0.6)  # (pellets lose their bite far out)
+			hit.hp -= dmg
+			hit.stun = maxf(hit.stun, 0.25)
+			hit.position = main.world.slide(hit.position, dir * 3.0, Zombie.RADIUS)
+			fx_hit.rpc(hit.zid, hit.position, dir, true, p.peer_id, "", dmg)
+			if hit.hp <= 0 and main.zombies.has(hit.zid):
+				_kill_zombie(hit, 1.0 if dir.x >= 0 else -1.0, "gun")
+				p.kills += 1
+	fx_shots.rpc(from, ends, gun.id, p.peer_id)
+	main._make_noise(p.position, d.noise)
+	if gun.hp <= 0:
+		p.worn.erase(slot)
+		p.refresh_wear()
+		main._toast(p, "%s พังแล้ว" % Items.display_name(gun.id))
+	main.inventory._send_inv(p)
+
+
+@rpc("authority", "call_local", "unreliable")
+func fx_shots(from: Vector2, ends: Array, gun: String, peer := 0) -> void:
+	main.tracers.append([from, ends[0], 0.07, peer])  # (just the flash at the muzzle; no bullet line)
+	Sfx.play(main, "shotgun" if gun == "shotgun" else "gunshot", from, 2.0)
+	var me: Player = main.players.get(multiplayer.get_unique_id())
+	if me and me.position.distance_to(from) < 300.0:
+		main.shake = maxf(main.shake, 3.0 if gun == "shotgun" else 1.8)
+
+
+@rpc("authority", "call_local", "unreliable")
+func fx_sound_at(name: String, pos: Vector2) -> void:
+	Sfx.play(main, name, pos)
+
+
+## Old single-shot fire, kept for reference until guns settle.
 func _fire(p: Player) -> void:
 	if p.aim == Vector2.ZERO:
 		return

@@ -69,9 +69,10 @@ static func stream(name: String) -> AudioStream:
 		var files := []
 		var base: String = ALIASES.get(name, name)
 		for i in 40:
-			var path := DIR + "%s_%d.ogg" % [base, i]
-			if ResourceLoader.exists(path):
-				files.append(load(path))
+			for ext in [".ogg", ".wav"]:  # (.wav: sounds made in code, like the gunshots)
+				var path := DIR + "%s_%d%s" % [base, i, ext]
+				if ResourceLoader.exists(path):
+					files.append(load(path))
 		if ResourceLoader.exists(DIR + base + ".ogg"):
 			files.append(load(DIR + base + ".ogg"))
 		if files.is_empty():

@@ -20,6 +20,7 @@ var net: Net
 var actions: Actions
 var things: Things
 var crafting: Crafting
+var admin: Admin
 var vehicles: Vehicles
 var port := PORT  # override with -- --port=N
 var world: World
@@ -93,6 +94,7 @@ func _ready() -> void:
 	actions = _module(Actions.new(), "Actions")
 	things = _module(Things.new(), "Things")
 	crafting = _module(Crafting.new(), "Crafting")
+	admin = _module(Admin.new(), "Admin")
 	vehicles = _module(Vehicles.new(), "Vehicles")
 	y_sort_enabled = true  # characters and trees are drawn back-to-front by their feet
 	shade = CanvasModulate.new()
@@ -139,6 +141,14 @@ func _ready() -> void:
 	ui.gear.salvage_requested.connect(func(idx: int): _request(&"req_salvage", [idx]))
 	ui.gear.repair_requested.connect(func(ref: Array): _request(&"req_repair", [ref]))
 	ui.gear.treat_requested.connect(func(i: int): _request(&"req_treat", [i]))
+	ui.admin.give_requested.connect(func(id: String, n: int): _request(&"req_give", [id, n]))
+	ui.admin.heal_requested.connect(func(): _request(&"req_heal", []))
+	ui.admin.clear_requested.connect(func(r: float): _request(&"req_clear", [r]))
+	ui.admin.time_requested.connect(func(t: float): _request(&"req_time", [t]))
+	ui.admin.zombie_requested.connect(func(kind: String):
+		var me: Player = players.get(multiplayer.get_unique_id())
+		if me:
+			_request(&"req_zombie", [me.position + Vector2(60, 0).rotated(randf() * TAU), kind]))
 	ui.gear.drop_requested.connect(func(ref: Array): _request(&"req_move", [ref, ["ground", -1]]))
 	ui.gear.box_closed.connect(func(): _request(&"req_close_box", []))
 	ui.chat_sent.connect(func(t: String): _request(&"req_chat", [t]))
@@ -360,6 +370,8 @@ func _server_tick(delta: float) -> void:
 		if p.alive() and p.shoot_cd <= 0 and p.riding < 0:
 			if p.kicking:
 				combat._melee(p, Look.KICK, combat.KICK)
+			elif p.punching and p.aiming and p.gun_hand() != "":
+				combat.fire(p, p.gun_hand())
 			elif p.punching:
 				# Swings alternate between the hands; a two-handed weapon uses both every time.
 				var hand := p.next_hand
@@ -372,6 +384,8 @@ func _server_tick(delta: float) -> void:
 					combat._melee(p, Look.PUNCH_R if hand == "r" else Look.PUNCH_L, combat.PUNCH)
 				else:
 					var w := Items.def(wid)
+					if Items.is_gun(wid):  # not aiming: a blow with it
+						w = {range = 17.0, dmg = w.bash, cd = 0.55, stun = 0.35, knock = 6.0, dur = 0.3}
 					var dual: bool = p.hand_weapon("r") != "" and p.hand_weapon("l") != ""
 					var dmg: float = w.dmg * (Items.OFF_HAND if hand == "l" else 1.0)
 					combat._melee(p, Look.SWING if hand == "r" else Look.SWING_L,
@@ -407,7 +421,7 @@ func _server_tick(delta: float) -> void:
 		var ps := []
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0],
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0, p.aiming],
 					p.app_code, p.wear_ids])
 		var zs := []
 		for z: Zombie in zombies.values():
@@ -480,7 +494,7 @@ func _module(m: Node, node_name: String) -> Node:
 func _handler(method: StringName) -> Node:
 	if has_method(method):
 		return self
-	for m in [combat, inventory, doors, survival, net, actions, things, crafting, vehicles]:
+	for m in [combat, inventory, doors, survival, net, actions, things, crafting, vehicles, admin]:
 		if m.has_method(method):
 			return m
 	push_error("No handler for %s" % method)
@@ -606,7 +620,10 @@ func _process(delta: float) -> void:
 		move += Vector2(float(Input.is_key_pressed(KEY_D)) - float(Input.is_key_pressed(KEY_A)),
 				float(Input.is_key_pressed(KEY_S)) - float(Input.is_key_pressed(KEY_W)))
 		move = move.limit_length(1.0)
-		var aim := get_global_mouse_position() - (me.position + Look.CHEST)
+		# From where you're drawn: up on a roof that's lifted above your feet.
+		var aim := get_global_mouse_position() - (me.position + Look.CHEST + Vector2(0, -me.lift))
+		if me.aiming:  # the cursor on a zombie aims at its middle
+			aim = Combat.snap_aim(me.position + Look.CHEST + Vector2(0, -me.lift), get_global_mouse_position(), zombies.values())
 		if e_down_at >= 0.0 and not ui.wheel.visible and Time.get_ticks_msec() / 1000.0 - e_down_at > WHEEL_HOLD \
 				and not last_actions.is_empty():
 			var centre: Vector2 = get_viewport().get_canvas_transform() * (last_target.pos + Vector2(0, -12 - me.lift))
@@ -631,7 +648,12 @@ func _process(delta: float) -> void:
 		if blocked:
 			move = Vector2.ZERO
 		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.wheel.visible and not over_gear and not over_bar and not blocked
-		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not over_bar and not over_gear and not blocked
+		# With a gun in hand the right button raises it to aim; without, it kicks. Space always kicks.
+		var rmb := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not over_bar and not over_gear and not blocked
+		var aiming := rmb and me.gun_hand() != ""
+		var kick := (rmb and not aiming) or (Input.is_key_pressed(KEY_SPACE) and not blocked)
+		me.aiming = aiming
+		Input.set_default_cursor_shape(Input.CURSOR_CROSS if aiming else Input.CURSOR_ARROW)
 		me.sneak = sneak_toggle or Input.is_key_pressed(KEY_CTRL)
 		me.sprint = Input.is_key_pressed(KEY_SHIFT) and not me.sneak
 		me.aim = aim
@@ -640,7 +662,7 @@ func _process(delta: float) -> void:
 			me.punching = punch
 			me.kicking = kick
 		else:
-			net.send_input.rpc_id(1, move, aim, punch, kick, me.sprint, me.sneak)
+			net.send_input.rpc_id(1, move, aim, punch, kick, me.sprint, me.sneak, aiming)
 			if me.riding >= 0 and me.alive():
 				Vehicles.step(me, world.vehicles[me.riding], move, delta, world)
 			elif me.alive() and not me.sleeping:
@@ -876,11 +898,16 @@ func _draw_fx() -> void:
 			fx.draw_line(p + Vector2.from_angle(a) * r * 0.5, p + Vector2.from_angle(a) * r * 1.4, Color(1, 0.85, 0.5, k), 0.7)
 	for tr in tracers:
 		var dir: Vector2 = (tr[1] - tr[0]).normalized()
-		var muzzle: Vector2 = tr[0] + Look.CHEST + Vector2(dir.x, dir.y * 0.85) * 13.5
-		fx.draw_line(muzzle, tr[1] + Look.CHEST, Color(1, 0.9, 0.5, 0.8), 1.0)
-		if tr[2] > 0.05:
-			fx.draw_circle(muzzle, 3.0, Color(1, 0.8, 0.3, 0.9))
-			fx.draw_circle(muzzle, 1.6, Color(1, 1, 0.8))
+		var muzzle: Vector2 = tr[0] + dir * 10.0
+		var shooter: Player = players.get(tr[3]) if tr.size() > 3 else null
+		if shooter:  # the tip of the gun as drawn
+			muzzle = fx.to_local(shooter.to_global(shooter.muzzle))
+		muzzle += dir * 1.5
+		# No bullet line: just a flash at the muzzle.
+		var k: float = tr[2] / 0.07
+		fx.draw_circle(muzzle, 7.0 * k, Color(1, 0.7, 0.2, 0.35 * k))
+		fx.draw_colored_polygon(PackedVector2Array([muzzle + dir.orthogonal() * 2.5 * k, muzzle + dir * 9.0 * k, muzzle - dir.orthogonal() * 2.5 * k]), Color(1, 0.85, 0.4, k))
+		fx.draw_circle(muzzle, 3.0 * k, Color(1, 1, 0.85, k))
 
 
 ## Ask the server to do something; the host just does it.
@@ -977,13 +1004,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			ui.toggle_map()
 		elif k == KEY_Z:
 			_request(&"req_sleep", [])
+		elif k == KEY_F2 and (multiplayer.is_server() or "--admin" in OS.get_cmdline_user_args()):
+			ui.admin.visible = not ui.admin.visible  # developer tools (see Admin)
 		elif k == KEY_C:
 			sneak_toggle = not sneak_toggle
 			ui.push_feed("ย่อง: เงียบ ช้า มองเห็นยาก" if sneak_toggle else "เลิกย่อง")
 		elif k == KEY_E:
 			e_down_at = Time.get_ticks_msec() / 1000.0
 		elif k == KEY_R:
-			_request(&"req_reinforce", [])
+			_request(&"req_reinforce", [])  # (boards up a door you face; otherwise reloads the gun in hand)
 		elif k == KEY_F:
 			_request(&"req_use", [])
 		elif k == KEY_G:

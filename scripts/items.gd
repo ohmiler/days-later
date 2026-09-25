@@ -25,7 +25,11 @@ const DUAL_SPEED := 0.6  # a weapon in each hand: each swing comes this much soo
 
 
 static func two_handed(id: String) -> bool:
-	return def(id).get("draw", {}).get("grip", "") in ["chop", "sweep"]
+	return def(id).get("draw", {}).get("grip", "") in ["chop", "sweep", "rifle"]
+
+
+static func is_gun(id: String) -> bool:
+	return def(id).get("type", "") == "gun"
 
 
 ## Where a bite can land. Zombies bite what's nearest their mouth: a forearm
@@ -47,14 +51,14 @@ const CARRY := 15.0
 const OVERLOAD := 1.5
 const OVERLOAD_SPEED := 0.6
 
-const TYPES := ["weapon", "use", "trap", "material", "wear", "junk"]
+const TYPES := ["weapon", "gun", "ammo", "use", "trap", "material", "wear", "junk"]
 const PLACES := ["store", "med", "food", "tools", "valuables", "clothes", "home"]
 ## How often searching turns each up, relative to each other.
 const RARITY := {common = 4, uncommon = 2, rare = 1}
 const RARITY_NAMES := {common = "ธรรมดา", uncommon = "ไม่บ่อย", rare = "หายาก"}
 const RARITY_COLORS := {common = Color("c8c4b8"), uncommon = Color("6ab0e0"), rare = Color("e0b840")}
 ## Icon shapes an item's `icon` can use (drawn in draw_icon).
-const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain", "rag", "nails", "tape", "scrap", "magazine", "jerrycan"]
+const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain", "rag", "nails", "tape", "scrap", "magazine", "jerrycan", "bullets", "shells"]
 
 ## id -> fields, read from DATA the first time Items is used.
 static var DEFS: Dictionary = _load_defs()
@@ -128,6 +132,12 @@ static func problems() -> Array:
 				for key in ["range", "dmg", "cd", "dur", "hp", "draw"]:
 					if not d.has(key):
 						out.append("%s: a weapon needs %s" % [id, key])
+			"gun":
+				for key in ["dmg", "pellets", "spread", "range", "cd", "mag", "ammo", "reload", "noise", "hp", "bash", "draw"]:
+					if not d.has(key):
+						out.append("%s: a gun needs %s" % [id, key])
+				if not DEFS.has(d.get("ammo", "")):
+					out.append("%s: takes unknown ammo %s" % [id, d.get("ammo")])
 			"wear":
 				if d.get("slot") not in SLOTS:
 					out.append("%s: unknown slot %s" % [id, d.get("slot")])
@@ -283,7 +293,7 @@ static func rarity_of(id: String) -> String:
 
 
 static func is_weapon(id: String) -> bool:
-	return def(id).get("type", "") == "weapon"
+	return def(id).get("type", "") in ["weapon", "gun"]
 
 
 static func display_name(id: String) -> String:
@@ -332,7 +342,7 @@ static func category(id: String) -> String:
 			return "material"
 		"wear":
 			return "clothes"
-		"weapon":
+		"weapon", "gun", "ammo":
 			return "weapon"
 	return "junk"
 
@@ -391,7 +401,7 @@ static func _pick(weights: Dictionary, rng: RandomNumberGenerator):
 static func draw_icon(ci: CanvasItem, r: Rect2, id: String) -> void:
 	var d := def(id)
 	var c := r.get_center()
-	if d.get("type") == "weapon":
+	if d.get("type") in ["weapon", "gun"]:
 		var w: Dictionary = d.draw
 		var dirv := Vector2(1, -1).normalized()
 		var scale: float = r.size.x / (w.len + 6.0) * 0.95
@@ -483,6 +493,16 @@ static func _shape_icon(ci: CanvasItem, r: Rect2, icon: Dictionary) -> void:
 			ci.draw_rect(Rect2(c + Vector2(3, -13) * s, Vector2(4, 4) * s), col2)  # spout
 			ci.draw_line(c + Vector2(-7, -5) * s, c + Vector2(7, 9) * s, col.darkened(0.2), 1.5 * s)
 			ci.draw_line(c + Vector2(7, -5) * s, c + Vector2(-7, 9) * s, col.darkened(0.2), 1.5 * s)
+		"bullets":
+			for i in 3:
+				var x := (-7 + i * 7) * s
+				ci.draw_rect(Rect2(c + Vector2(x - 2, -2 * s), Vector2(4, 10) * s), col)
+				ci.draw_colored_polygon(PackedVector2Array([c + Vector2(x - 2, -2 * s), c + Vector2(x + 2, -2 * s), c + Vector2(x, -7 * s)]), col2)
+		"shells":
+			for i in 3:
+				var x := (-7 + i * 7) * s
+				ci.draw_rect(Rect2(c + Vector2(x - 2.5, -7 * s), Vector2(5, 10) * s), col)
+				ci.draw_rect(Rect2(c + Vector2(x - 2.5, 3 * s), Vector2(5, 4) * s), col2)
 		"magazine":
 			ci.draw_rect(Rect2(c - Vector2(9, 12) * s, Vector2(18, 24) * s), col)
 			ci.draw_rect(Rect2(c - Vector2(9, 12) * s, Vector2(18, 7) * s), col2)

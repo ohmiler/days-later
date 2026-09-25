@@ -69,13 +69,16 @@ func run() -> void:
 	main.zombies.erase(z.zid)
 	# (Along whichever direction is open: the spawn point is random, and a
 	# building in the way would make this a test of path finding instead.)
-	var open_dir := Vector2.RIGHT
-	for dir in [Vector2.RIGHT, Vector2.LEFT, Vector2.DOWN, Vector2.UP]:
+	me.position = main.world.to_pos(main.world.spawn_cell)  # a street corner: open in some direction
+	var open_dir := Vector2.ZERO
+	for dir in [Vector2.RIGHT, Vector2.LEFT, Vector2.DOWN, Vector2.UP, Vector2(1, 1).normalized(), Vector2(-1, 1).normalized(),
+			Vector2(1, -1).normalized(), Vector2(-1, -1).normalized()]:
 		# (Clear at foot height and at eye height, where zombies look from: see Zombie._nearest_player.)
 		# ...and with room for the zombie to stand where it's put (not against a wall).
 		if main.world.ray_length(me.position + Vector2(0, -4), dir, 100.0) >= 100.0 				and main.world.ray_length(me.position + Vector2(0, -15), dir, 100.0) >= 100.0 				and main.world.can_stand(me.position + dir * 90.0, Zombie.RADIUS + 1.0):
 			open_dir = dir
 			break
+	check(open_dir != Vector2.ZERO, "found an open line to test along")
 	var far := zombie_at(me.position + open_dir * 90.0)
 	var d0 := far.position.distance_to(me.position)
 	simulate(2.0)

@@ -38,6 +38,8 @@ static var body_xf := Transform2D.IDENTITY  # on top of everything: a rider turn
 static var _girth := 1.0  # body width multiplier (fat and skinny zombies)
 static var lift := Vector2.ZERO  # draw everything this far up (standing on a roof); caller sets and resets  # whole-body transform (used to topple a falling body)
 static var _font: Font
+static var _cur_xf := Transform2D.IDENTITY  # the transform last set by _xf
+static var muzzle = null  # where the last gun drawn points out (in the canvas item's space), or null
 ## Menu option: no flying parts, wounds or spurting blood (fights still play the same).
 static var low_gore := false
 
@@ -204,7 +206,8 @@ static func _dress(lk: Dictionary, zombie: bool) -> Dictionary:
 
 ## Set the drawing transform for a body part, on top of the whole-body transform.
 static func _xf(ci: CanvasItem, pos: Vector2, scale: Vector2) -> void:
-	ci.draw_set_transform_matrix(body_xf * Transform2D(0.0, lift) * _base * Transform2D(0.0, scale, 0.0, pos))
+	_cur_xf = body_xf * Transform2D(0.0, lift) * _base * Transform2D(0.0, scale, 0.0, pos)
+	ci.draw_set_transform_matrix(_cur_xf)
 
 
 ## Pool of blood spreading from a body lying toward `dir` (k grows 0..1 over time).
@@ -605,6 +608,17 @@ static func _draw_weapon(ci: CanvasItem, hand: Vector2, dv: Vector2, w: Dictiona
 	var tip := hand + dv * L
 	var dark := Color("2a2420")
 	match w.kind:
+		"pistol", "shotgun":
+			muzzle = _cur_xf * (hand + dv * L)
+	match w.kind:
+		"pistol":
+			_limb(ci, hand - dv * 0.4 + n * 0.4, hand + dv * L, 1.5, 1.4, col)  # slide and barrel
+			_limb(ci, hand, hand - n * 2.4 + dv * 0.3, 1.5, 1.4, col.darkened(0.2))  # grip
+			_line(ci, hand + dv * 0.6 + n * 0.9, hand + dv * (L - 0.4) + n * 0.9, col.lightened(0.25), 0.3)
+		"shotgun":
+			_limb(ci, hand - dv * 3.0, hand + dv * 1.5, 2.2, 1.8, Color("6a4a30"))  # stock
+			_limb(ci, hand + dv * 1.0, hand + dv * L, 1.5, 1.3, col)  # barrel
+			_limb(ci, hand + dv * 5.0 - n * 0.6, hand + dv * 8.5 - n * 0.6, 1.6, 1.6, Color("5a4030"))  # pump
 		"plank":
 			_limb(ci, butt, tip, 2.3, 2.5, col)
 			_line(ci, butt + n * 0.4, tip + n * 0.4, col.lightened(0.15), 0.4)

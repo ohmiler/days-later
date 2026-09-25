@@ -18,6 +18,9 @@ class_name Rig
 ## Zombies also take: breed ("normal", "runner", "fat", "screamer"), bite
 ## (0..1 through a lunge, or absent), scream (0..1), hit (head snap offset),
 ## and vary: {tilt, arm_y, droop, limp} so no two shamble quite the same.
+static var aiming := false  # (set for one build: a gun is raised to the aim)
+
+
 static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var vf: Array = st.view
 	var angle: float = st.get("angle", 0.0)
@@ -29,6 +32,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var guard: bool = st.get("guard", false)
 	var weapon: Dictionary = st.get("weapon", {})
 	var weapon_l: Dictionary = st.get("weapon_l", {})  # a second weapon, in the left hand
+	aiming = st.get("aiming", false)
 	var fall: float = st.get("fall", 0.0)
 	var fall_dir: float = st.get("fall_dir", 1.0)
 	var girth: float = st.get("girth", 1.0) * lk.get("build", 1.0)
@@ -276,7 +280,7 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 	var reach := [Look.PUNCH_L, Look.PUNCH_R]
 	var out := []
 	var grip: String = weapon.get("grip", "swing")
-	var two_hands := grip in ["chop", "sweep"]
+	var two_hands := grip in ["chop", "sweep", "rifle"]
 	for i in 2:
 		# Back view: both arms are behind the body. Side view: the far arm (i == 0) is.
 		var behind := view == Look.BACK or (view == Look.SIDE and i == 0)
@@ -287,7 +291,8 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 				# The other hand holds the handle lower down, so both arms follow the swing.
 				var far := view == Look.BACK or view == Look.SIDE
 				var dim0 := 0.25 if view == Look.SIDE else 0.0
-				var off: Vector2 = main_arm.hand - (main_arm.weapon.dir as Vector2) * 2.6
+				# (A long gun's other hand is out along the barrel; a club's is lower on the handle.)
+				var off: Vector2 = main_arm.hand + (main_arm.weapon.dir as Vector2) * (5.0 if grip == "rifle" else -2.6)
 				var off_arm := _arm(sh[0], sh[0].lerp(off, 0.5) + Vector2(0, 1.6), off, far, {fist = true, dim = dim0})
 				out.insert(0, off_arm)  # replaces the guard arm
 				out.remove_at(1)
@@ -350,7 +355,15 @@ static func _weapon_arm(d: Vector2, sh: Vector2, attack: int, t: float, weapon: 
 	var trail := PackedVector2Array()
 	var dv: Vector2
 	var hand: Vector2
-	if grip == "stab":
+	if grip in ["pistol", "rifle"] and attack != Look.SWING:
+		# A gun: raised along the aim when aiming, else held low and forward.
+		if aiming:
+			dv = d.normalized()
+			hand = sh + Vector2(d.x, d.y * 0.8) * (7.5 if grip == "pistol" else 5.0) + Vector2(0, 1.0)
+		else:
+			dv = (Vector2(d.x, d.y * 0.6) + Vector2(0, 0.9)).normalized()
+			hand = sh + Vector2(d.x * 2.0, 5.5)
+	elif grip == "stab":
 		# Blade held low and forward, point toward the target; the thrust drives straight out.
 		var k := stab_reach(t) if attack == Look.SWING else 0.0
 		dv = Vector2.from_angle(base + 0.35 * (1.0 - maxf(k, 0.0)))
