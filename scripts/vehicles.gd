@@ -6,7 +6,9 @@ extends Node
 ## saved (like Things). A rider's movement is simulated the same way on the
 ## server and, to feel instant, on the rider's own machine (see step).
 ##
-## World.vehicles: [{id, model, seed, pos, dir, fuel, hp, key, upright, rider, node}]
+## World.vehicles: [{id, model, seed, pos, dir, view, fuel, hp, key, upright, rider, node}]
+## `view` is how it is seen: "side" (facing `dir`), "front" or "back", picked
+## from its heading the way a character's is (see BikeArt).
 
 const DATA := "res://data/vehicles.cfg"  # (exports must include *.cfg)
 const REACH := 22.0
@@ -48,11 +50,11 @@ static func setup(w: World) -> void:
 	for rec in w.street_props:
 		if rec.kind != "motorbike":
 			continue
-		var model := StreetProp.bike_model(rec.seed)
+		var model := BikeArt.bike_model(rec.seed)
 		var m: Dictionary = MODELS.get(model, MODELS.wave)
 		var h := World.hash01(rec.seed, 3, 17)
 		w.vehicles.append({id = w.vehicles.size(), model = model, seed = rec.seed, pos = rec.pos,
-				dir = 1.0 if rec.seed % 2 else -1.0, fuel = m.fuel * h * 0.6, hp = m.hp,
+				dir = 1.0 if rec.seed % 2 else -1.0, view = "side", fuel = m.fuel * h * 0.6, hp = m.hp,
 				key = World.hash01(rec.seed, 5, 23) < KEY_CHANCE, upright = rec.seed % 7 != 3, rider = 0, rec = rec})
 		rec.vehicle = w.vehicles.size() - 1
 
@@ -79,20 +81,32 @@ static func step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World
 	p.position = w.slide(p.position, p.ride_vel * delta, RADIUS, false, true)
 	if (p.position - before).length() < (p.ride_vel * delta).length() * 0.5:
 		p.ride_vel *= 0.3  # ran into something
-	if absf(p.ride_vel.x) > 8.0:
-		v.dir = signf(p.ride_vel.x)
+	turn_to(v, p.ride_vel)
 	v.pos = p.position
 	_place(v)
+
+
+## Face a bike the way it is going (only once it is really moving).
+static func turn_to(v: Dictionary, vel: Vector2) -> void:
+	if vel.length() < 12.0:
+		return
+	var prev := [Look.SIDE, v.dir < 0.0] if v.view == "side" else [Look.FRONT if v.view == "front" else Look.BACK, false]
+	var pv := Look.pick_view(vel.angle(), prev)
+	v.view = "side" if pv[0] == Look.SIDE else ("front" if pv[0] == Look.FRONT else "back")
+	if v.view == "side":
+		v.dir = -1.0 if pv[1] else 1.0
 
 
 ## Move a bike's drawing to where the bike is.
 static func _place(v: Dictionary) -> void:
 	v.rec.pos = v.pos
 	v.rec.dir = v.dir
+	v.rec.view = v.view
 	v.rec.upright = v.upright
 	var node: Node2D = v.get("node")
 	if node:
-		node.position = v.pos - Vector2(0, 0.5)  # just behind whoever is riding it
+		node.position = v.pos
+		node.visible = v.rider == 0  # a ridden bike is drawn by its rider, around them (see Player)
 		node.queue_redraw()
 
 
@@ -149,6 +163,7 @@ func mount(p: Player, id: int) -> void:
 	v.rider = p.peer_id
 	v.upright = true
 	v.touched = true
+	_place(v)
 	main.fx_sound.rpc("door", v.pos)
 	main._toast(p, "ขึ้นขี่%s · [E] ลงจากรถ" % MODELS[v.model].name)
 
@@ -159,20 +174,25 @@ func dismount(p: Player) -> void:
 	var v: Dictionary = main.world.vehicles[p.riding]
 	v.rider = 0
 	p.riding = -1
+	_place(v)
 	p.ride_vel = Vector2.ZERO
 	for off in [Vector2(0, 9), Vector2(0, -9), Vector2(10, 0), Vector2(-10, 0)]:
 		if main.world.can_stand(v.pos + off, Player.RADIUS):
 			p.position = v.pos + off
 			break
-	vehicle_state.rpc(v.id, v.pos, v.dir, v.fuel, v.hp, v.key, v.upright)
+	_send(v)
+
+
+func _send(v: Dictionary) -> void:
+	vehicle_state.rpc(v.id, v.pos, v.dir, v.fuel, v.hp, v.key, v.upright, v.view)
 
 
 func finish_hotwire(p: Player, id: int) -> void:
 	var v: Dictionary = main.world.vehicles[id]
 	v.key = true
 	v.touched = true
-	vehicle_state.rpc(v.id, v.pos, v.dir, v.fuel, v.hp, v.key, v.upright)
 	main._toast(p, "ต่อสายตรงสำเร็จ · ขี่ได้แล้ว")
+	_send(v)
 
 
 func refuel(p: Player, id: int) -> void:
@@ -186,7 +206,7 @@ func refuel(p: Player, id: int) -> void:
 	main.fx_sound.rpc("pickup", v.pos)
 	main._toast(p, "เติมน้ำมัน · %s" % title_of(v))
 	main.inventory._send_inv(p)
-	vehicle_state.rpc(v.id, v.pos, v.dir, v.fuel, v.hp, v.key, v.upright)
+	_send(v)
 
 
 ## What E can do with a bike.
@@ -213,12 +233,12 @@ func actions_for(p: Player, id: int) -> Array:
 
 # --- Saving and joining ------------------------------------------------------------
 
-## Bikes that differ from the generated city: id -> [pos, dir, fuel, hp, key, upright].
+## Bikes that differ from the generated city: id -> [pos, dir, fuel, hp, key, upright, view].
 func changed() -> Dictionary:
 	var out := {}
 	for v in main.world.vehicles:
 		if v.get("touched", false):
-			out[v.id] = [v.pos, v.dir, v.fuel, v.hp, v.key, v.upright]
+			out[v.id] = [v.pos, v.dir, v.fuel, v.hp, v.key, v.upright, v.view]
 	return out
 
 
@@ -238,8 +258,9 @@ func vehicles_sync(ch: Dictionary) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func vehicle_state(id: int, pos: Vector2, dir: float, fuel: float, hp: int, key: bool, upright: bool) -> void:
-	_apply(main.world.vehicles[id], [pos, dir, fuel, hp, key, upright])
+func vehicle_state(id: int, pos: Vector2, dir: float, fuel: float, hp: int, key: bool, upright: bool, view: String) -> void:
+	var v: Dictionary = main.world.vehicles[id]
+	_apply(v, [pos, dir, fuel, hp, key, upright, view])
 
 
 func _apply(v: Dictionary, e: Array) -> void:
@@ -249,5 +270,6 @@ func _apply(v: Dictionary, e: Array) -> void:
 	v.hp = e[3]
 	v.key = e[4]
 	v.upright = e[5]
+	v.view = e[6] if e.size() > 6 else "side"  # (saves from before bikes had front and back)
 	v.touched = true
 	_place(v)

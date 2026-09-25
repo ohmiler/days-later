@@ -64,6 +64,7 @@ var tracers: Array = []  # [from, to, ttl]
 var decals: Node2D
 var blood: Array = []  # [pos, radius, colour] - stays on the ground
 var sparks: Array = []  # [pos, ttl, strong]
+var dust: Array = []  # [pos, age]: kicked up by bikes turning hard
 var shake := 0.0
 const INTERACT_RANGE := 20.0
 var pickups := {}  # id -> {pos, item: {id, n, hp}} items lying on the ground
@@ -666,6 +667,9 @@ func _process(delta: float) -> void:
 	for sp in sparks:
 		sp[1] -= delta
 	sparks = sparks.filter(func(sp): return sp[1] > 0)
+	for d in dust:
+		d[1] += delta
+	dust = dust.filter(func(d): return d[1] < 0.6)
 	fx.queue_redraw()
 
 
@@ -843,6 +847,9 @@ func _draw_fx() -> void:
 		fx.draw_rect(r.grow(0.6), Color(0, 0, 0, 0.7))
 		fx.draw_rect(Rect2(r.position, Vector2(r.size.x * k, r.size.y)), Color(1, 0.85, 0.4))
 	# Impact burst: a bright flash with streaks flying out.
+	for d in dust:  # puffs that swell and fade
+		var k: float = d[1] / 0.6
+		fx.draw_circle(d[0] + Vector2(0, -2.0 * k), 2.0 + 4.0 * k, Color(0.72, 0.68, 0.6, 0.35 * (1.0 - k)))
 	for sp in sparks:
 		var k: float = sp[1] / 0.14
 		var p: Vector2 = sp[0]

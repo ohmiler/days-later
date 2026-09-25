@@ -62,7 +62,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 		bob += maxf(0.0, sin(phase * 0.5)) * 0.8 * vary.get("limp", 1.0)  # limp
 
 	var r := {view = view, sx = sx, girth = girth, base = base, tip = tip, fall_dir = fall_dir,
-			zombie = zombie, closed = fall >= 1.0, hips = Vector2.ZERO}
+			zombie = zombie, closed = fall >= 1.0, hips = Vector2.ZERO, shadow = st.get("shadow", true)}
 	if st.has("anchors") and fall <= 0.0:
 		return _anchored(r, st.anchors, view)
 	r.legs = _legs(view, s, angle, sx, attack, ext)

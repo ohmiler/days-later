@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 7
+const PROTOCOL := 8
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -227,14 +227,19 @@ func snapshot(ps: Array, zs: Array, t: float, d: int, rain := false) -> void:
 		p.bed = n[10]
 		p.sleep_bed = n[11]
 		if n[12] != p.riding and not (p.is_local and n[12] >= 0 and p.riding >= 0):
+			if p.riding >= 0:  # got off: the bike is drawn where it stands again
+				main.world.vehicles[p.riding].rider = 0
+				Vehicles._place(main.world.vehicles[p.riding])
 			p.riding = n[12]
 			p.ride_vel = Vector2.ZERO
+			if p.riding >= 0:
+				main.world.vehicles[p.riding].rider = p.peer_id
+				Vehicles._place(main.world.vehicles[p.riding])
 		if p.riding >= 0:
 			var v: Dictionary = main.world.vehicles[p.riding]
 			v.fuel = n[13]
 			if not p.is_local:  # someone else riding by: the bike goes with them
-				if absf(e[1].x - v.pos.x) > 0.5:
-					v.dir = signf(e[1].x - v.pos.x)
+				Vehicles.turn_to(v, (e[1] - v.pos) / main.SNAPSHOT_RATE)
 				v.pos = e[1]
 				v.upright = true
 				Vehicles._place(v)

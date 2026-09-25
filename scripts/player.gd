@@ -76,6 +76,14 @@ var sleep_check := 0.0  # server: time to the next look around while asleep
 var sleep_bed := -1  # the bed slept in now (-1: the floor)
 var riding := -1  # the bike (World.vehicles id) being ridden, or -1
 var ride_vel := Vector2.ZERO  # a rider's speed and heading (server, and the rider's own machine)
+# How a rider looks turning (every machine, just for show): the view the bike
+# is turning from, how far through the turn, and how far it leans.
+var turn_from := ["side", 1.0]
+var turn_t := 0.0
+var lean := 0.0
+var last_heading := 0.0
+var dust_t := 0.0
+const TURN_TIME := 0.16
 var sleep_safe := false  # server: that bed's building is shut tight (checked each second)
 var view := [Look.FRONT, false]
 var moving := false
@@ -194,6 +202,69 @@ func in_long_bed() -> bool:
 	return sleep_bed >= 0 and sleep_bed < world.container_nodes.size() 			and world.container_nodes[sleep_bed].data.get("long", 0) == 2
 
 
+## Astride a bike: the bike's far part, the rider sat on it (hands on the bars),
+## then its near part. Mid-turn, both squash thin as the view changes over,
+## so it reads as the bike swinging round; in a bend they lean in.
+func _draw_riding(v: Dictionary) -> void:
+	var view: String = v.view
+	var dir: float = v.dir
+	var squash := 1.0
+	if turn_t > 0.0:
+		var k := 1.0 - turn_t / TURN_TIME  # 0..1 through the turn
+		squash = maxf(0.18, absf(cos(k * PI)))
+		if k < 0.5:
+			view = turn_from[0]
+			dir = turn_from[1]
+	var xf := Transform2D(lean, Vector2(squash, 1.0), 0.0, Vector2.ZERO)
+	var rv := Look.SIDE if view == "side" else (Look.FRONT if view == "front" else Look.BACK)
+	var st := {view = [rv, dir < 0.0], anchors = BikeArt.rider_anchors(v.model, view), shadow = false}
+	BikeArt.draw(self, v.seed, view, dir, "far", xf)
+	Look.body_xf = xf
+	Look.draw(self, st, look)
+	Look.body_xf = Transform2D.IDENTITY
+	BikeArt.draw(self, v.seed, view, dir, "near", xf)
+
+
+## Every machine, each frame: notice the bike turning, lean into bends, kick up dust.
+func _ride_look(delta: float) -> void:
+	if turn_t > 0.0:
+		turn_t = maxf(0.0, turn_t - delta)
+	if riding < 0 or riding >= world.vehicles.size():
+		lean = 0.0
+		return
+	var v: Dictionary = world.vehicles[riding]
+	var now := [v.view, v.dir]
+	if now != _shown_view:
+		if not _shown_view.is_empty():
+			turn_from = _shown_view
+			turn_t = TURN_TIME
+		_shown_view = now
+	# Lean from how fast the heading is swinging round, and how fast we're going.
+	var vel := (position - last_pos_ride) / maxf(delta, 0.001)
+	last_pos_ride = position
+	var target := 0.0
+	if vel.length() > 20.0:
+		var h := vel.angle()
+		var turn := wrapf(h - last_heading, -PI, PI) / maxf(delta, 0.001)
+		last_heading = h
+		target = clampf(turn * 0.05 * minf(1.0, vel.length() / 150.0), -0.2, 0.2)
+		if v.view != "side":
+			target = -target if v.view == "back" else target
+		# Hard turns at speed throw up dust from the back wheel.
+		dust_t -= delta
+		if absf(target) > 0.12 and vel.length() > 100.0 and dust_t <= 0.0:
+			dust_t = 0.05
+			var main := get_parent()
+			if main.get("dust") != null:
+				main.dust.append([position - vel.normalized() * 10.0, 0.0])
+	lean = lerpf(lean, target, minf(1.0, 8.0 * delta))
+	queue_redraw()
+
+
+var _shown_view: Array = []
+var last_pos_ride := Vector2.ZERO
+
+
 ## Where this survivor comes back: beside their bed if they have one, else anywhere.
 func home_spawn() -> Vector2:
 	if bed >= 0 and bed < world.container_nodes.size():
@@ -278,6 +349,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	_ride_look(delta)
 	if not multiplayer.is_server():
 		if is_local:
 			# Trust local prediction, but drift toward the server and snap on big errors.
@@ -341,9 +413,7 @@ func _draw() -> void:
 		queue_redraw()
 		return
 	if riding >= 0 and riding < world.vehicles.size():
-		# Astride the bike: sitting up, hands forward on the bars, facing where it goes.
-		var v: Dictionary = world.vehicles[riding]
-		Look.draw(self, {view = [Look.SIDE, v.dir < 0.0], anchors = StreetProp.rider_anchors(v.model)}, look)
+		_draw_riding(world.vehicles[riding])
 		return
 	var wdef := Items.def(weapon_id)
 	var dur := 0.22
