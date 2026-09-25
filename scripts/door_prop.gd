@@ -75,6 +75,8 @@ func _draw_window() -> void:
 func _draw_structure(kind: String) -> void:
 	var T := World.TILE
 	var wood := Color("9a7650")
+	if door.broken and door.hp < 0.0:
+		return  # someone picked it back up
 	if door.broken:
 		for i in 4:  # wreckage
 			var x := 2.0 + i * 3.5

@@ -10,11 +10,17 @@ class_name SaveGame
 const VERSION := 1
 
 
-## One save slot for now. Automated test runs (started with `-s script`, which
-## replaces the main loop) get their own slot so they never touch a real save.
+## One save slot unless `-- --slot=name` picks another. Automated test runs
+## (started with `-s script`, which replaces the main loop) always get their
+## own slot so they never touch a real save.
 static func dir() -> String:
-	var testing: bool = Engine.get_main_loop().get_script() != null
-	return "user://saves/%s" % ("test" if testing else "city")
+	var slot := "city"
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--slot="):
+			slot = arg.trim_prefix("--slot=").validate_filename()
+	if Engine.get_main_loop().get_script() != null:
+		slot = "test"
+	return "user://saves/%s" % slot
 
 
 static func has_world() -> bool:

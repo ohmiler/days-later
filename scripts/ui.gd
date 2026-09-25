@@ -27,6 +27,7 @@ var tut: TutorialCard
 var feed: VBoxContainer
 var hotbar: InventoryBar
 var help: Control
+var wheel: ActionWheel
 var banner: Label
 var banner_t := 0.0
 var death_label: Label
@@ -274,6 +275,11 @@ func _build_hud() -> void:
 
 	hotbar = InventoryBar.new()
 	hud.add_child(hotbar)
+	wheel = ActionWheel.new()
+	wheel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	wheel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wheel.visible = false
+	add_child(wheel)
 
 	banner = _label("", UiTheme.heavy(), 34, Color("ff6a5a"))
 	banner.anchor_left = 0.5
@@ -621,7 +627,7 @@ class HelpSheet extends Control:
 		["[ลูกกลิ้ง]", "ซูมกล้อง"], ["[G]", "ทิ้งของ"],
 		["[Shift]", "วิ่ง (เร็ว แต่เสียงดัง)"], ["[Ctrl]/[C]", "ย่อง (เงียบ ซอมบี้เห็นยาก)"],
 		["[R]", "ตอกไม้เสริม / ซ่อมประตู"], ["[E] ที่บันได", "ขึ้น / ลงดาดฟ้า"],
-		["[H]", "เปิด / ปิดหน้านี้"],
+		["[E] ค้าง", "เลือกสิ่งที่จะทำกับของตรงหน้า"], ["[H]", "เปิด / ปิดหน้านี้"],
 	]
 
 	func _draw() -> void:
@@ -640,3 +646,61 @@ class HelpSheet extends Control:
 		draw_string(UiTheme.body(), Vector2(36, size.y - 30), "ทุก 3 วันจะมีคืนฝูง: ยึดร้านสักหลัง กด E ปิดประตู แล้วกด R ตอกไม้ให้แน่น",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(UiTheme.INK, 0.65))
 
+
+## Hold E: every action for the thing in front of you, around a ring. Point the
+## mouse at one and let go of E. Things you can't do are greyed out with why.
+class ActionWheel extends Control:
+	var title := ""
+	var items: Array = []
+	var centre := Vector2.ZERO
+	var selected := -1
+	const R := 92.0
+
+	func open(t: String, list: Array, at: Vector2) -> void:
+		title = t
+		items = list
+		centre = at
+		selected = -1
+		visible = true
+		queue_redraw()
+
+	func close() -> void:
+		visible = false
+
+	func chosen() -> Dictionary:
+		return items[selected] if selected >= 0 and items[selected].ok else {}
+
+	func point(mouse: Vector2) -> void:
+		var v := mouse - centre
+		var was := selected
+		selected = -1
+		if v.length() > 24.0 and not items.is_empty():
+			var step := TAU / items.size()
+			var a := fposmod(v.angle() + PI / 2 + step / 2, TAU)
+			selected = int(a / step) % items.size()
+		if selected != was:
+			queue_redraw()
+
+	func _slot_pos(i: int) -> Vector2:
+		var a := -PI / 2 + i * TAU / items.size()
+		return centre + Vector2.from_angle(a) * (R if items.size() > 1 else 0.0) + (Vector2(0, -R) if items.size() == 1 else Vector2.ZERO)
+
+	func _draw() -> void:
+		draw_circle(centre, R + 46, Color(0, 0, 0, 0.35))
+		draw_circle(centre, 22, UiTheme.CARD)
+		draw_string(UiTheme.heading(), centre + Vector2(-120, 6), title, HORIZONTAL_ALIGNMENT_CENTER, 240, 15, UiTheme.PAPER)
+		for i in items.size():
+			var a: Dictionary = items[i]
+			var p := _slot_pos(i)
+			var f := UiTheme.medium()
+			var w := maxf(f.get_string_size(a.label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + 28, 110)
+			var h := 34.0 if a.ok else 50.0
+			var r := Rect2(p - Vector2(w / 2, h / 2), Vector2(w, h))
+			var sel := i == selected
+			var bg := UiTheme.WARN if sel and a.ok else (Color(0.2, 0.18, 0.15, 0.95) if a.ok else Color(0.12, 0.11, 0.1, 0.9))
+			draw_style_box(UiTheme.box(bg, 8, UiTheme.WARN if sel else UiTheme.LINE, 2 if sel else 1), r)
+			var col := UiTheme.INK if sel and a.ok else (UiTheme.PAPER if a.ok else Color(UiTheme.PAPER, 0.4))
+			draw_string(f, Vector2(r.position.x, r.position.y + 23), a.label, HORIZONTAL_ALIGNMENT_CENTER, w, 16, col)
+			if not a.ok:
+				draw_string(UiTheme.body(), Vector2(r.position.x, r.position.y + 42), a.why, HORIZONTAL_ALIGNMENT_CENTER, w, 12, Color(1, 0.55, 0.45, 0.8))
+		draw_string(UiTheme.body(), centre + Vector2(-160, R + 70), "ชี้เมาส์แล้วปล่อย E", HORIZONTAL_ALIGNMENT_CENTER, 320, 13, Color(UiTheme.PAPER, 0.6))

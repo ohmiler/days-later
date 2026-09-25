@@ -79,6 +79,10 @@ var search_total := 1.0
 var hidden_building: BuildingProp  # the roof we lifted off because we are inside
 var prompt := ""  # "press E" hint drawn above whatever is in reach
 var prompt_pos := Vector2.ZERO
+var last_target := {}  # what E points at right now (client), for the hold-E wheel
+var last_actions: Array = []
+var e_down_at := -1.0  # when E went down; held long enough opens the wheel
+const WHEEL_HOLD := 0.25
 var grade_mat: ShaderMaterial
 var play_zoom := Vector2(4, 4)  # zoom to go back to after the death close-up
 
@@ -573,9 +577,20 @@ func req_reinforce() -> void:
 	var p := _sender()
 	if p == null or not p.alive():
 		return
-	var id := world.door_near(p.position, 18.0)
-	if id < 0:
-		return
+	var t := Interact.target(self, p)
+	var list := Interact.actions(self, p, t)
+	for verb in ["board", "repair"]:
+		var a := Interact.find_action(list, verb)
+		if not a.is_empty():
+			if a.ok:
+				_do_action(p, t, verb)
+			else:
+				_toast(p, a.why)
+			return
+
+
+## Nail a board across a door or window, or repair a broken door (server).
+func _reinforce(p: Player, id: int) -> void:
 	var slot := -1
 	for i in Items.INV_SIZE:
 		if p.inv[i] != null and p.inv[i].id == "wood":
@@ -584,10 +599,7 @@ func req_reinforce() -> void:
 		_toast(p, "ต้องมีไม้กระดาน")
 		return
 	var d: Dictionary = world.doors[id]
-	if world.is_built(id):
-		return
-	elif world.is_window(id) and not d.closed:
-		# Board over the smashed window.
+	if world.is_window(id) and not d.closed:
 		door_state.rpc(id, true, World.BOARD_HP, 1, false)
 		_toast(p, "ตอกไม้ปิดหน้าต่าง (1/%d)" % World.MAX_BOARDS)
 	elif d.broken:
@@ -876,110 +888,94 @@ func req_drop() -> void:
 	_send_inv(p)
 
 
-## E: pick up the nearest item on the ground, else start searching furniture.
+## E tapped: do the main action on whatever is in reach.
 @rpc("any_peer", "call_remote", "reliable")
 func req_interact() -> void:
 	var p := _sender()
 	if p == null or not p.alive():
 		return
-	# Stairs up or down, or jumping off the roof edge.
-	var st := _stairs_near(p.position)
-	if st != Vector2i(-1, -1):
-		p.on_roof = not p.on_roof
-		p.position = world.to_pos(st)
-		fx_sound.rpc("door", p.position)
-		_toast(p, "ขึ้นมาบนดาดฟ้า · ซอมบี้ตามขึ้นมาไม่ได้" if p.on_roof else "ลงมาข้างล่าง")
+	var t := Interact.target(self, p)
+	var a := Interact.primary(Interact.actions(self, p, t))
+	if a.is_empty():
 		return
-	if p.on_roof:
-		var drop := _jump_spot(p.position)
-		if drop != Vector2.INF:
+	if a.ok:
+		_do_action(p, t, a.verb)
+	else:
+		_toast(p, a.why)
+
+
+## A specific action chosen from the hold-E wheel. The server checks the target
+## is still in reach and the action still possible before doing it.
+@rpc("any_peer", "call_remote", "reliable")
+func req_act(kind: String, id: Variant, verb: String) -> void:
+	var p := _sender()
+	if p == null or not p.alive():
+		return
+	var t := Interact.resolve(self, p, kind, id)
+	var a := Interact.find_action(Interact.actions(self, p, t), verb)
+	if a.is_empty():
+		return
+	if a.ok:
+		_do_action(p, t, verb)
+	else:
+		_toast(p, a.why)
+
+
+func _do_action(p: Player, t: Dictionary, verb: String) -> void:
+	match verb:
+		"up", "down":
+			p.on_roof = verb == "up"
+			p.position = world.to_pos(t.id)
+			fx_sound.rpc("door", p.position)
+			_toast(p, "ขึ้นมาบนดาดฟ้า · ซอมบี้ตามขึ้นมาไม่ได้" if p.on_roof else "ลงมาข้างล่าง")
+		"jump":
+			var drop := Interact.jump_spot(world, p.position)
+			if drop == Vector2.INF:
+				return
 			p.on_roof = false
 			p.position = drop
 			p.take_damage(10)
 			fx_sound.rpc("kick", drop)
 			_make_noise(drop, NOISE_RUN)
 			_toast(p, "กระโดดลงมา! เจ็บขา")
-		return
-	var best := -1
-	var best_d := 14.0
-	for pid in pickups:
-		var d: float = p.position.distance_to(pickups[pid].pos)
-		if d < best_d:
-			best_d = d
-			best = pid
-	if best >= 0:
-		var item: Dictionary = pickups[best].item
-		var took := false
-		if item.get("n", 1) > 1 or Items.is_weapon(item.id):
-			for i in Items.INV_SIZE:
-				if p.inv[i] == null:
-					p.inv[i] = item.duplicate()
-					took = true
-					break
-		else:
-			took = _give(p, item.id)
-		if not took:
-			_toast(p, "กระเป๋าเต็ม")
-			return
-		pickup_del.rpc(best)
-		fx_sound.rpc("pickup", p.position)
-		_toast(p, "เก็บ %s" % Items.display_name(item.id))
-		_send_inv(p)
-		return
-	var door := _door_for_e(p.position)
-	if door >= 0:
-		_toggle_door(p, door)
-		return
-	var f := _container_near(p.position)
-	if f and not f.searched:
-		p.search_id = f.data.id
-		p.search_t = SEARCH_TIME
-		fx_sound.rpc("rustle", f.position)
-		_make_noise(f.position, NOISE_SEARCH)
-		_notify(p.peer_id, &"search_started", [SEARCH_TIME])
-
-
-func _stairs_near(pos: Vector2) -> Vector2i:
-	var c := world.to_cell(pos)
-	for dy in range(-1, 2):
-		for dx in range(-1, 2):
-			var s := c + Vector2i(dx, dy)
-			if world.stairs.has(s) and pos.distance_to(world.to_pos(s)) < 13.0:
-				return s
-	return Vector2i(-1, -1)
-
-
-## A spot on the street right next to the roof edge, to jump down to.
-func _jump_spot(pos: Vector2) -> Vector2:
-	for d in [Vector2(0, 20), Vector2(0, -20), Vector2(20, 0), Vector2(-20, 0)]:
-		var p: Vector2 = pos + d
-		if not world.is_roof(world.to_cell(p)) and world.can_stand(p, 5):
-			return p
-	return Vector2.INF
-
-
-## The door E would use: one you're standing in, or any close one when
-## there's no unsearched furniture in reach.
-func _door_for_e(pos: Vector2) -> int:
-	var door := world.door_near(pos, 15.0)
-	if door >= 0 and not world.is_built(door):
-		return door
-	var f := _container_near(pos)
-	if f == null or f.searched:
-		door = world.door_near(pos, 16.0)
-		return door if door >= 0 and not world.is_built(door) else -1
-	return -1
-
-
-func _container_near(pos: Vector2) -> FurnitureProp:
-	var best: FurnitureProp = null
-	var best_d := INTERACT_RANGE
-	for f: FurnitureProp in world.container_nodes:
-		var d := pos.distance_to(f.position)
-		if d < best_d:
-			best_d = d
-			best = f
-	return best
+		"take":
+			var item: Dictionary = pickups[t.id].item
+			var took := false
+			if item.get("n", 1) > 1 or Items.is_weapon(item.id):
+				for i in Items.INV_SIZE:
+					if p.inv[i] == null:
+						p.inv[i] = item.duplicate()
+						took = true
+						break
+			else:
+				took = _give(p, item.id)
+			if not took:
+				_toast(p, "กระเป๋าเต็ม")
+				return
+			pickup_del.rpc(t.id)
+			fx_sound.rpc("pickup", p.position)
+			_toast(p, "เก็บ %s" % Items.display_name(item.id))
+			_send_inv(p)
+		"take_trap":
+			var kind: String = world.doors[t.id].kind
+			if not _give(p, kind):
+				_toast(p, "กระเป๋าเต็ม")
+				return
+			door_state.rpc(t.id, false, -1.0, 0, true)  # hp -1: picked up, draw nothing
+			fx_sound.rpc("pickup", p.position)
+			_toast(p, "เก็บ%sคืน" % World.BUILDS[kind].name)
+			_send_inv(p)
+		"open", "close", "smash":
+			_toggle_door(p, t.id)
+		"board", "repair":
+			_reinforce(p, t.id)
+		"search":
+			var f: FurnitureProp = world.container_nodes[t.id]
+			p.search_id = t.id
+			p.search_t = SEARCH_TIME
+			fx_sound.rpc("rustle", f.position)
+			_make_noise(f.position, NOISE_SEARCH)
+			_notify(p.peer_id, &"search_started", [SEARCH_TIME])
 
 
 func _tick_search(p: Player, delta: float) -> void:
@@ -1271,7 +1267,13 @@ func _process(delta: float) -> void:
 				float(Input.is_key_pressed(KEY_S)) - float(Input.is_key_pressed(KEY_W)))
 		move = move.limit_length(1.0)
 		var aim := get_global_mouse_position() - (me.position + Look.CHEST)
-		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+		if e_down_at >= 0.0 and not ui.wheel.visible and Time.get_ticks_msec() / 1000.0 - e_down_at > WHEEL_HOLD \
+				and not last_actions.is_empty():
+			var centre: Vector2 = get_viewport().get_canvas_transform() * (last_target.pos + Vector2(0, -12 - me.lift))
+			ui.wheel.open(last_target.title, last_actions, centre)
+		if ui.wheel.visible:
+			ui.wheel.point(get_viewport().get_mouse_position())
+		var punch := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not ui.wheel.visible
 		var kick := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
 		me.sneak = sneak_toggle or Input.is_key_pressed(KEY_CTRL)
 		me.sprint = Input.is_key_pressed(KEY_SHIFT) and not me.sneak
@@ -1393,53 +1395,30 @@ func _update_inside(me: Player) -> void:
 
 func _update_prompt(me: Player) -> void:
 	prompt = ""
+	last_target = {}
+	last_actions = []
 	for f: FurnitureProp in world.container_nodes:
 		f.set_highlight(false)
 	if not me.alive():
 		return
-	var st := _stairs_near(me.position)
-	if st != Vector2i(-1, -1):
-		prompt = "[E] ลงบันได" if me.on_roof else "[E] ขึ้นดาดฟ้า"
-		prompt_pos = world.to_pos(st) + Vector2(0, -26 - me.lift)
+	var t := Interact.target(self, me)
+	var list := Interact.actions(self, me, t)
+	if list.is_empty():
 		return
-	if me.on_roof:
-		if _jump_spot(me.position) != Vector2.INF:
-			prompt = "[E] กระโดดลง (เจ็บ · เสียงดัง)"
-			prompt_pos = me.position + Vector2(0, -40 - me.lift)
-		return
-	for pid in pickups:
-		if me.position.distance_to(pickups[pid].pos) < 14.0:
-			prompt = "[E] เก็บ %s" % Items.display_name(pickups[pid].item.id)
-			prompt_pos = pickups[pid].pos + Vector2(0, -10)
-			return
-	var door := _door_for_e(me.position)
-	if door >= 0:
-		var d: Dictionary = world.doors[door]
-		var has_wood := me.inv.any(func(it): return it != null and it.id == "wood")
-		var board := "  [R] ตอกไม้" if has_wood and d.boards < World.MAX_BOARDS else ""
-		if world.is_window(door):
-			if not d.closed:
-				prompt = "หน้าต่างแตก · เดินปีนผ่านได้" + ("  [R] ตอกไม้ปิด" if has_wood else "")
-			elif d.boards == 0:
-				prompt = "[E] ทุบกระจก (เสียงดัง)" + board
-			else:
-				prompt = "หน้าต่างตอกไม้ (%d/%d)" % [d.boards, World.MAX_BOARDS] + board
-			prompt_pos = world.to_pos(d.cell) + Vector2(0, -22)
-			return
-		if d.broken:
-			prompt = "ประตูพัง" + ("  [R] ซ่อม" if has_wood else "  (ต้องมีไม้กระดาน)")
-		else:
-			if not d.closed and world.door_overlap(door, me.position) == 2:
-				prompt = "ถอยออกจากช่องประตูก่อนปิด"
-			else:
-				prompt = ("[E] เปิดประตู" if d.closed else "[E] ปิดประตู") + ("  [R] ตอกไม้" if has_wood and d.boards < World.MAX_BOARDS else "")
-		prompt_pos = world.to_pos(d.cell) + Vector2(0, -22)
-		return
-	var f := _container_near(me.position)
-	if f and not f.searched and (hidden_building != null or not world.building_at.has(world.to_cell(f.position))):
-		f.set_highlight(true)
-		prompt = "[E] ค้นหา"
-		prompt_pos = f.position + Vector2(0, -26)
+	var a := Interact.primary(list)
+	prompt = ("[E] " + a.label) if a.ok else "%s · %s" % [t.title, a.why]
+	if a.verb != "board":
+		var board := Interact.find_action(list, "board")
+		if not board.is_empty() and board.ok:
+			prompt += "  [R] ตอกไม้"
+	if list.size() > 1:
+		prompt += "  · ค้าง [E]"
+	var up := {stairs = -26.0, edge = -40.0, pickup = -10.0, trap = -14.0, door = -22.0, window = -22.0, container = -26.0}
+	prompt_pos = t.pos + Vector2(0, up.get(t.kind, -22.0) - me.lift)
+	if t.kind == "container":
+		world.container_nodes[t.id].set_highlight(true)
+	last_target = t
+	last_actions = list
 
 
 ## Anything standing in front of the local player turns see-through so you
@@ -1487,7 +1466,7 @@ func _draw_fx() -> void:
 		fx.draw_string(font, pos - Vector2(20, 0), "-" + dn[1], HORIZONTAL_ALIGNMENT_CENTER, 40, size, col)
 	if local:
 		_draw_roof_guides(local, font)
-	if prompt != "":
+	if prompt != "" and not ui.wheel.visible:
 		var sz := 5
 		var tw := UiTheme.draw_rich(fx, Vector2.ZERO, prompt, font, sz, UiTheme.PAPER, true)
 		var origin := prompt_pos + Vector2(-tw / 2 - 3, 0)
@@ -1572,6 +1551,18 @@ func _draw_decals() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if world and in_game and event is InputEventKey and not event.pressed and event.keycode == KEY_E and e_down_at >= 0.0:
+		e_down_at = -1.0
+		if ui.wheel.visible:
+			var a: Dictionary = ui.wheel.chosen()
+			ui.wheel.close()
+			if not a.is_empty():
+				_request(&"req_act", [last_target.kind, last_target.id, a.verb])
+		elif not last_actions.is_empty():
+			# A tap does exactly what the prompt says, on exactly what it points at.
+			var a := Interact.primary(last_actions)
+			_request(&"req_act", [last_target.kind, last_target.id, a.verb])
+		return
 	if world and in_game and event is InputEventKey and event.pressed and not event.echo:
 		var k: int = event.keycode
 		if k == KEY_H:
@@ -1582,7 +1573,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			sneak_toggle = not sneak_toggle
 			ui.push_feed("ย่อง: เงียบ ช้า มองเห็นยาก" if sneak_toggle else "เลิกย่อง")
 		elif k == KEY_E:
-			_request(&"req_interact", [])
+			e_down_at = Time.get_ticks_msec() / 1000.0
 		elif k == KEY_R:
 			_request(&"req_reinforce", [])
 		elif k == KEY_F:
