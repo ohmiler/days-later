@@ -173,25 +173,13 @@ static func _with_defaults(kind: String, state: Dictionary) -> Dictionary:
 ## come after everything else, so older saved cities keep their layout).
 static func place_all(w: World, rng: RandomNumberGenerator) -> void:
 	for rec in w.buildings:
-		if not rec.has("rooms"):
-			continue
-		var rooms: Array = rec.rooms
-		var clear: Array = rec.keep_clear
-		var back: Rect2i = rooms[-1]
-		if rng.randf() < 0.7:
-			# On the back wall of the back room: the kitchen tap.
-			for tries in 6:
-				var c := Vector2i(rng.randi_range(back.position.x, back.end.x - 1), back.position.y)
-				if c.x not in clear and _free(w, c):
-					_add(w, "tap", c)
-					break
-		if rng.randf() < 0.22:
-			var room: Rect2i = rooms[0]
-			for tries in 6:
-				var c := Vector2i(rng.randi_range(room.position.x, room.end.x - 1), rng.randi_range(room.position.y, room.end.y - 1))
-				if c.x not in clear and _free(w, c):
-					_add(w, "radio", c)
-					break
+		# Taps and radios go where the building's plan says (see CityGen._build_plan).
+		for c in rec.get("taps", []):
+			if rng.randf() < 0.7 and not w.blocked.has(c):
+				_add(w, "tap", c)
+		for c in rec.get("radios", []):
+			if rng.randf() < 0.22 and not w.blocked.has(c):
+				_add(w, "radio", c)
 		var r: Rect2i = rec.rect
 		if rec.kind == "store" or rng.randf() < 0.06:
 			for tries in 4:
@@ -199,15 +187,6 @@ static func place_all(w: World, rng: RandomNumberGenerator) -> void:
 				if w.get_tile(c) in [World.SIDEWALK, World.SOI] and CityGen._fits(w, [c]):
 					_add(w, "vending", c)
 					break
-
-
-static func _free(w: World, c: Vector2i) -> bool:
-	if w.get_tile(c) != World.FLOOR or w.blocked.has(c):
-		return false
-	for d in World.DIRS:
-		if w.get_tile(c + d) == World.DOOR or w.blocked.has(c + d):
-			return false
-	return true
 
 
 static func _add(w: World, kind: String, c: Vector2i) -> void:

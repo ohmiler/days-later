@@ -5,7 +5,10 @@ extends "res://tests/test_base.gd"
 ## purpose, update the fingerprints below (and think about old saves).
 
 const SEED := 777
-const FINGERPRINT := {tiles = 2602969692, doors = 1637543534, containers = 2894229382, buildings = 2748391889}
+## (Generator 2: deep shophouses from data/prefabs. Changing these means old
+## cities can no longer be rebuilt: bump CityGen.GEN so their saves move to a
+## new city instead of loading wrong.)
+const FINGERPRINT := {tiles = 168071936, doors = 644507242, containers = 30089227, buildings = 836967206}
 
 
 func _fingerprint(w: World) -> Dictionary:
@@ -31,6 +34,9 @@ func _make() -> World:
 
 
 func run() -> void:
+	var bad := CityGen.prefab_problems()
+	check(CityGen.PREFABS.size() >= 4, "the building plans load (%d)" % CityGen.PREFABS.size())
+	check(bad.is_empty(), "every plan is drawn correctly" + ("" if bad.is_empty() else ": " + "; ".join(bad)))
 	var a := _make()
 	var fa := _fingerprint(a)
 	for k in FINGERPRINT:
@@ -56,7 +62,10 @@ func run() -> void:
 				break
 		if not ok:
 			unreachable.append(d.cell)
-	check(unreachable.is_empty(), "every door can be walked up to from spawn (%d cannot: %s)" % [unreachable.size(), unreachable.slice(0, 5)])
+	for f in a.containers:
+		if not World.DIRS.any(func(dir): return not a.is_solid(f.cell + dir) and not a.path_between(start, a.to_pos(f.cell + dir)).is_empty()):
+			unreachable.append(f.cell)
+	check(unreachable.is_empty(), "every door and cupboard can be walked up to from spawn (%d cannot: %s)" % [unreachable.size(), unreachable.slice(0, 5)])
 	var kinds := {}
 	for p in a.street_props:
 		kinds[p.kind] = true

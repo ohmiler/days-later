@@ -13,7 +13,7 @@ class_name SaveGame
 ## (world.save.v1 and so on). A save that cannot be read, or that comes from a
 ## newer game, is never written over: the game says so and leaves it alone.
 
-const VERSION := 7
+const VERSION := 8
 const GAME_VERSION := "0.4"  # shown to people; not used for compatibility
 
 ## [kind, from version] -> the function that upgrades it one step.
@@ -26,6 +26,8 @@ const MIGRATIONS := {
 	"player:5": "_player_5_to_6",
 	"world:5": "_world_5_to_6",
 	"world:6": "_world_6_to_7",
+	"world:7": "_world_7_to_8",
+	"player:7": "_player_7_to_8",
 }
 
 
@@ -55,6 +57,8 @@ static func world_info() -> Dictionary:
 			return {day = r.data.get("day", 1)}
 		"newer":
 			return {problem = "เซฟนี้มาจากเกมเวอร์ชันใหม่กว่า · อัปเดตเกมก่อนเล่นต่อ"}
+		"oldcity":
+			return {day = r.data.get("day", 1), oldcity = true}
 		"corrupt":
 			return {problem = "อ่านเซฟไม่ได้ · เก็บไฟล์ไว้ให้แล้ว ไม่ได้ลบ"}
 	return {}
@@ -85,7 +89,7 @@ static func save_world(main: Node) -> void:
 	# game from starting at all, so we only get here with one we loaded.)
 	_write(dir() + "/world.save", {
 		version = VERSION, game = GAME_VERSION, saved_at = int(Time.get_unix_time_from_system()),
-		seed = main.world_seed, day = main.day, time = main.time,
+		seed = main.world_seed, gen = CityGen.GEN, day = main.day, time = main.time,
 		next_zid = main.next_zid, next_pickup = main.next_pickup,
 		doors = doors, searched = searched, stripped = stripped, boxes = boxes, pickups = items, zombies = zs,
 		things = main.things.changed(),
@@ -93,9 +97,26 @@ static func save_world(main: Node) -> void:
 
 
 ## Read the world save: {state, data}. state is "none", "ok", "newer" (from a
-## newer game) or "corrupt" (neither the save nor its backup could be read).
+## newer game), "corrupt" (neither the save nor its backup could be read) or
+## "oldcity" (made by an older city generator: its seed no longer builds the
+## same city, so it cannot be carried on; see move_to_new_city).
 static func load_world() -> Dictionary:
-	return _load(dir() + "/world.save", "world")
+	var r := _load(dir() + "/world.save", "world")
+	if r.state == "ok" and r.data.get("gen", 1) != CityGen.GEN:
+		r.state = "oldcity"
+	return r
+
+
+## Put an old-generator city aside (world.save becomes world.gen1.save and so
+## on, never deleted) so a new city starts in the same slot. The survivors'
+## saves stay: they carry their things into the new city.
+static func move_to_new_city() -> void:
+	var r := load_world()
+	var gen: int = r.data.get("gen", 1)
+	for ext in ["", ".bak"]:
+		var from: String = dir() + "/world.save" + ext
+		if FileAccess.file_exists(from):
+			DirAccess.rename_absolute(from, dir() + "/world.gen%d.save%s" % [gen, ext])
 
 
 ## Load the saved world into a freshly generated one (server only).
@@ -151,6 +172,7 @@ static func save_player(p: Player) -> void:
 		pos = p.position, on_roof = p.on_roof, hp = p.hp, kills = p.kills,
 		hunger = p.hunger, thirst = p.thirst, infection = p.infection, bleeding = p.bleeding, stamina = p.stamina,
 		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash, bed = p.bed,
+		city = p.world.city_seed if p.world else 0,
 	})
 
 
@@ -166,10 +188,12 @@ static func load_player_into(p: Player, name: String) -> bool:
 	if r.state != "ok":
 		return false
 	var d: Dictionary = r.data
-	p.bed = d.bed  # kept even after dying: the next survivor wakes there
+	var same_city: bool = p.world != null and d.city == p.world.city_seed
+	p.bed = d.bed if same_city else -1  # kept even after dying: the next survivor wakes there
 	if not d.get("alive", false):
 		return false  # they were dead when they left: a new survivor
-	p.position = d.pos
+	# Moved to a new city: they keep what they carry, and start at the spawn corner.
+	p.position = d.pos if same_city else p.world.spawn_point()
 	p.net_pos = d.pos
 	p.on_roof = d.on_roof
 	p.hp = d.hp
@@ -259,6 +283,18 @@ static func _world_5_to_6(d: Dictionary) -> Dictionary:
 ## v7 remembers furniture pulled apart for materials.
 static func _world_6_to_7(d: Dictionary) -> Dictionary:
 	d.merge({stripped = []}, false)
+	return d
+
+
+## v8 remembers which city generator made the city (1 before this) and which
+## city each survivor was in.
+static func _world_7_to_8(d: Dictionary) -> Dictionary:
+	d.merge({gen = 1}, false)
+	return d
+
+
+static func _player_7_to_8(d: Dictionary) -> Dictionary:
+	d.merge({city = 0}, false)
 	return d
 
 

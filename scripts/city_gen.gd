@@ -6,8 +6,8 @@ class_name CityGen
 
 const ROAD_W := 6
 const XS := [2, 42, 82, 122]  # left edge of each north-south avenue
-const YS := [2, 40, 80]  # top edge of each east-west avenue
-const CANAL_Y := 61  # canal rows 61..63, towpaths either side
+const YS := [2, 44, 92]  # top edge of each east-west avenue
+const CANAL_Y := 68  # canal rows 68..70, towpaths either side
 const SOI_W := 3
 
 const SIGNS := ["ข้าวมันไก่", "ก๋วยเตี๋ยวเรือ", "ร้านขายยา", "ซ่อมมอเตอร์ไซค์", "ร้านทอง", "กาแฟโบราณ",
@@ -18,15 +18,6 @@ const WALL_COLORS := [Color("e2d3b0"), Color("d8b48a"), Color("a8c8c0"), Color("
 const CAR_COLORS := [Color("e4e2dc"), Color("a8aaac"), Color("2a2c2e"), Color("8a2a26"), Color("34507a"), Color("6a6a5e")]
 const TAXI_COLORS := [Color("e0609a"), Color("e0802a"), Color("3a6ac8"), Color("3a8a4a")]
 ## Dressing for each kind of place (see DecorProp); floor things never block.
-const DECOR := {
-	"food": ["chairs", "pot", "chairs", "litter"],
-	"tools": ["tires", "bike", "oil", "litter"],
-	"med": ["boxes", "litter"],
-	"valuables": ["boxes", "litter"],
-	"clothes": ["boxes", "litter"],
-	"store": ["boxes", "litter", "litter"],
-	"home": ["mattress", "fan", "tv", "shrine", "litter"],
-}
 ## What a shop sells decides what you can find inside it (see Items.roll).
 const SIGN_LOOT := {
 	"ร้านขายยา": "med", "คลินิก": "med",
@@ -38,13 +29,74 @@ const SIGN_LOOT := {
 }
 
 
+## Which city generator this is. Saves remember it: a city saved by an older
+## generator cannot be rebuilt from its seed any more (see SaveGame).
+## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
+const GEN := 2
+const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
+const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
+const MAX_DEPTH := 15
+const PLAN_FURNITURE := {f = "fridge", c = "cabinet", s = "shelf", k = "counter", t = "table", x = "crate"}
+const PLAN_DECOR := {S = "stairs", m = "mattress", v = "tv", n = "fan", h = "shrine", o = "boxes", p = "pot",
+		r = "chairs", i = "tires", e = "bike", l = "oil"}
+const PLAN_OTHER := "WD.Bdw?bTR"
+
+## name -> {kinds, rows (Strings), stretch (bools), width}
+static var PREFABS: Dictionary = _load_prefabs()
+
+
+static func _load_prefabs() -> Dictionary:
+	var out := {}
+	for file in DirAccess.get_files_at(PREFAB_DIR):
+		if not file.ends_with(".txt") or file == "README.txt":
+			continue
+		var f := FileAccess.open(PREFAB_DIR.path_join(file), FileAccess.READ)
+		var p := {kinds = [], rows = [], stretch = [], width = 0}
+		while not f.eof_reached():
+			var line := f.get_line().strip_edges()
+			if line == "":
+				continue
+			if line.begins_with("kinds:"):
+				p.kinds = Array(line.trim_prefix("kinds:").strip_edges().split(" ", false))
+				continue
+			var stretch := line.begins_with("~")
+			p.rows.append(line.trim_prefix("~"))
+			p.stretch.append(stretch)
+		if not p.rows.is_empty():
+			p.width = p.rows[0].length()
+			out[file.get_basename()] = p
+	return out
+
+
+## What is wrong with the layouts, one line each (the tests run this).
+static func prefab_problems() -> Array:
+	var out := []
+	for name in PREFABS:
+		var p: Dictionary = PREFABS[name]
+		if p.kinds.is_empty():
+			out.append("%s: no kinds:" % name)
+		if p.rows.size() > MIN_DEPTH:
+			out.append("%s: %d rows deep, more than %d" % [name, p.rows.size(), MIN_DEPTH])
+		if not p.stretch.has(true):
+			out.append("%s: no ~ row to make it deeper" % name)
+		if p.rows[-1].count("D") != 1:
+			out.append("%s: the bottom row needs one front door D" % name)
+		for row in p.rows:
+			if row.length() != p.width:
+				out.append("%s: row '%s' is not %d wide" % [name, row, p.width])
+			for ch in row:
+				if not (PLAN_FURNITURE.has(ch) or PLAN_DECOR.has(ch) or ch in PLAN_OTHER):
+					out.append("%s: unknown letter '%s'" % [name, ch])
+	return out
+
+
 static func build(w: World, rng: RandomNumberGenerator) -> void:
 	w.fill(Rect2i(0, 0, World.W, World.H), World.GRASS)
 	for x in XS:
 		w.fill(Rect2i(x - 2, 0, ROAD_W + 4, World.H), World.SIDEWALK)
 	for y in YS:
 		w.fill(Rect2i(0, y - 2, World.W, ROAD_W + 4), World.SIDEWALK)
-	w.fill(Rect2i(0, CANAL_Y - 1, World.W, 5), World.SIDEWALK)
+	w.fill(Rect2i(0, CANAL_Y - 2, World.W, 7), World.SIDEWALK)  # towpaths two wide
 	w.fill(Rect2i(0, CANAL_Y, World.W, 3), World.WATER)
 	# Roads last, so avenues become bridges where they cross the canal.
 	for x in XS:
@@ -58,7 +110,7 @@ static func build(w: World, rng: RandomNumberGenerator) -> void:
 			w.intersections.append(Rect2i(x, y, ROAD_W, ROAD_W))
 
 	var bx := [[10, 40], [50, 80], [90, 120], [130, World.W]]
-	var by := [[10, 38], [48, CANAL_Y - 1], [CANAL_Y + 4, 78], [88, World.H]]
+	var by := [[10, 42], [52, CANAL_Y - 2], [CANAL_Y + 5, 90], [100, World.H]]
 	for i in bx.size():
 		for j in by.size():
 			var b := Rect2i(bx[i][0], by[j][0], bx[i][1] - bx[i][0], by[j][1] - by[j][0])
@@ -94,93 +146,129 @@ static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGen
 			rec.sign = "มินิมาร์ท 24 ชม."
 		"condo":
 			rec.floors = rng.randi_range(10, 14)
-	if kind in ["shop", "store"] and r.size.x >= 4:
-		_make_enterable(w, rec, rng)
+	if kind in ["shop", "store"]:
+		var plans := PREFABS.keys().filter(func(n): return kind in PREFABS[n].kinds and PREFABS[n].width == r.size.x)
+		plans.sort()
+		if not plans.is_empty():
+			_build_plan(w, rec, PREFABS[plans[rng.randi() % plans.size()]], rng)
 	w.buildings.append(rec)
 
 
-## Hollow the building out: walls round the edge, a floor, a door in the front
-## wall, and furniture along the back wall to search.
-static func _make_enterable(w: World, rec: Dictionary, rng: RandomNumberGenerator) -> void:
+## Build the inside of a shop or home from its plan (see data/prefabs/README.txt).
+static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: RandomNumberGenerator) -> void:
 	var r: Rect2i = rec.rect
-	var inner := r.grow(-1)
-	w.fill(r, World.IWALL)
-	w.fill(inner, World.FLOOR)
-	var door := r.position.x + rng.randi_range(1, r.size.x - 2)
-	_add_opening(w, Vector2i(door, r.end.y - 1), "door", rng)
-	rec.enter = true
-	rec.door = door - r.position.x
-	# A back door onto the soi behind, so a horde at the front isn't the end.
-	var back := -1
-	var behind := w.get_tile(Vector2i(r.position.x + 1, r.position.y - 1))
-	if behind in [World.SOI, World.SIDEWALK, World.DIRT, World.GRASS] and rng.randf() < 0.8:
-		back = r.position.x + rng.randi_range(1, r.size.x - 2)
-		if w.get_tile(Vector2i(back, r.position.y - 1)) in [World.SOI, World.SIDEWALK, World.DIRT, World.GRASS]:
-			_add_opening(w, Vector2i(back, r.position.y), "door", rng)
-		else:
-			back = -1
-	# Shop windows in the front wall either side of the door.
-	for x in range(r.position.x + 1, r.end.x - 1):
-		if x != door and rng.randf() < 0.6:
-			_add_opening(w, Vector2i(x, r.end.y - 1), "window", rng)
 	rec.table = "store" if rec.kind == "store" else SIGN_LOOT.get(rec.sign, "home")
-	# Deep shophouses split like the real thing: the shop at the front, living
-	# quarters at the back, joined by an inner door you can shut and board up
-	# as a second line of defence.
-	var rooms := [inner]
-	var inner_door := -1
-	if inner.size.y >= 5:
-		var wall_y := inner.position.y + inner.size.y / 2
-		w.fill(Rect2i(inner.position.x, wall_y, inner.size.x, 1), World.IWALL)
-		inner_door = inner.position.x + rng.randi_range(0, inner.size.x - 1)
-		_add_opening(w, Vector2i(inner_door, wall_y), "door", rng)
-		w.doors[-1].closed = false
-		w.doors[-1].broken = false
-		rooms = [Rect2i(inner.position.x, wall_y + 1, inner.size.x, inner.end.y - wall_y - 1),
-				Rect2i(inner.position.x, inner.position.y, inner.size.x, wall_y - inner.position.y)]
-	var keep_clear := [door, back, inner_door]  # columns that stay walkable
-	rec.rooms = rooms  # (kept for Things to place taps and radios later)
-	rec.keep_clear = keep_clear
-	_furnish(w, rooms[0], Items.FURNITURE[rec.table], rec.table, keep_clear)
-	if rooms.size() > 1:
-		_furnish(w, rooms[1], Items.FURNITURE["home"], "home", keep_clear)
-	_dress(w, rec, rooms, keep_clear, rng)
-
-
-## Searchable furniture spread along the rear wall of a room.
-static func _furnish(w: World, room: Rect2i, kinds: Array, table: String, keep_clear: Array) -> void:
-	var n := mini(room.size.x, kinds.size())
-	for i in n:
-		var x := room.position.x + int(round(float(i) * (room.size.x - 1) / maxf(1.0, n - 1.0))) if n > 1 else room.position.x
-		var cell := Vector2i(x, room.position.y)
-		if w.blocked.has(cell) or x in keep_clear:
-			continue
-		w.blocked[cell] = true
-		w.containers.append({id = w.containers.size(), kind = kinds[i], cell = cell, table = table})
-
-
-## Scatter decor over free floor (never on the walk between doors), put the
-## stairs in a corner of the back room, and hang a bulb in each room.
-static func _dress(w: World, rec: Dictionary, rooms: Array, keep_clear: Array, rng: RandomNumberGenerator) -> void:
-	for idx in rooms.size():
-		var room: Rect2i = rooms[idx]
-		var kinds: Array = DECOR.get(rec.table, DECOR.home) if idx == 0 else DECOR.home
-		var free := []
-		for y in range(room.position.y, room.end.y):
-			for x in range(room.position.x, room.end.x):
-				var c := Vector2i(x, y)
-				if x not in keep_clear and not w.blocked.has(c) and w.get_tile(c) == World.FLOOR:
-					free.append(c)
-		if idx == rooms.size() - 1 and not free.is_empty():
-			free.sort_custom(func(a, b): return a.x + a.y * 0.1 < b.x + b.y * 0.1)
-			var st: Vector2i = free.pop_at(0 if rng.randf() < 0.5 else free.size() - 1)
-			rec.stairs = st
-			w.stairs[st] = true
-			w.decor.append({kind = "stairs", cell = st, seed = 0, building = rec})
-		for i in mini(free.size(), rng.randi_range(1, 3)):
-			var c: Vector2i = free.pop_at(rng.randi() % free.size())
-			w.decor.append({kind = kinds[rng.randi() % kinds.size()], cell = c, seed = rng.randi(), building = rec})
-		w.decor.append({kind = "bulb", cell = Vector2i(room.get_center()), seed = 0, building = rec})
+	# Stretch the ~ rows to fill the plot's depth.
+	var extra: int = r.size.y - plan.rows.size()
+	var n_stretch: int = plan.stretch.count(true)
+	var rows := []
+	var k := 0
+	for i in plan.rows.size():
+		rows.append(plan.rows[i])
+		if plan.stretch[i]:
+			for j in extra / n_stretch + (1 if k < extra % n_stretch else 0):
+				rows.append(plan.rows[i])
+			k += 1
+	w.fill(r, World.IWALL)
+	var furniture := []  # [cell, letter]
+	var decor := []
+	var beds := {}
+	var front := Vector2i(-1, -1)
+	rec.taps = []
+	rec.radios = []
+	for y in rows.size():
+		for x in r.size.x:
+			var ch: String = rows[y][x]
+			var c := r.position + Vector2i(x, y)
+			match ch:
+				"W":
+					pass
+				"D":
+					_add_opening(w, c, "door", rng)
+					rec.door = x
+					front = c + Vector2i.UP
+				"B":
+					if w.get_tile(c + Vector2i.UP) in [World.SOI, World.SIDEWALK, World.DIRT, World.GRASS]:
+						_add_opening(w, c, "door", rng)
+				"d":
+					_add_opening(w, c, "door", rng)
+					w.doors[-1].closed = false
+					w.doors[-1].broken = false
+				"w":
+					if rng.randf() < 0.6:
+						_add_opening(w, c, "window", rng)
+				_:
+					w.fill(Rect2i(c, Vector2i.ONE), World.FLOOR)
+					if ch == "b":
+						beds[c] = true
+					if PLAN_FURNITURE.has(ch) or ch in "?b":
+						furniture.append([c, ch])
+					elif PLAN_DECOR.has(ch):
+						decor.append([c, PLAN_DECOR[ch]])
+					elif ch == "T":
+						rec.taps.append(c)
+					elif ch == "R":
+						rec.radios.append(c)
+	rec.enter = true
+	# Rooms: floor joined up without passing a door.
+	var room_of := {}
+	var rooms := []
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			var c := Vector2i(x, y)
+			if w.get_tile(c) != World.FLOOR or room_of.has(c):
+				continue
+			var cells := [c]
+			room_of[c] = rooms.size()
+			var box := Rect2i(c, Vector2i.ONE)
+			var i := 0
+			while i < cells.size():
+				for d in World.DIRS:
+					var nc: Vector2i = cells[i] + d
+					if r.has_point(nc) and w.get_tile(nc) == World.FLOOR and not room_of.has(nc):
+						room_of[nc] = rooms.size()
+						cells.append(nc)
+						box = box.expand(nc)
+				i += 1
+			rooms.append(box)
+	rec.rooms = rooms
+	rec.keep_clear = []
+	# The shop's own room holds what it sells; rooms with a bed are the family's.
+	var shop_room: int = room_of.get(front, -1)
+	var home_rooms := {}
+	for c in beds:
+		home_rooms[room_of[c]] = true
+	var sells: Array = Items.FURNITURE[rec.table]
+	var next_sold := 0
+	for e in furniture:
+		var c: Vector2i = e[0]
+		var kind: String = PLAN_FURNITURE.get(e[1], "")
+		if e[1] == "?":
+			if next_sold >= sells.size():
+				continue
+			kind = sells[next_sold]
+			next_sold += 1
+		var long := 0
+		if e[1] == "b":
+			if beds.has(c + Vector2i.UP):
+				continue  # the foot of a bed that starts above
+			kind = "bed"
+			long = 2 if beds.has(c + Vector2i.DOWN) else 0
+		var table: String = rec.table if room_of[c] == shop_room or home_rooms.is_empty() else "home"
+		var data := {id = w.containers.size(), kind = kind, cell = c, table = table}
+		if kind == "bed":
+			data.long = long
+			if long == 2:
+				w.blocked[c + Vector2i.DOWN] = true
+		w.blocked[c] = true
+		w.containers.append(data)
+	for e in decor:
+		w.decor.append({kind = e[1], cell = e[0], seed = rng.randi(), building = rec})
+		if e[1] == "stairs":
+			rec.stairs = e[0]
+			w.stairs[e[0]] = true
+	for box in rooms:
+		w.decor.append({kind = "bulb", cell = Vector2i(box.get_center()), seed = 0, building = rec})
 
 
 ## A door or window in a wall. Windows start intact (glass), some already smashed.
@@ -214,8 +302,8 @@ static func _shophouse_block(w: World, b: Rect2i, rng: RandomNumberGenerator) ->
 
 	var y := b.position.y
 	while y < b.end.y:
-		var depth := rng.randi_range(7, 9)
-		if y + depth > b.end.y:
+		var depth := mini(rng.randi_range(MIN_DEPTH, MAX_DEPTH), b.end.y - y)
+		if depth < MIN_DEPTH:
 			break
 		for s in segs:
 			_row(w, s[0], s[1], y, depth, rng)
@@ -235,15 +323,21 @@ static func _shophouse_block(w: World, b: Rect2i, rng: RandomNumberGenerator) ->
 
 static func _row(w: World, x0: int, x1: int, y: int, depth: int, rng: RandomNumberGenerator) -> void:
 	var x := x0
-	while x1 - x >= 2:
-		var bw := rng.randi_range(4, 6)
-		if x1 - x - bw < 2:
-			bw = x1 - x  # absorb a leftover sliver
-		if rng.randf() < 0.07 and bw >= 3:
+	while x < x1:
+		var left := x1 - x
+		if left < 5:
+			w.fill(Rect2i(x, y, left, depth), World.SOI)  # too narrow for a house: an alley
+			return
+		var bw := rng.randi_range(5, 7)
+		if left <= 7:
+			bw = left
+		elif left - bw < 5:
+			bw = 5
+		if rng.randf() < 0.07:
 			w.fill(Rect2i(x, y, 2, depth), World.SOI)  # narrow walkway between buildings
 			x += 2
 			continue
-		add_building(w, Rect2i(x, y, bw, depth), "store" if rng.randf() < 0.08 and bw >= 4 else "shop", rng)
+		add_building(w, Rect2i(x, y, bw, depth), "store" if bw == 7 and rng.randf() < 0.25 else "shop", rng)
 		x += bw
 
 
@@ -330,7 +424,7 @@ static func _street_furniture(w: World, rng: RandomNumberGenerator) -> void:
 		for o in outer:
 			for i in range(4, World.W if rd.horizontal else World.H, 9):
 				var c := Vector2i(i, o) if rd.horizontal else Vector2i(o, i)
-				if w.get_tile(c) == World.SIDEWALK and rng.randf() < 0.55:
+				if w.get_tile(c) == World.SIDEWALK and rng.randf() < 0.55 						and World.DIRS.all(func(d): return w.get_tile(c + d) != World.DOOR):  # never in front of a door
 					w.fill(Rect2i(c, Vector2i.ONE), World.TREE)
 		# Abandoned traffic.
 		var length := World.W if rd.horizontal else World.H
@@ -537,7 +631,7 @@ static func _size_beds(w: World) -> void:
 		if not rec.has("keep_clear"):
 			continue
 		for f in w.containers:
-			if f.kind != "bed" or not rec.rect.has_point(f.cell):
+			if f.kind != "bed" or f.has("long") or not rec.rect.has_point(f.cell):
 				continue
 			for side in [2, 1, -1]:
 				var step := Vector2i.DOWN if side == 2 else Vector2i(side, 0)
