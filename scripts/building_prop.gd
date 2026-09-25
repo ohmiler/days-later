@@ -14,6 +14,8 @@ var h := 0.0  # facade height in px
 var glow: Node2D  # unshaded layer for lit windows and signs at night
 var interior: Array = []  # nodes only shown while the roof is lifted off (hanging bulb)
 var rng := RandomNumberGenerator.new()
+var extra := RandomNumberGenerator.new()  # details added later; separate so the old ones stay put
+const GRAFFITI := ["ช่วยด้วย", "มีคนรอด", "อย่าเข้า", "หนีไปวัด", "ติดเชื้อ", "SOS", "ไม่มีของแล้ว"]
 
 
 func setup(rec: Dictionary) -> void:
@@ -59,6 +61,7 @@ func _notification(what: int) -> void:
 
 func _draw() -> void:
 	rng.seed = data.seed
+	extra.seed = data.seed * 31 + 13
 	match data.kind:
 		"shop":
 			_draw_shop()
@@ -96,7 +99,9 @@ func _flat_roof(col: Color) -> void:
 		for i in 3:
 			draw_circle(Vector2(rng.randf() * w, -h - rng.randf() * d), rng.randf_range(3, 7), Color(0.45, 0.22, 0.1, 0.3))
 	else:
-		draw_rect(roof, Color("6e6a63"))
+		# Bare concrete in a few shades, or painted with green or red waterproofing.
+		var tones := [Color("6e6a63"), Color("7a746a"), Color("64625c"), Color("827a6c"), Color("5e7258"), Color("8a5a4a")]
+		draw_rect(roof, tones[extra.randi() % tones.size()])
 		for i in 4:  # water stains and patch repairs
 			draw_circle(Vector2(rng.randf() * w, -h - rng.randf() * d), rng.randf_range(3, 9), Color(0, 0, 0, 0.1))
 		draw_rect(Rect2(rng.randf() * (w - 12), -h - d + rng.randf() * (d - 8), 12, 8), Color("7c786f"))
@@ -127,6 +132,58 @@ func _flat_roof(col: Color) -> void:
 		var a := Vector2(rng.randf_range(4, w - 4), -h - d + 6)
 		draw_line(a, a + Vector2(0, -12), Color("333333"), 0.6)  # antenna
 		draw_line(a + Vector2(-3, -10), a + Vector2(3, -10), Color("333333"), 0.6)
+	_roof_life()
+
+
+## What else ends up on a Bangkok roof, and what the survivors left up there.
+func _roof_life() -> void:
+	var top := -h - d
+	var e := extra
+	draw_rect(Rect2(0, -h - 5, w, 2), Color(0, 0, 0, 0.12))  # shade behind the front parapet
+	if e.randf() < 0.35:
+		# Moss and weeds along the parapets.
+		for i in e.randi_range(3, 7):
+			var p := Vector2(e.randf_range(2, w - 2), top + (3.0 if e.randf() < 0.5 else d - 5.0))
+			draw_circle(p, e.randf_range(1.2, 2.6), Color("4e6a34").lightened(e.randf() * 0.15))
+	if e.randf() < 0.3 and w > 30:
+		# Stainless-steel water tank up on legs.
+		var p := Vector2(e.randf_range(10, w - 12), top + e.randf_range(10, maxf(11.0, d - 6)))
+		for x in [-3.0, 3.0]:
+			draw_line(p + Vector2(x, 0), p + Vector2(x, -5), Color("5a5a56"), 0.8)
+		draw_rect(Rect2(p + Vector2(-5, -12), Vector2(10, 7)), Color("b8bcc0"))
+		draw_rect(Rect2(p + Vector2(-5, -12), Vector2(10, 1.6)), Color("dde0e2"))
+		draw_line(p + Vector2(-2, -12), p + Vector2(-2, -5), Color(1, 1, 1, 0.35), 0.8)
+	if e.randf() < 0.25:
+		var p := Vector2(e.randf_range(6, w - 6), top + e.randf_range(6, maxf(7.0, d - 4)))
+		draw_set_transform(p, -0.5, Vector2(1, 0.7))
+		draw_circle(Vector2.ZERO, 3.2, Color("c8c8c2"))  # satellite dish
+		draw_circle(Vector2(0.5, 0.3), 2.2, Color("a8a8a2"))
+		draw_set_transform(Vector2.ZERO)
+		draw_line(p, p + Vector2(2.5, 2), Color("5a5a56"), 0.6)
+	if e.randf() < 0.12 and w > 30:
+		var p := Vector2(e.randf_range(4, w - 20), top + 4)
+		draw_rect(Rect2(p, Vector2(15, 7)), Color("243a5a"))  # solar water heater
+		for i in 4:
+			draw_line(p + Vector2(i * 3.7 + 1, 0), p + Vector2(i * 3.7 + 1, 7), Color("3a5a8a"), 0.5)
+	if e.randf() < 0.2:
+		var p := Vector2(e.randf_range(4, w - 10), top + e.randf_range(6, maxf(7.0, d - 4)))
+		draw_line(p, p + Vector2(9, 3), Color("7a5a3a"), 1.4)  # planks and a tyre
+		draw_circle(p + Vector2(3, 5), 2.4, Color("1e1e1e"))
+		draw_circle(p + Vector2(3, 5), 1.0, Color("3a3a3a"))
+	# Survivors were up here once.
+	var roll := e.randf()
+	if roll < 0.06 and w > 40 and d > 40:
+		var font := Look.thai_font()
+		var p := Vector2(w * 0.5, top + d * 0.5 + 6)
+		draw_string(font, p - Vector2(20, 0), "SOS", HORIZONTAL_ALIGNMENT_CENTER, 40, 18, Color(0.95, 0.93, 0.88, 0.8))
+	elif roll < 0.1:
+		var p := Vector2(e.randf_range(4, maxf(5.0, w - 22)), top + e.randf_range(6, maxf(7.0, d - 14)))
+		draw_colored_polygon(PackedVector2Array([p + Vector2(0, 10), p + Vector2(9, 0), p + Vector2(18, 10)]), Color("2a6ab8"))  # tarp shelter
+		draw_colored_polygon(PackedVector2Array([p + Vector2(9, 0), p + Vector2(18, 10), p + Vector2(20, 9), p + Vector2(11, -1)]), Color("1e4a88"))
+		draw_rect(Rect2(p + Vector2(2, 10), Vector2(12, 3)), Color("c8b8a0"))  # a mattress
+		draw_circle(p + Vector2(20, 12), 1.4, Color("4a4a4a"))  # cooking pot
+	elif roll < 0.13 and w > 40:
+		_text(Rect2(0, top + d * 0.4, w, 10), "ช่วยด้วย", Color(0.95, 0.93, 0.88, 0.8), 9)
 
 
 ## Upper-floor window rects, shared by the day drawing and the night glow.
@@ -202,6 +259,46 @@ func _draw_shop() -> void:
 		draw_rect(sr, sc)
 		draw_rect(sr, sc.darkened(0.4), false, 0.5)
 		_text(sr, data.sign, Color.WHITE if sc.get_luminance() < 0.55 else Color("1a1a1a"), 5)
+	_facade_life(col)
+
+
+## Years of living, then the end: boarded windows, balcony plants, vines,
+## spray paint, and the marks rescuers left on doors they had searched.
+func _facade_life(col: Color) -> void:
+	var e := extra
+	for wr: Rect2 in _windows():
+		var roll := e.randf()
+		if roll < 0.18:
+			for k in 3:  # planks nailed across
+				var y := wr.position.y + 1 + k * 2.4
+				draw_line(Vector2(wr.position.x - 1, y + (k % 2) * 1.2), Vector2(wr.end.x + 1, y + 1.5 - (k % 2) * 1.2), Color("8a6a44"), 1.6)
+		elif roll < 0.3:
+			draw_line(wr.position + Vector2(3, 0), wr.position + Vector2(6, 5), Color(0.8, 0.85, 0.9, 0.5), 0.5)  # cracked pane
+			draw_line(wr.position + Vector2(6, 5), wr.position + Vector2(10, 3), Color(0.8, 0.85, 0.9, 0.5), 0.5)
+		elif roll < 0.42:
+			for k in 3:  # potted plants on the sill
+				draw_circle(Vector2(wr.position.x + 2 + k * 4, wr.end.y + 0.5), 1.6, Color("4a7038").lightened(k * 0.05))
+	if e.randf() < 0.22:
+		# A vine climbing from the ground.
+		var x := e.randf_range(2, w - 2)
+		var p := Vector2(x, 0)
+		for i in int(e.randf_range(0.3, 0.8) * h / 3):
+			p += Vector2(e.randf_range(-1.5, 1.5), -3)
+			draw_circle(p, e.randf_range(1.0, 2.0), Color("3e6a2e").lightened(e.randf() * 0.15))
+	if e.randf() < 0.35 and w > 36:
+		# Spray paint across the shutter or the wall.
+		var msg: String = GRAFFITI[e.randi() % GRAFFITI.size()]
+		var paint: Color = [Color("c83a2e"), Color("1e1e1e"), Color("e8e0d0")][e.randi() % 3]
+		_text(Rect2(4, -GROUND_H + 3, w - 8, 8), msg, Color(paint, 0.85), 6)
+	elif e.randf() < 0.2 and w > 28:
+		# Rescue team X-code: date, team, and how many they found inside.
+		var c := Vector2(w - 9, -GROUND_H + 7)
+		var orange := Color("e8782a", 0.9)
+		draw_line(c + Vector2(-5, -5), c + Vector2(5, 5), orange, 0.9)
+		draw_line(c + Vector2(5, -5), c + Vector2(-5, 5), orange, 0.9)
+		var font := Look.thai_font()
+		draw_string(font, c + Vector2(-2, -3.5), str(e.randi_range(1, 9)), HORIZONTAL_ALIGNMENT_LEFT, -1, 4, orange)
+		draw_string(font, c + Vector2(-2, 6.5), str(e.randi_range(0, 3)), HORIZONTAL_ALIGNMENT_LEFT, -1, 4, orange)
 
 
 func _draw_store() -> void:
@@ -229,6 +326,32 @@ func _draw_condo() -> void:
 		for x in range(8, int(w) - 4, 14):
 			draw_line(Vector2(x, y), Vector2(x, y + 6), col.darkened(0.2), 1.0)
 	draw_rect(Rect2(w * 0.35, -GROUND_H + 2, w * 0.3, GROUND_H - 2), Color("3a4a56"))  # lobby
+	# Life on the balconies, and what happened after.
+	var e := extra
+	var accent: Color = [Color("c86a4a"), Color("4a8ab8"), Color("d8a840")][data.seed % 3]
+	draw_rect(Rect2(0, -h, 3, h), accent)  # painted end panels
+	draw_rect(Rect2(w - 3, -h, 3, h), accent)
+	for f in data.floors:
+		var y := -h + 6 + float(f) * 11.0
+		for x in range(6, int(w) - 8, 14):
+			var roll := e.randf()
+			if roll < 0.12:
+				draw_rect(Rect2(x, y + 1, 8, 5), Color("0e1014"))  # blown-out window
+				draw_line(Vector2(x, y + 1), Vector2(x + 3, y + 3), Color(0.8, 0.85, 0.9, 0.5), 0.5)
+			elif roll < 0.3:
+				for k in 3:
+					draw_rect(Rect2(x + k * 3, y + 2, 2, 3), Color.from_hsv(e.randf(), 0.35, 0.8))  # laundry
+			elif roll < 0.4:
+				draw_circle(Vector2(x + 4, y + 5), 1.8, Color("4a7038"))  # a plant
+			elif roll < 0.45:
+				draw_rect(Rect2(x + 1, y + 2, 5, 3), Color("c8c8c0"))  # air-con
+	if e.randf() < 0.5:
+		# A bedsheet hung from a balcony: someone asking for help.
+		var fy := -h + 6 + float(e.randi_range(1, data.floors - 3)) * 11.0
+		var bx := e.randf_range(8, w - 30)
+		draw_rect(Rect2(bx, fy + 6, 22, 24), Color("ece8e0"))
+		draw_rect(Rect2(bx, fy + 6, 22, 24), Color("b8b4ac"), false, 0.5)
+		_text(Rect2(bx, fy + 10, 22, 8), "ช่วยด้วย" if e.randf() < 0.6 else "SOS", Color("c83a2e"), 6)
 
 
 func _draw_temple() -> void:

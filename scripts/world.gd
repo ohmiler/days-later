@@ -25,7 +25,7 @@ enum { GRASS, DIRT, WATER, TREE, WALL, ROAD, SIDEWALK, SOI, BUILDING, PLAZA, FLO
 const COLORS := {
 	GRASS: Color("4a5733"),
 	DIRT: Color("6a5a43"),
-	WATER: Color("3b4838"),
+	WATER: Color("37514c"),  # murky khlong green
 	TREE: Color("3f5431"),
 	WALL: Color("e2dccc"),
 	ROAD: Color("3a3b3c"),
@@ -64,6 +64,7 @@ var street_props: Array = []
 var roads: Array = []  # {rect: Rect2i, horizontal: bool}
 var intersections: Array = []  # Rect2i
 var wires: Array = []  # [from, to] pole tops
+var checkpoint := Rect2i()  # the junction the army held
 var bts_row := -1
 var spawn_cell := Vector2i(W / 2, H / 2)
 
@@ -164,7 +165,7 @@ func _spawn_props() -> void:
 		var p := StreetProp.new()
 		p.data = rec
 		p.position = rec.pos
-		p.z_index = 1
+		p.z_index = 0 if rec.get("flat", false) else 1  # litter lies under everyone
 		prop_parent.add_child(p)
 	overhead = Overhead.new()
 	overhead.world = self
@@ -498,28 +499,58 @@ func _draw_tile(ci: Node2D, x: int, y: int) -> void:
 			for i in 3:
 				var p := r.position + Vector2(hash01(x, y, i + 1), hash01(x, y, i + 4)) * TILE
 				ci.draw_rect(Rect2(p, Vector2(1, 2)), base.lightened(0.12) if i % 2 else base.darkened(0.15))
+			if hash01(x, y, 29) < 0.3:
+				_tuft(ci, r.position + Vector2(hash01(x, y, 30), hash01(x, y, 31)) * TILE, x + y, 1.6)  # grown long
+			if hash01(x, y, 32) < 0.04:
+				ci.draw_circle(r.position + Vector2(hash01(x, y, 33), hash01(x, y, 34)) * TILE, 0.8,
+						[Color("e8d040"), Color("e8e4d8"), Color("d86a8a")][int(hash01(x, y, 35) * 3)])  # wild flowers
 		DIRT:
 			if hash01(x, y, 7) < 0.4:
 				var p := r.position + Vector2(hash01(x, y, 8), hash01(x, y, 9)) * (TILE - 3)
 				ci.draw_rect(Rect2(p, Vector2(2, 2)), base.darkened(0.25))
 		WATER:
-			if hash01(x, y, 5) < 0.5:
-				var p := r.position + Vector2(hash01(x, y, 6) * 10, hash01(x, y, 7) * 14)
-				ci.draw_line(p, p + Vector2(5, 0), base.lightened(0.1), 0.6)
+			# Ripples catching the light, and rafts of water hyacinth drifting.
+			for i in 2:
+				if hash01(x, y, 5 + i) < 0.6:
+					var p := r.position + Vector2(hash01(x, y, 6 + i) * 10, hash01(x, y, 7 + i) * 14)
+					ci.draw_line(p, p + Vector2(4 + hash01(x, y, 9) * 3, 0), base.lightened(0.18), 0.6)
+			if hash01(x, y, 12) < 0.14:
+				var p := r.position + Vector2(hash01(x, y, 13), hash01(x, y, 14)) * (TILE - 4) + Vector2(2, 2)
+				for k in 3:
+					ci.draw_circle(p + Vector2(k * 2.2 - 2, (k % 2) * 1.2), 1.8, Color("4e7a3a").lightened(k * 0.06))
+				ci.draw_circle(p + Vector2(0.4, -0.6), 0.6, Color("b89ad8"))  # a flower
+			elif hash01(x, y, 12) < 0.17:
+				ci.draw_rect(Rect2(r.position + Vector2(5, 6), Vector2(3, 2)), Color("c8c4b8"))  # floating rubbish
 			for d in DIRS:
 				if get_tile(c + d) != WATER:
 					ci.draw_rect(_edge(r, d, 3), Color("8a877f"))
+					var wet := _edge(r, d, 5)
+					ci.draw_rect(Rect2(wet.position + Vector2(maxi(-d.x, 0), maxi(-d.y, 0)) * 3, wet.size - Vector2(absi(d.x), absi(d.y)) * 3), Color(0, 0, 0, 0.18))
 		ROAD:
 			if hash01(x, y, 7) < 0.05:
 				ci.draw_rect(Rect2(r.position + Vector2(2, 3), Vector2(9, 7)), base.darkened(0.12))  # patched asphalt
-			if hash01(x, y, 8) < 0.08:
-				var p := r.position + Vector2(hash01(x, y, 9), hash01(x, y, 10)) * TILE
-				ci.draw_line(p, p + Vector2(5, 3), base.darkened(0.3), 0.5)
+			if hash01(x, y, 8) < 0.16:
+				_crack(ci, r, x, y, base.darkened(0.3))
+			if hash01(x, y, 15) < 0.04:
+				_stain(ci, r, x, y, Color(0.05, 0.05, 0.06, 0.35))  # oil
+			elif hash01(x, y, 15) < 0.05:
+				_puddle(ci, r, x, y)
+			# Nobody has cut the grass for months: it pushes up along the kerb.
+			for d in DIRS:
+				if get_tile(c + d) == SIDEWALK and hash01(x, y, 16) < 0.3:
+					var e := _edge(r, d, 3)
+					_tuft(ci, e.position + e.size * Vector2(hash01(x, y, 17), 0.5), x + y)
 		SIDEWALK:
 			var line := base.darkened(0.12)
 			ci.draw_line(r.position + Vector2(0, 8), r.position + Vector2(16, 8), line, 0.5)
 			ci.draw_line(r.position + Vector2(8, 0), r.position + Vector2(8, 16), line, 0.5)
 			ci.draw_line(r.position, r.position + Vector2(16, 0), line.darkened(0.1), 0.5)
+			if hash01(x, y, 18) < 0.08:
+				ci.draw_rect(Rect2(r.position + Vector2(8, 0) * float(hash01(x, y, 19) < 0.5), Vector2(8, 8)), base.darkened(0.14))  # a lifted slab
+			if hash01(x, y, 20) < 0.22:
+				_tuft(ci, r.position + Vector2(8, 8), x * 3 + y)  # weeds in the joints
+			if hash01(x, y, 21) < 0.05:
+				_stain(ci, r, x, y, Color(0.2, 0.15, 0.1, 0.18))
 			for d in DIRS:
 				if get_tile(c + d) == ROAD:
 					# Bangkok's red-and-white painted curbs.
@@ -532,12 +563,19 @@ func _draw_tile(ci: Node2D, x: int, y: int) -> void:
 					ci.draw_rect(Rect2(e.position + step, half), white if (x + y) % 2 else red)
 		SOI:
 			if hash01(x, y, 8) < 0.22:
-				var p := r.position + Vector2(hash01(x, y, 9), hash01(x, y, 10)) * TILE
-				ci.draw_line(p, p + Vector2(4, 5), base.darkened(0.25), 0.5)
+				_crack(ci, r, x, y, base.darkened(0.25))
+			if hash01(x, y, 22) < 0.025:
+				_puddle(ci, r, x, y)
+			if hash01(x, y, 23) < 0.18:
+				_tuft(ci, r.position + Vector2(hash01(x, y, 24), hash01(x, y, 25)) * TILE, x + y * 7)
 			if hash01(x, y, 11) < 0.03:
 				ci.draw_rect(Rect2(r.position + Vector2(4, 5), Vector2(8, 5)), Color("2e2c2a"))  # drain
 		PLAZA:
 			ci.draw_rect(r, base.darkened(0.08), false, 0.5)
+			if hash01(x, y, 26) < 0.12:
+				_tuft(ci, r.position + Vector2(hash01(x, y, 27) * TILE, 0), x + y)
+			if hash01(x, y, 28) < 0.03:
+				ci.draw_circle(r.position + Vector2(8, 8), 2.5, Color("7a5a2a", 0.5))  # fallen leaves
 		FLOOR, DOOR:
 			ci.draw_rect(r, base.darkened(0.1), false, 0.5)
 			for i in 4:  # terrazzo chips
@@ -553,6 +591,37 @@ func _draw_tile(ci: Node2D, x: int, y: int) -> void:
 		WALL:
 			ci.draw_rect(Rect2(r.position, Vector2(TILE, 3)), base.lightened(0.1))
 			ci.draw_rect(Rect2(r.position + Vector2(0, TILE - 4), Vector2(TILE, 4)), base.darkened(0.3))
+
+
+## A small clump of weeds.
+func _tuft(ci: Node2D, p: Vector2, k: int, size := 1.0) -> void:
+	var col := Color("5a6a38").lightened((hash01(k, 3, 40) - 0.5) * 0.2)
+	for i in 3:
+		var tip := p + Vector2((i - 1) * 1.3, -2.2 - (i % 2) * 0.8) * size
+		ci.draw_line(p, tip, col if i != 1 else col.lightened(0.1), 0.6)
+
+
+func _crack(ci: Node2D, r: Rect2, x: int, y: int, col: Color) -> void:
+	var p := r.position + Vector2(hash01(x, y, 9), hash01(x, y, 10)) * TILE
+	var q := p + Vector2(hash01(x, y, 41) * 8 - 4, hash01(x, y, 42) * 6)
+	ci.draw_polyline(PackedVector2Array([p, p.lerp(q, 0.5) + Vector2(1.2, -0.6), q, q + Vector2(2, 1.5)]), col, 0.5)
+
+
+func _stain(ci: Node2D, r: Rect2, x: int, y: int, col: Color) -> void:
+	var p := r.position + Vector2(hash01(x, y, 43), hash01(x, y, 44)) * TILE
+	ci.draw_set_transform(p, 0, Vector2(1.4, 0.8))
+	ci.draw_circle(Vector2.ZERO, 3.0 + hash01(x, y, 45) * 3.0, col)
+	ci.draw_set_transform(Vector2.ZERO)
+
+
+## Rainwater lying in a dip, with the sky in it.
+func _puddle(ci: Node2D, r: Rect2, x: int, y: int) -> void:
+	var p := r.position + Vector2(4, 5) + Vector2(hash01(x, y, 46), hash01(x, y, 47)) * 6
+	ci.draw_set_transform(p, 0, Vector2(1.6, 0.7))
+	ci.draw_circle(Vector2.ZERO, 3.6, Color("4a5256"))
+	ci.draw_circle(Vector2(-0.8, -0.6), 2.4, Color("6a7880"))
+	ci.draw_set_transform(Vector2.ZERO)
+	ci.draw_line(p + Vector2(-2, -1), p + Vector2(1, -1), Color(1, 1, 1, 0.25), 0.5)
 
 
 func _draw_markings(ci: Node2D) -> void:

@@ -13,8 +13,8 @@ const SOI_W := 3
 const SIGNS := ["ข้าวมันไก่", "ก๋วยเตี๋ยวเรือ", "ร้านขายยา", "ซ่อมมอเตอร์ไซค์", "ร้านทอง", "กาแฟโบราณ",
 		"ร้านตัดผม", "โรงรับจำนำ", "ส้มตำ ไก่ย่าง", "อาหารตามสั่ง", "คลินิก", "ร้านโทรศัพท์",
 		"ขายส่ง", "โจ๊ก ข้าวต้ม", "ร้านวัสดุ", "นวดแผนไทย", "ผ้าไหม", "ร้านเสริมสวย"]
-const WALL_COLORS := [Color("d8cfb8"), Color("c9b89a"), Color("b8c4c0"), Color("d4b8a8"), Color("a8b0a0"),
-		Color("c8c0c8"), Color("e0d8c0"), Color("9aa8b0"), Color("c8a888"), Color("b0a898")]
+const WALL_COLORS := [Color("e2d3b0"), Color("d8b48a"), Color("a8c8c0"), Color("e0b0a4"), Color("b4c498"),
+		Color("c8b8d8"), Color("ecdca8"), Color("9ab4c8"), Color("d89a78"), Color("c8c0b0")]
 const CAR_COLORS := [Color("e4e2dc"), Color("a8aaac"), Color("2a2c2e"), Color("8a2a26"), Color("34507a"), Color("6a6a5e")]
 const TAXI_COLORS := [Color("e0609a"), Color("e0802a"), Color("3a6ac8"), Color("3a8a4a")]
 ## Dressing for each kind of place (see DecorProp); floor things never block.
@@ -74,6 +74,8 @@ static func build(w: World, rng: RandomNumberGenerator) -> void:
 	_skytrain(w)
 	_street_furniture(w, rng)
 	w.spawn_cell = Vector2i(XS[2] - 2, YS[1] + ROAD_W)  # a street corner in the middle of town
+	# Last, so everything above comes out the same for a given seed as it always has.
+	_aftermath(w, rng)
 
 
 static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGenerator) -> void:
@@ -375,3 +377,142 @@ static func _vehicle(w: World, c: Vector2i, horizontal: bool, rng: RandomNumberG
 			else CAR_COLORS[rng.randi() % CAR_COLORS.size()]
 	w.street_props.append({kind = kind, horizontal = horizontal or kind == "tuktuk",
 			pos = Vector2(c.x * World.TILE, (last.y + 1) * World.TILE), color = color, seed = rng.randi()})
+
+
+# --- The end of the world ---------------------------------------------------
+# Traces of the days it all went wrong: pile-ups where people tried to drive out,
+# an army checkpoint that did not hold, bags dropped while running. Plus the
+# small things every Bangkok soi has: spirit houses, noodle stalls, green bins.
+
+static func _aftermath(w: World, rng: RandomNumberGenerator) -> void:
+	var spawn := w.to_pos(w.spawn_cell)
+	# Pile-ups near junctions: people tried to get out all at once.
+	for it: Rect2i in w.intersections:
+		if w.to_pos(it.position).distance_to(spawn) < 160.0 or rng.randf() < 0.35:
+			continue
+		for k in rng.randi_range(2, 4):
+			var arm: Vector2i = World.DIRS[rng.randi() % 4]
+			var dist := rng.randi_range(ROAD_W + 1, ROAD_W + 7)
+			var lane := rng.randi_range(0, ROAD_W - 2)
+			var c := it.position + (arm * dist if arm.x + arm.y > 0 else arm * (dist - ROAD_W + 1))
+			c += Vector2i(lane, 0) if arm.x == 0 else Vector2i(0, lane)
+			_wreck(w, c, rng)
+	# Wrecks strung along the avenues.
+	for rd in w.roads:
+		var r: Rect2i = rd.rect
+		var length: int = r.size.x if rd.horizontal else r.size.y
+		for k in length / 22:
+			var along := rng.randi_range(0, length - 3)
+			var c := r.position + (Vector2i(along, rng.randi_range(0, ROAD_W - 1)) if rd.horizontal \
+					else Vector2i(rng.randi_range(0, ROAD_W - 1), along))
+			_wreck(w, c, rng)
+	_checkpoint(w, rng, spawn)
+	# Things along pavements and sois.
+	for i in 1600:
+		var c := Vector2i(rng.randi_range(1, World.W - 2), rng.randi_range(1, World.H - 2))
+		var t := w.get_tile(c)
+		var roll := rng.randf()
+		var pos := w.to_pos(c) + Vector2(rng.randf_range(-4, 4), 5)
+		if t in [World.SIDEWALK, World.SOI, World.ROAD] and roll < 0.12:
+			_prop(w, "papers", pos, rng, true)
+		elif t in [World.SIDEWALK, World.SOI] and roll < 0.16:
+			_prop(w, "luggage", pos, rng, true)
+		elif t in [World.SIDEWALK, World.SOI, World.ROAD] and roll < 0.18:
+			_prop(w, "drag", pos, rng, true)
+		elif t == World.SOI and roll < 0.24 and _fits(w, [c]):
+			w.blocked[c] = true
+			_prop(w, "debris", w.to_pos(c) + Vector2(0, 5), rng)
+		elif t in [World.SOI, World.SIDEWALK] and roll < 0.3 and _fits(w, [c]) \
+				and w.get_tile(c + Vector2i.UP) in [World.BUILDING, World.IWALL]:
+			w.blocked[c] = true
+			_prop(w, "spirit", w.to_pos(c) + Vector2(0, 5), rng)
+		elif t == World.SIDEWALK and roll < 0.36 and _fits(w, [c]):
+			w.blocked[c] = true
+			_prop(w, "stall", w.to_pos(c) + Vector2(0, 5), rng)
+		elif t in [World.SIDEWALK, World.SOI] and roll < 0.42 and _fits(w, [c]):
+			_prop(w, "bin", w.to_pos(c) + Vector2(0, 5), rng)
+	# Motorbikes parked nose-in along the shop fronts, as on every Bangkok street.
+	for rec in w.buildings:
+		if rec.kind not in ["shop", "store"]:
+			continue
+		var r: Rect2i = rec.rect
+		for x in range(r.position.x, r.end.x):
+			var c := Vector2i(x, r.end.y)
+			if rec.kind == "shop" and x == r.position.x and rng.randf() < 0.12 and _fits(w, [c]):
+				w.blocked[c] = true
+				_prop(w, "spirit", w.to_pos(c) + Vector2(0, 5), rng)
+				continue
+			if w.get_tile(c) in [World.SIDEWALK, World.SOI] and not w.blocked.has(c) and rng.randf() < 0.28:
+				w.street_props.append({kind = "motorbike", pos = w.to_pos(c) + Vector2(rng.randf_range(-3, 3), 3), seed = rng.randi()})
+	# Long-tail boats left in the canal, some half sunk.
+	for x in range(4, World.W - 4, 9):
+		if rng.randf() < 0.5 and w.get_tile(Vector2i(x, CANAL_Y + 1)) == World.WATER:
+			_prop(w, "boat", w.to_pos(Vector2i(x, CANAL_Y + 1)) + Vector2(0, 4), rng)
+
+
+static func _prop(w: World, kind: String, pos: Vector2, rng: RandomNumberGenerator, flat := false) -> void:
+	w.street_props.append({kind = kind, pos = pos, seed = rng.randi(), flat = flat})
+
+
+## Free ground that will not wall anyone in: nothing solid next to it, and not
+## in front of a door.
+static func _fits(w: World, cells: Array, road_ok := false) -> bool:
+	for cell: Vector2i in cells:
+		var t := w.get_tile(cell)
+		if w.blocked.has(cell) or w.in_intersection(cell) or t not in ([World.ROAD, World.SOI, World.SIDEWALK] if road_ok else [World.SOI, World.SIDEWALK]):
+			return false
+		for d in World.DIRS:
+			var n: Vector2i = cell + d
+			if cells.has(n):
+				continue
+			if w.blocked.has(n) or w.get_tile(n) == World.DOOR:
+				return false
+	return true
+
+
+## A crashed car: slewed across the lane, burnt out, or on its roof.
+static func _wreck(w: World, c: Vector2i, rng: RandomNumberGenerator) -> void:
+	var horizontal := rng.randf() < 0.5
+	var cells := [c, c + (Vector2i.RIGHT if horizontal else Vector2i.DOWN)]
+	if not _fits(w, cells, true):
+		return
+	for cell in cells:
+		if w.get_tile(cell) != World.ROAD:
+			return
+	for cell in cells:
+		w.blocked[cell] = true
+	var roll := rng.randf()
+	var pose := "burnt" if roll < 0.3 else ("flipped" if roll < 0.45 else "crashed")
+	var last: Vector2i = cells[-1]
+	w.street_props.append({kind = "wreck", pos = Vector2(c.x * World.TILE, (last.y + 1) * World.TILE), seed = rng.randi(),
+			pose = pose, angle = rng.randf_range(0.2, 0.5) * (1 if rng.randf() < 0.5 else -1), color = CAR_COLORS[rng.randi() % CAR_COLORS.size()],
+			horizontal = horizontal})
+	if rng.randf() < 0.5:
+		_prop(w, "glass", w.to_pos(cells[0]) + Vector2(rng.randf_range(-6, 14), 6), rng, true)
+
+
+## One junction where the army tried to hold the line: sandbags across the
+## pavements and half the road, a barrier, a truck left behind. One lane stays open.
+static func _checkpoint(w: World, rng: RandomNumberGenerator, spawn: Vector2) -> void:
+	var options := w.intersections.filter(func(it): return w.to_pos(it.position).distance_to(spawn) > 400.0)
+	if options.is_empty():
+		return
+	var it: Rect2i = options[rng.randi() % options.size()]
+	# Across the road just south of the junction, leaving the far lane open.
+	var y := it.end.y + 2
+	if w.get_tile(Vector2i(it.position.x, y)) != World.ROAD:
+		y = it.position.y - 3
+	for x in range(it.position.x - 2, it.position.x + ROAD_W - 2):
+		var cell := Vector2i(x, y)
+		if w.get_tile(cell) in [World.ROAD, World.SIDEWALK] and not w.blocked.has(cell):
+			w.blocked[cell] = true
+			w.street_props.append({kind = "sandbags", pos = w.to_pos(cell) + Vector2(0, 5), seed = rng.randi()})
+	var bar := Vector2i(it.position.x + ROAD_W - 2, y)
+	if w.get_tile(bar) == World.ROAD and not w.blocked.has(bar):
+		_prop(w, "barrier", w.to_pos(bar) + Vector2(0, 5), rng)
+	var truck := [Vector2i(it.position.x + 1, y + 2), Vector2i(it.position.x + 2, y + 2), Vector2i(it.position.x + 3, y + 2)]
+	if _fits(w, truck, true):
+		for cell in truck:
+			w.blocked[cell] = true
+		w.street_props.append({kind = "army", pos = Vector2(truck[0].x * World.TILE, (y + 3) * World.TILE), seed = rng.randi()})
+	w.checkpoint = it

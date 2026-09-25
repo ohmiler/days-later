@@ -26,13 +26,21 @@ func _draw() -> void:
 		for x in range(0, int(width), 160):
 			draw_line(Vector2(x, front), Vector2(x, front + 9), Color("55534e"), 1.0)  # segment joints
 
-	for pair in world.wires:
-		var a: Vector2 = pair[0]
-		var b: Vector2 = pair[1]
-		for k in 3:
-			var sag := a.distance_to(b) * 0.07 + k * 1.6
+	# Bangkok's cable spaghetti: power, phone and a dozen internet lines, all sagging differently.
+	for n in world.wires.size():
+		var a: Vector2 = world.wires[n][0]
+		var b: Vector2 = world.wires[n][1]
+		var lines := 4 + n % 3
+		for k in lines:
+			var sag := a.distance_to(b) * (0.05 + World.hash01(n, k, 50) * 0.06) + k * 1.2
 			var pts := PackedVector2Array()
-			for i in 9:
-				var t := i / 8.0
-				pts.append(a.lerp(b, t) + Vector2(k * 0.8 - 0.8, sag * 4.0 * t * (1.0 - t) - k * 0.6))
-			draw_polyline(pts, Color(0.08, 0.08, 0.08, 0.85), 0.6)
+			for i in 11:
+				var t := i / 10.0
+				pts.append(a.lerp(b, t) + Vector2(k * 0.6 - 1.0, sag * 4.0 * t * (1.0 - t) - k * 0.5))
+			var grey := 0.06 + World.hash01(n, k, 51) * 0.12
+			draw_polyline(pts, Color(grey, grey, grey, 0.85), 0.5 if k > 1 else 0.7)
+		if n % 4 == 1:
+			# A coil of spare cable hanging off the line.
+			var m := a.lerp(b, 0.3) + Vector2(0, a.distance_to(b) * 0.04 + 2)
+			draw_arc(m + Vector2(0, 3), 2.6, 0, TAU, 10, Color(0.1, 0.1, 0.1, 0.85), 0.6)
+			draw_arc(m + Vector2(0.6, 3.4), 2.2, 0, TAU, 10, Color(0.15, 0.15, 0.15, 0.85), 0.5)
