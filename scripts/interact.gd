@@ -11,6 +11,7 @@ const NONE := Vector2i(-1, -1)
 const PICKUP_REACH := 14.0
 const CONTAINER_REACH := 20.0
 const TRAP_REACH := 12.0
+const STOMP_REACH := 18.0
 
 
 ## The thing E would act on for player `p`, or {} if nothing is in reach.
@@ -48,6 +49,10 @@ static func _candidates(main: Node, p: Player) -> Array:
 		var pos: Vector2 = main.pickups[pid].pos
 		if p.position.distance_to(pos) < PICKUP_REACH:
 			out.append({kind = "pickup", id = pid, pos = pos, title = Items.display_name(main.pickups[pid].item.id)})
+	# A zombie knocked flat right at your feet: finish it.
+	for z: Zombie in main.zombies.values():
+		if z.flags & 2 and p.position.distance_to(z.position) < STOMP_REACH:
+			out.append({kind = "zombie", id = z.zid, pos = z.position, title = "ซอมบี้ล้มอยู่"})
 	var trap := trap_near(w, p.position)
 	if trap >= 0:
 		out.append({kind = "trap", id = trap, pos = w.to_pos(w.doors[trap].cell), title = World.BUILDS[w.doors[trap].kind].name})
@@ -112,6 +117,8 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 				out.append(_board(p, d))
 		"container":
 			out.append(_act("search", "ค้นหา"))
+		"zombie":
+			out.append(_act("stomp", "เหยียบหัวให้ตาย"))
 	return out
 
 

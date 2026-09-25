@@ -10,6 +10,9 @@ class_name Rig
 ## `st` keys (all optional except view): view [view, flip], angle, phase,
 ## moving, zombie, attack, ext, guard, weapon (draw dict), fall, fall_dir,
 ## girth, recoil, crouch.
+## Zombies also take: breed ("normal", "runner", "fat", "screamer"), bite
+## (0..1 through a lunge, or absent), scream (0..1), hit (head snap offset),
+## and vary: {tilt, arm_y, droop, limp} so no two shamble quite the same.
 static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var vf: Array = st.view
 	var angle: float = st.get("angle", 0.0)
@@ -25,6 +28,10 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var girth: float = st.get("girth", 1.0) * lk.get("build", 1.0)
 	var recoil: Vector2 = st.get("recoil", Vector2.ZERO)
 	var crouch: float = st.get("crouch", 0.0)
+	var breed: String = st.get("breed", "normal")
+	var vary: Dictionary = st.get("vary", {})
+	var bite: float = st.get("bite", -1.0)
+	var scream: float = st.get("scream", 0.0)
 
 	# Dying: knees buckle, then the body topples like a plank around the feet
 	# (accelerating as it goes) and settles with a small bounce.
@@ -47,7 +54,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var s := sin(phase) if moving else 0.0  # walk cycle, -1..1
 	var bob := absf(s) * 1.0
 	if zombie and moving:
-		bob += maxf(0.0, sin(phase * 0.5)) * 0.8  # limp
+		bob += maxf(0.0, sin(phase * 0.5)) * 0.8 * vary.get("limp", 1.0)  # limp
 
 	var r := {view = view, sx = sx, girth = girth, base = base, tip = tip, fall_dir = fall_dir,
 			zombie = zombie, closed = fall >= 1.0}
@@ -60,20 +67,46 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	if attack == Look.KICK:
 		var k := Look.kick_pose(ext)
 		lunge = -Vector2.from_angle(angle) * Vector2(1.4, 0.7) * k.y + Vector2(0, 0.7 * k.x)
+	if zombie and fall <= 0.0:
+		match breed:
+			"runner":  # hunched low and forward, like it's about to pounce
+				lean = 2.6 if view == Look.SIDE else 0.0
+				crouch += 1.2
+			"fat":  # rolls from side to side as it walks
+				if moving:
+					lunge.x += sin(phase * 0.5) * 1.1 * sx
+		if bite >= 0.0:
+			# Lunge: rear back, then throw the whole body at the target.
+			var f := Vector2.from_angle(angle) * Vector2(1.0, 0.7)
+			lunge += -f * 1.6 * clampf(bite / 0.6, 0, 1) if bite < 0.6 else f * 4.5 * sin(clampf((bite - 0.6) / 0.4, 0, 1) * PI)
+		if scream > 0.0:
+			crouch -= 1.0 * sin(clampf(scream, 0, 1) * PI)  # rises up to scream
 	r.upper = Vector2(lean * sx, -bob + sink * (1.0 - tip) + crouch) + lunge + recoil
 
 	# Fists come up when fighting; otherwise arms hang and swing with the walk.
 	# A falling body's arms go limp, even a zombie's.
 	var arms: Array
-	if zombie and fall <= 0.0:
-		arms = _zombie_arms(view, phase, girth)
+	if zombie and fall <= 0.0 and breed == "runner" and moving and bite < 0.0:
+		arms = _idle_arms(view, s * 1.8)  # sprinting, arms pumping, like it still remembers how to run
+		for a in arms:
+			a.merge({sleeve_dark = 0.1, skin_dark = 0.1}, true)
+	elif zombie and fall <= 0.0:
+		arms = _zombie_arms(view, phase, girth, breed, vary, bite, scream)
 	elif not zombie and (attack != Look.NONE or guard or not weapon.is_empty()):
 		arms = _fist_arms(view, angle, sx, attack, ext, weapon)
 	else:
 		arms = _idle_arms(view, s)
+	for i in arms.size():
+		arms[i].idx = i  # 0 = left (far side-on), 1 = right: lets Look leave off a missing arm
 	r.arms_back = arms.filter(func(a): return a.behind)
 	r.arms_front = arms.filter(func(a): return not a.behind)
-	r.head = Look.HEAD + (Vector2(0.7, 0.4) if zombie else Vector2.ZERO)  # zombies tilt their head
+	r.head = Look.HEAD + (vary.get("tilt", Vector2(0.7, 0.4)) if zombie else Vector2.ZERO)  # zombies tilt their head
+	if zombie and fall <= 0.0:
+		r.head += st.get("hit", Vector2.ZERO)  # snaps back when struck
+		if bite >= 0.6:
+			r.head += local_dir(angle, sx) * 1.6 * sin(clampf((bite - 0.6) / 0.4, 0, 1) * PI)  # jaws first
+		if scream > 0.0:
+			r.head += (Vector2(-1.2, -0.9) if view == Look.SIDE else Vector2(0, -1.0)) * sin(clampf(scream, 0, 1) * PI)
 	r.front_kick = _front_kick(angle, sx, ext) if attack == Look.KICK and view == Look.FRONT else {}
 	return r
 
@@ -275,28 +308,50 @@ static func _weapon_arm(d: Vector2, sh: Vector2, attack: int, t: float, weapon: 
 			{fist = true, dim = dim, sleeve_dark = 0.05 + dim, sleeve_dim = 0.0, weapon = {dir = dv, draw = weapon, trail = trail}})
 
 
-static func _zombie_arms(view: int, phase: float, girth: float) -> Array:
+## Arms reaching for you. Fat ones hang heavy by their sides, a screamer throws
+## its arms back to howl, and a lunge flings both hands out to grab.
+static func _zombie_arms(view: int, phase: float, girth: float, breed := "normal", vary := {}, bite := -1.0,
+		scream := 0.0) -> Array:
 	var sway := sin(phase * 0.7) * 1.0
 	var z := {sleeve_dark = 0.1, skin_dark = 0.1}
+	var arm_y: float = vary.get("arm_y", 0.0)
+	var droop: int = vary.get("droop", -1)  # this arm has given up reaching and just hangs
+	# How far the hands are thrown out: pulled in while rearing back, flung wide on the strike.
+	var grab := 0.0
+	if bite >= 0.0:
+		grab = -0.4 * clampf(bite / 0.6, 0, 1) if bite < 0.6 else sin(clampf((bite - 0.6) / 0.4, 0, 1) * PI)
+	var howl := sin(clampf(scream, 0, 1) * PI)
 	match view:
 		Look.SIDE:
 			var out := []
-			for behind in [true, false]:
+			for i in 2:
+				var behind := i == 0
 				var y := -17.8 + (0.0 if behind else 0.8)
 				var sh := Vector2(0.4, y)
-				var hand := Vector2(10.0, y + 0.5 + (sway if behind else -sway))
+				var hand := Vector2(10.0, y + 0.5 + arm_y + (sway if behind else -sway))
+				if breed == "fat" or droop == i:
+					hand = Vector2(2.2, -10.8 + (sway if behind else -sway) * 0.4)
+				hand += Vector2(3.0 * grab, -1.5 * maxf(grab, 0.0))
+				hand = hand.lerp(Vector2(-3.0, -12.5), howl)
 				var extra := z.duplicate()
 				extra.dim = 0.25 if behind else 0.0
 				out.append(_arm(sh, sh.lerp(hand, 0.5) + Vector2(0, 0.6), hand, behind, extra))
 			return out
 		Look.FRONT:
 			var out := []
-			for s in [-1.0, 1.0]:
+			for i in 2:
+				var s := -1.0 if i == 0 else 1.0
 				# Reaching toward the camera: foreshortened, hands big and low.
 				var sh := Vector2(4.0 * s * girth, -18.6)
-				var hand := Vector2(2.8 * s * girth, -12.3 + sway * s)
+				var hand := Vector2(2.8 * s * girth, -12.3 + sway * s + arm_y * 0.5)
+				var big := true
+				if breed == "fat" or droop == i:
+					hand = Vector2(5.2 * s * girth, -11.0)
+					big = false
+				hand += Vector2(1.6 * s * grab, 1.8 * maxf(grab, 0.0))
+				hand = hand.lerp(Vector2(6.5 * s * girth, -12.0), howl)
 				var extra := z.duplicate()
-				extra.big_hand = true
+				extra.big_hand = big and howl < 0.5
 				out.append(_arm(sh, sh.lerp(hand, 0.5) + Vector2(0.6 * s, 0), hand, false, extra))
 			return out
 	return []  # from behind, the arms reach away from the camera, hidden by the body

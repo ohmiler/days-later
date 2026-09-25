@@ -47,7 +47,7 @@ static func save_world(main: Node) -> void:
 		items.append([pid, main.pickups[pid].pos, main.pickups[pid].item])
 	var zs := []
 	for z: Zombie in main.zombies.values():
-		zs.append([z.zid, z.position, z.hp, z.outfit])
+		zs.append([z.zid, z.position, z.hp, z.outfit, z.missing])
 	_write(dir() + "/world.save", {
 		version = VERSION, seed = main.world_seed, day = main.day, time = main.time,
 		next_zid = main.next_zid, next_pickup = main.next_pickup,
@@ -80,6 +80,8 @@ static func load_world_into(main: Node, w: Dictionary) -> bool:
 			main.outfits[e[0]] = e[3]
 		var z: Zombie = main._add_zombie(e[0], e[1])
 		z.hp = e[2]
+		if e.size() > 4:
+			z.missing = e[4]
 	return true
 
 

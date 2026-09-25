@@ -43,6 +43,7 @@ var preview: Preview
 func _ready() -> void:
 	layer = 2
 	cfg.load(SETTINGS)
+	Look.low_gore = cfg.get_value("video", "low_gore", false)
 	for id in cfg.get_value("tutorial", "done", []):
 		done_steps[id] = true
 	_build_hud()
@@ -425,6 +426,17 @@ func _build_menu() -> void:
 		join_requested.emit(address_edit.text.strip_edges(), player_name()))
 	row.add_child(join)
 	form.add_child(row)
+	var gore := _button("", false)
+	var show_gore := func():
+		gore.text = "เลือดและชิ้นส่วน: " + ("น้อย" if Look.low_gore else "เต็ม")
+	show_gore.call()
+	gore.add_theme_font_size_override("font_size", 16)
+	gore.pressed.connect(func():
+		Look.low_gore = not Look.low_gore
+		cfg.set_value("video", "low_gore", Look.low_gore)
+		cfg.save(SETTINGS)
+		show_gore.call())
+	form.add_child(gore)
 	status = _label("", UiTheme.body(), 15, UiTheme.WARN)
 	form.add_child(status)
 	_build_creator()
@@ -432,7 +444,7 @@ func _build_menu() -> void:
 	ver.anchor_top = 1.0
 	ver.anchor_bottom = 1.0
 	ver.offset_left = 90
-	ver.offset_top = -50
+	ver.offset_top = -30
 	menu.add_child(ver)
 
 

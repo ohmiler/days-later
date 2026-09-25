@@ -233,7 +233,7 @@ func _process(delta: float) -> void:
 		if death_t > 0.0:
 			# Respawned: leave the old body where it fell.
 			if not turned and get_parent().has_method("leave_corpse"):
-				get_parent().leave_corpse(last_death_pos, fall_dir, skin, shirt, pants, hair, false, death_t, look.get("wear", {}))
+				get_parent().leave_corpse(last_death_pos, fall_dir, look, false, death_t)
 			death_t = 0.0
 	else:
 		if death_t == 0.0:

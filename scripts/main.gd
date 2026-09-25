@@ -30,6 +30,9 @@ var player_name := ""
 var day := 1
 var last_kills := 0
 var dmg_numbers: Array = []  # [pos, text, crit, age]
+const MAX_GIBS := 40  # loose heads and arms; the oldest fade out first
+const SEVER_CHANCE := 0.2  # a blade hit that does not kill takes an arm this often
+var gibs: Array = []
 var outfits := {}  # zid -> [shirt, pants, hair] for zombies that were players
 const AUTOSAVE_EVERY := 60.0
 var autosave_t := AUTOSAVE_EVERY
@@ -420,7 +423,7 @@ func _server_tick(delta: float) -> void:
 					p.app_code, p.wear_ids])
 		var zs := []
 		for z: Zombie in zombies.values():
-			zs.append([z.zid, z.position, z.hp, z.state])
+			zs.append([z.zid, z.position, z.hp, z.state, z.flags, z.missing])
 		snapshot.rpc(ps, zs, time, day)
 
 
@@ -475,6 +478,9 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	if not cleave:
 		hits.sort_custom(func(a, b): return (a.position - p.position).normalized().dot(dir) > (b.position - p.position).normalized().dot(dir))
 		hits = [hits[0]]
+	var how: String = Items.def(wid).get("draw", {}).get("kind", "")
+	if how == "":
+		how = "kick" if kind == Look.KICK else "punch"
 	for z: Zombie in hits:
 		z.hp -= stats[1]
 		z.stun = stats[3]
@@ -482,8 +488,17 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), stats[1])
 		_make_noise(z.position, NOISE_HIT)
 		if z.hp <= 0:
-			_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0)
+			_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0, how)
 			p.kills += 1
+			continue
+		# A good kick can put it on the ground (not the fat ones); a blade can take an arm.
+		if kind == Look.KICK and z.kind != "fat" and randf() < (0.5 if z.kind == "runner" else 0.3):
+			z.knock_down()
+		elif how in ["machete", "axe"] and randf() < SEVER_CHANCE:
+			var bit := z.arm_left_to_cut()
+			if bit > 0:
+				z.missing |= bit
+				fx_sever.rpc(z.zid, bit, dir)
 	if wid != "":
 		_wear_weapon(p)
 
@@ -716,8 +731,29 @@ func fx_turned(peer_id: int) -> void:
 		Sfx.play(self, "groan", p.position, 0.0, 0.8)
 
 
-func _kill_zombie(z: Zombie, fall_dir: float) -> void:
-	fx_death.rpc(z.position, fall_dir, z.skin, z.shirt, z.pants, z.hair, z.wear)
+## How a zombie dies depends on what killed it (see Corpse for what each style looks like).
+static func death_style(how: String) -> String:
+	var r := randf()
+	match how:
+		"axe":
+			return "behead" if r < 0.55 else ("arm" if r < 0.85 else "cut")
+		"machete":
+			return "behead" if r < 0.35 else ("arm" if r < 0.8 else "cut")
+		"knife":
+			return "stab"
+		"hammer":
+			return "crush" if r < 0.5 else "blunt"
+		"bat", "pipe", "plank":
+			return "crush" if r < 0.3 else "blunt"
+		"gun":
+			return "burst"
+		"stomp":
+			return "crush"
+	return "fall"
+
+
+func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
+	fx_death.rpc(z.position, fall_dir, z.body_look(), death_style(how))
 	# What it wore can be taken off the body: always what a turned survivor had
 	# on, sometimes an ordinary zombie's (often worn half through).
 	var i := 0
@@ -763,7 +799,7 @@ func _tick_traps(delta: float) -> void:
 		if d.kind == "spikes":
 			fx_hit.rpc(z.zid, z.position, Vector2.UP, false, 0, "knife", 25.0)
 		if z.hp <= 0.0:
-			_kill_zombie(z, 1.0)
+			_kill_zombie(z, 1.0, d.kind)
 
 
 ## Set the selected trap down on the ground just in front of you (server).
@@ -1065,6 +1101,15 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			_toggle_door(p, t.id)
 		"board", "repair":
 			_reinforce(p, t.id)
+		"stomp":
+			var z: Zombie = zombies.get(t.id)
+			if z == null or z.down_t <= 0.0:
+				return
+			fx_melee.rpc(p.peer_id, Look.KICK)
+			_make_noise(z.position, NOISE_HIT)
+			fx_hit.rpc(z.zid, z.position, Vector2.DOWN, true, p.peer_id, "", z.hp)
+			_kill_zombie(z, 1.0 if z.position.x >= p.position.x else -1.0, "stomp")
+			p.kills += 1
 		"search":
 			var f: FurnitureProp = world.container_nodes[t.id]
 			p.search_id = t.id
@@ -1119,7 +1164,7 @@ func _fire(p: Player) -> void:
 	if hit:
 		hit.hp -= GUN_DAMAGE
 		if hit.hp <= 0:
-			fx_death.rpc(hit.position, 1.0 if dir.x >= 0 else -1.0, hit.skin, hit.shirt, hit.pants, hit.hair, hit.wear)
+			fx_death.rpc(hit.position, 1.0 if dir.x >= 0 else -1.0, hit.body_look(), death_style("gun"))
 			zombies.erase(hit.zid)
 			hit.queue_free()
 			p.kills += 1
@@ -1234,6 +1279,8 @@ func snapshot(ps: Array, zs: Array, t: float, d: int) -> void:
 		z.net_pos = e[1]
 		z.hp = e[2]
 		z.state = e[3]
+		z.flags = e[4]
+		z.missing = e[5]
 	for id in zombies.keys():
 		if not seen.has(id):
 			zombies[id].queue_free()
@@ -1332,20 +1379,65 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, w
 
 
 @rpc("authority", "call_local", "reliable")
-func fx_death(pos: Vector2, fall_dir: float, skin: Color, shirt: Color, pants: Color, hair: Color, wear: Dictionary) -> void:
-	leave_corpse(pos, fall_dir, skin, shirt, pants, hair, true, 0.0, Items.wear_draw(wear))
+func fx_death(pos: Vector2, fall_dir: float, body: Dictionary, style: String) -> void:
+	leave_corpse(pos, fall_dir, body, true, 0.0, style)
+	if style in ["behead", "arm", "burst"]:
+		Sfx.play(self, "gore", pos, 2.0)
+	elif style == "crush":
+		Sfx.play(self, "crunch", pos, 1.0)
+
+
+## A blade took an arm off a zombie that is still coming.
+@rpc("authority", "call_local", "reliable")
+func fx_sever(zid: int, bit: int, dir: Vector2) -> void:
+	var z: Zombie = zombies.get(zid)
+	if z == null:
+		return
+	z.missing |= bit
+	Sfx.play(self, "gore", z.position, 1.0, 1.1)
+	if Look.low_gore:
+		return
+	var g := Gib.new()
+	g.kind = "arm"
+	g.lk = z.body_look()
+	g.position = z.position + Vector2(0, 1)
+	g.h = 16.0
+	g.vel = Vector2(dir.x, dir.y * 0.6) * 45.0
+	g.vh = 50.0
+	g.spin = randf_range(7.0, 12.0)
+	g.flip = dir.x < 0
+	g.z_index = 1
+	add_gib(g)
+	splatter(z.position, dir, 5)
+
+
+## Add a loose body part, fading out the oldest when there are too many.
+func add_gib(g: Gib) -> void:
+	gibs = gibs.filter(func(x): return is_instance_valid(x))
+	if gibs.size() >= MAX_GIBS:
+		var old: Gib = gibs.pop_front()
+		old.t = maxf(old.t, Gib.LIFE - 2.0)
+	gibs.append(g)
+	add_child(g)
+
+
+## Blood thrown across the ground (it stays, like the rest of the decals).
+func splatter(pos: Vector2, dir: Vector2, n: int) -> void:
+	if Look.low_gore:
+		n = n / 3
+	for i in n:
+		blood.append([pos + dir * randf_range(0, 12) + Vector2(randf_range(-5, 5), randf_range(-3, 3)),
+				randf_range(0.8, 2.8), Color(randf_range(0.3, 0.5), 0.02, 0.02, 0.85)])
+	if decals:
+		decals.queue_redraw()
 
 
 ## A fallen body on the ground; `age` lets a respawned player's body carry on where it was.
-func leave_corpse(pos: Vector2, fall_dir: float, skin: Color, shirt: Color, pants: Color, hair: Color,
-		zombie: bool, age: float, wear := {}) -> void:
+func leave_corpse(pos: Vector2, fall_dir: float, body: Dictionary, zombie: bool, age: float, style := "") -> void:
 	var c := Corpse.new()
-	c.wear = wear
 	c.position = pos
-	c.skin = skin
-	c.shirt = shirt
-	c.pants = pants
-	c.hair = hair
+	c.lk = body
+	c.style = style
 	c.zombie = zombie
 	c.fall_dir = fall_dir
 	c.t = age

@@ -44,6 +44,12 @@ static func _build(name: String) -> AudioStreamWAV:
 		"blade":
 			samples = _thump(rng, 0.16, 140.0, 90.0, 0.5)
 			_mix(samples, _noise_sweep(rng, 0.16, 0.6, 0.9, 0.35))
+		"gore":  # something coming off: a wet, heavy chop
+			samples = _thump(rng, 0.3, 60.0, 35.0, 1.0)
+			_mix(samples, _noise_sweep(rng, 0.28, 0.25, 0.05, 0.55))
+		"crunch":  # a skull giving way
+			samples = _thump(rng, 0.2, 180.0, 55.0, 0.8)
+			_mix(samples, _noise_sweep(rng, 0.12, 0.9, 0.4, 0.55))
 		"groan":
 			samples = _groan(rng, 0.9)
 		"rustle":  # rummaging through a shelf

@@ -19,6 +19,13 @@ const BUILD_NAMES := ["ผอม", "กลาง", "ท้วม"]
 ## send in every snapshot as one int (see pack/unpack).
 const APPEARANCE_KEYS := ["skin", "hair", "style", "shirt", "pants", "build"]
 
+## Parts a body can lose (lk.missing bits): left arm, right arm, head.
+const LOST_ARM_L := 1
+const LOST_ARM_R := 2
+const LOST_HEAD := 4
+const BLOOD := Color("7a0e0a")
+const BLOOD_DARK := Color("3e0605")
+
 const CHEST := Vector2(0, -15)  # where guns and flashlights sit
 const HEAD := Vector2(0, -24)
 
@@ -30,6 +37,8 @@ static var _base := Transform2D.IDENTITY
 static var _girth := 1.0  # body width multiplier (fat and skinny zombies)
 static var lift := Vector2.ZERO  # draw everything this far up (standing on a roof); caller sets and resets  # whole-body transform (used to topple a falling body)
 static var _font: Font
+## Menu option: no flying parts, wounds or spurting blood (fights still play the same).
+static var low_gore := false
 
 
 ## Thai font for text drawn in the world (shop signs), rendered as MSDF so it stays sharp when zoomed.
@@ -132,21 +141,32 @@ static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
 	var pack: Dictionary = wear.get("back", {})
 	if not pack.is_empty() and r.view == SIDE:
 		_pack_side(ci, pack)  # behind everything, on the far side of the body
+	var missing: int = lk.get("missing", 0)
 	for a in r.arms_back:
-		_draw_arm(ci, a, lk)
+		_draw_arm_or_stump(ci, a, lk, missing)
 	var body: Dictionary = wear.get("body", {})
 	if body.get("shape") == "hoodie" and r.view != BACK:
 		ci.draw_circle(Vector2(-0.6 if r.view == SIDE else 0.0, -20.6), 3.4, (lk.shirt as Color).darkened(0.2))  # hood, behind the head
 	_torso(ci, r.view, lk.shirt, pants, r.zombie)
+	if lk.get("gore", -1) >= 0 and not low_gore:
+		_wounds(ci, r.view, lk.gore)
 	if body.get("shape") == "vest":
 		_vest(ci, r.view, body)
 	if not pack.is_empty() and r.view != SIDE:
 		_pack(ci, r.view, pack)
-	_head(ci, r.view, r.head, lk.skin, lk.hair, lk.get("hair_style", "short"), r.zombie, r.closed, wear.get("head", {}))
+	if missing & LOST_HEAD:
+		_neck_stump(ci, lk.skin)
+	else:
+		_head(ci, r.view, r.head, lk.skin, lk.hair, lk.get("hair_style", "short"), r.zombie, r.closed, wear.get("head", {}),
+				lk.get("mouth", 0.0), true, lk.get("gore", -1) >= 0 and int(lk.gore) % 2 == 0 and not low_gore)
+		if lk.get("crushed", false) and not low_gore:
+			_crushed(ci, r.head)
 	if body.get("shape") == "hoodie" and r.view == BACK:
 		ci.draw_colored_polygon(_arc(Vector2(0, -20.2), 3.6, 0.0, PI), (lk.shirt as Color).darkened(0.12))  # hood down the back
 	for a in r.arms_front:
-		_draw_arm(ci, a, lk)
+		_draw_arm_or_stump(ci, a, lk, missing)
+	if lk.get("spurt", 0.0) > 0.0 and not low_gore:
+		_spurt(ci, r, missing, lk.spurt, lk.get("spurt_seed", 0))
 	if not r.front_kick.is_empty():
 		_xf(ci, Vector2.ZERO, Vector2(sx, 1))
 		_front_kick_leg(ci, r.front_kick, lk)
@@ -334,7 +354,7 @@ static func _torso(ci: CanvasItem, view: int, shirt: Color, pants: Color, zombie
 		for i in 7:
 			hem.append(Vector2(-w * 0.85 + i * w * 1.7 / 6.0, -10.2 - (1.5 if i % 2 else 0.2)))
 		ci.draw_polyline(hem, shirt.darkened(0.45), 0.9)  # ragged hem
-		for p in [Vector2(w * 0.2, -15.5), Vector2(w * 0.45, -14.3), Vector2(w * 0.05, -13.6), Vector2(-w * 0.3, -16.4)]:
+		for p in [] if low_gore else [Vector2(w * 0.2, -15.5), Vector2(w * 0.45, -14.3), Vector2(w * 0.05, -13.6), Vector2(-w * 0.3, -16.4)]:
 			ci.draw_circle(p, 0.9, Color(0.33, 0.05, 0.04, 0.8))  # dried blood
 
 
@@ -422,9 +442,75 @@ static func _headwear(ci: CanvasItem, view: int, c: Vector2, h: Dictionary) -> v
 					ci.draw_rect(Rect2(c.x - 1.2, c.y - 1.2, 2.4, 0.7), col.darkened(0.3))  # strap
 
 
+## An arm, or what is left of it when it has been cut off.
+static func _draw_arm_or_stump(ci: CanvasItem, a: Dictionary, lk: Dictionary, missing: int) -> void:
+	var bit := LOST_ARM_L if a.get("idx", 0) == 0 else LOST_ARM_R
+	if not missing & bit:
+		_draw_arm(ci, a, lk)
+		return
+	# A short stump, just below the shoulder, so it never reaches across the body.
+	var sh: Vector2 = a.sh
+	var end: Vector2 = sh.lerp(a.elbow, 0.38)
+	var sleeve: Color = (lk.shirt as Color).darkened(0.1 + a.dim)
+	_limb(ci, sh, end, 3.4, 3.0, (lk.skin as Color).darkened(0.5))
+	_limb(ci, sh, end, 3.0, 2.6, sleeve)
+	ci.draw_circle(end, 1.3, (lk.skin as Color).darkened(0.35) if low_gore else BLOOD)
+	if not a.behind and not low_gore:
+		ci.draw_circle(end, 0.5, Color("d8d0c0"))  # bone
+
+
+## Where the head was.
+static func _neck_stump(ci: CanvasItem, skin: Color) -> void:
+	ci.draw_rect(Rect2(-1.3, -21.4, 2.6, 2.2), skin.darkened(0.25))
+	ci.draw_circle(Vector2(0, -21.4), 1.9, BLOOD)
+	ci.draw_circle(Vector2(0, -21.5), 0.8, Color("d8d0c0"))  # spine
+	ci.draw_circle(Vector2(0.6, -20.6), 0.5, BLOOD_DARK)
+
+
+## Smashed in: the skull caves and blood runs out over it.
+static func _crushed(ci: CanvasItem, c: Vector2) -> void:
+	ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-4.4, -1.2), c + Vector2(-2.6, -4.6), c + Vector2(-0.4, -2.4),
+			c + Vector2(1.6, -4.8), c + Vector2(4.4, -1.6), c + Vector2(3.0, 0.8), c + Vector2(-3.2, 1.2)]), BLOOD)
+	ci.draw_circle(c + Vector2(-0.8, -1.8), 1.4, BLOOD_DARK)
+	ci.draw_circle(c + Vector2(1.8, -0.6), 0.9, BLOOD_DARK)
+	ci.draw_rect(Rect2(c.x - 2.8, c.y + 1.0, 0.6, 3.0), BLOOD)  # running down the face
+	ci.draw_rect(Rect2(c.x + 1.9, c.y + 1.4, 0.5, 2.2), BLOOD)
+
+
+## Bites, gashes and an open ribcage, picked by `seed` so each zombie keeps its own.
+static func _wounds(ci: CanvasItem, view: int, seed: int) -> void:
+	if view == BACK and seed % 3 != 0:
+		return
+	var w := (3.0 if view == SIDE else 4.4) * _girth
+	var spots := [Vector2(0.35, -16.5), Vector2(-0.45, -13.8), Vector2(0.1, -18.2), Vector2(-0.2, -12.4)]
+	for i in seed % 4:  # a quarter of them show no wounds at all
+		var p: Vector2 = spots[(seed + i) % spots.size()]
+		var at := Vector2(p.x * w, p.y)
+		ci.draw_circle(at, 1.3, BLOOD_DARK)
+		ci.draw_circle(at + Vector2(-0.2, -0.2), 0.8, BLOOD)
+	if seed % 7 == 3 and view != BACK:
+		# Torn open: ribs showing through.
+		var at := Vector2(-0.3 * w, -15.5)
+		ci.draw_rect(Rect2(at - Vector2(1.6, 1.8), Vector2(3.2, 3.8)), BLOOD_DARK)
+		for k in 3:
+			ci.draw_line(at + Vector2(-1.4, -1.2 + k * 1.2), at + Vector2(1.4, -1.0 + k * 1.2), Color("c8bca8"), 0.45)
+
+
+## Blood pumping out of a fresh stump, in arcs that fall away.
+static func _spurt(ci: CanvasItem, r: Dictionary, missing: int, left: float, seed: int) -> void:
+	var from := Vector2(0, -21.4) if missing & LOST_HEAD else (Vector2(0.6, -18.3) if missing & LOST_ARM_R else Vector2(-0.6, -18.6))
+	var t := Time.get_ticks_msec() / 1000.0
+	for i in 9:
+		var k := fmod(t * 2.4 + i / 9.0 + seed * 0.13, 1.0)
+		var spread := (fmod(i * 0.618 + seed * 0.31, 1.0) - 0.5) * 3.0
+		var p := from + Vector2(spread * k * 2.0 - 3.0 * k, -7.0 * k * left + 14.0 * k * k)
+		ci.draw_circle(p, (1.0 - k) * 1.1 + 0.3, Color(BLOOD, (1.0 - k) * minf(1.0, left * 2.0)))
+
+
 static func _head(ci: CanvasItem, view: int, c: Vector2, skin: Color, hair: Color, style: String,
-		zombie: bool, closed := false, hat := {}) -> void:
-	ci.draw_rect(Rect2(-1.2, -21, 2.4, 2), skin.darkened(0.25))  # neck
+		zombie: bool, closed := false, hat := {}, mouth := 0.0, neck := true, drip := false) -> void:
+	if neck:
+		ci.draw_rect(Rect2(-1.2, -21, 2.4, 2), skin.darkened(0.25))  # neck
 	ci.draw_circle(c, 4.2, skin.darkened(0.18))
 	ci.draw_circle(c + Vector2(-0.4, -0.4), 3.7, skin)
 	var eye := Color("e6e2c8") if zombie else Color("1c1612")
@@ -453,7 +539,9 @@ static func _head(ci: CanvasItem, view: int, c: Vector2, skin: Color, hair: Colo
 			ci.draw_circle(c + Vector2(1.5, 0.4), 0.6, eye)
 			ci.draw_rect(Rect2(c.x - 0.4, c.y + 0.8, 0.8, 1.0), skin.darkened(0.15))  # nose
 			if zombie:
-				ci.draw_rect(Rect2(c.x - 1.1, c.y + 2.2, 2.2, 1.0), Color("3a1a16"))
+				ci.draw_rect(Rect2(c.x - 1.1 - mouth * 0.3, c.y + 2.2, 2.2 + mouth * 0.6, 1.0 + mouth * 1.4), Color("3a1a16"))
+				if drip:
+					ci.draw_rect(Rect2(c.x + 0.3, c.y + 3.1, 0.5, 1.8), BLOOD)  # blood down the chin
 			else:
 				ci.draw_rect(Rect2(c.x - 0.9, c.y + 2.3, 1.8, 0.45), dark)
 		BACK:
@@ -486,7 +574,9 @@ static func _head(ci: CanvasItem, view: int, c: Vector2, skin: Color, hair: Colo
 				ci.draw_rect(Rect2(c.x + 1.6, c.y - 0.9, 1.6, 0.45), hair.darkened(0.2))  # brow
 			ci.draw_circle(c + Vector2(2.4, 0.3), 0.55, eye)
 			ci.draw_circle(c + Vector2(4.0, 1.0), 0.75, skin)  # nose
-			ci.draw_rect(Rect2(c.x + 2.3, c.y + 2.3, 1.3, 0.45), Color("3a1a16") if zombie else dark)
+			ci.draw_rect(Rect2(c.x + 2.3, c.y + 2.3, 1.3 + mouth * 0.4, 0.45 + mouth * 1.3), Color("3a1a16") if zombie else dark)
+			if zombie and drip:
+				ci.draw_rect(Rect2(c.x + 2.8, c.y + 2.8, 0.45, 1.6), BLOOD)
 	if not hat.is_empty():
 		_headwear(ci, view, c, hat)
 

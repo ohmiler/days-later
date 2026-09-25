@@ -51,14 +51,44 @@ var phase := 0.0
 var view := [Look.FRONT, false]
 var moving := false
 
+## Attacks are telegraphed: it rears back for LUNGE seconds, then bites if you
+## are still in reach. Hitting it during the wind-up stops the bite.
+const LUNGE := 0.45
+const DOWN_TIME := 1.6
+var lunge_t := 0.0  # server: counting down to the bite
+var down_t := 0.0  # server: knocked flat, getting up when it runs out
+var missing := 0  # Look.LOST_* bits; arms can be cut off in a fight
+var flags := 0  # 1 = lunging, 2 = down; from the server fields, or from snapshots
+# Client animation clocks, started when a flag switches on.
+var atk_t := -1.0
+var down_el := -1.0
+var up_el := -1.0
+var scream_t := 0.0
+var fall_side := 1.0
+# Looks that come from the id so every peer agrees.
+var vary := {}
+var gore := 0
+var hair_style := "short"
+var gait := 1.0
+
 
 ## Server only. Chase what it can see; otherwise go and look at what it heard.
 func server_tick(delta: float) -> void:
 	attack_cd -= delta
 	repath -= delta
 	investigate_t -= delta
+	flags = (1 if lunge_t > 0.0 else 0) | (2 if down_t > 0.0 else 0)
+	if down_t > 0.0:
+		down_t -= delta
+		return
 	if stun > 0:
 		stun -= delta
+		lunge_t = 0.0  # a hit knocks it out of its lunge
+		return
+	if lunge_t > 0.0:
+		lunge_t -= delta
+		if lunge_t <= 0.0 and target and target.alive() and not target.on_roof and position.distance_to(target.position) < 16.0:
+			target.bite(bite_damage())
 		return
 	if repath <= 0:
 		repath = 0.5
@@ -102,8 +132,9 @@ func server_tick(delta: float) -> void:
 		return
 	if d < 12:
 		if attack_cd <= 0:
-			target.bite(KINDS[kind].dmg)
-			attack_cd = 1.0
+			lunge_t = LUNGE
+			attack_cd = 1.2
+			facing = (target.position - position).angle()
 	elif d < 20 or path.is_empty():
 		_move((target.position - position).normalized(), delta)
 	else:
@@ -111,6 +142,34 @@ func server_tick(delta: float) -> void:
 
 
 ## If a closed door is in the way, pound on it. Returns true while bashing.
+## Fewer arms, less to grab you with.
+func bite_damage() -> float:
+	var arms := 2 - int(missing & Look.LOST_ARM_L != 0) - int(missing & Look.LOST_ARM_R != 0)
+	return KINDS[kind].dmg * (0.5 + 0.25 * arms)
+
+
+## Server: knocked flat by a kick.
+func knock_down() -> void:
+	down_t = DOWN_TIME
+	lunge_t = 0.0
+
+
+## An arm that is still attached, to cut off, or -1.
+func arm_left_to_cut() -> int:
+	var arms := []
+	if not missing & Look.LOST_ARM_L:
+		arms.append(Look.LOST_ARM_L)
+	if not missing & Look.LOST_ARM_R:
+		arms.append(Look.LOST_ARM_R)
+	return arms.pick_random() if not arms.is_empty() else -1
+
+
+## Everything needed to draw this body (for corpses and flying parts).
+func body_look() -> Dictionary:
+	return {skin = skin, shirt = shirt, pants = pants, hair = hair, hair_style = hair_style, wear = wear_look,
+			missing = missing, gore = gore}
+
+
 func _bash_door_ahead() -> bool:
 	var id := world.closed_door_near(position, 17.0)
 	if id < 0:
@@ -189,6 +248,16 @@ func _ready() -> void:
 			skin = Color("c8c6bc")
 	if not outfit.is_empty():
 		apply_outfit(outfit)
+	# No two shamble quite the same.
+	var r2 := RandomNumberGenerator.new()
+	r2.seed = zid * 31 + 7
+	vary = {tilt = Vector2(r2.randf_range(-0.6, 1.3), r2.randf_range(-0.2, 0.9)), arm_y = r2.randf_range(-1.6, 1.6),
+			droop = (r2.randi() % 2) if r2.randf() < 0.2 else -1, limp = r2.randf_range(0.3, 1.7)}
+	gait = r2.randf_range(0.85, 1.2)
+	gore = r2.randi() % 30
+	hair_style = ["short", "short", "long", "buzz", "bald", "ponytail"][r2.randi() % 6]
+	if outfit.is_empty() and r2.randf() < 0.07:
+		missing = Look.LOST_ARM_L if r2.randf() < 0.5 else Look.LOST_ARM_R  # lost an arm before it turned
 
 
 static func kind_for(id: int) -> String:
@@ -235,7 +304,29 @@ func _process(delta: float) -> void:
 	last_pos = position
 	moving = moved.length() > 0.03
 	if moving:
-		phase += moved.length() * 0.45
+		phase += moved.length() * 0.45 * gait
+	# Start or finish the lunge and knock-down animations as the flags change.
+	if flags & 1 and atk_t < 0.0:
+		atk_t = 0.0
+	if atk_t >= 0.0:
+		atk_t += delta
+		if atk_t > LUNGE + 0.2:
+			atk_t = -1.0
+	if flags & 2:
+		if down_el < 0.0:
+			down_el = 0.0
+			fall_side = -1.0 if hit_dir.x < 0 else 1.0
+		down_el += delta
+	elif down_el >= 0.0:
+		down_el = -1.0
+		up_el = 0.0
+	if up_el >= 0.0:
+		up_el += delta
+		if up_el > 0.5:
+			up_el = -1.0
+	if kind == "screamer" and state == 2 and shown_state != 2:
+		scream_t = 1.0
+	scream_t = maxf(0.0, scream_t - delta * 0.9)
 	if moving and hit_t <= 0:
 		facing = lerp_angle(facing, moved.angle(), minf(1.0, 8.0 * delta))
 	view = Look.pick_view(facing, view)
@@ -267,9 +358,24 @@ func flinch(dir: Vector2) -> void:
 
 
 func _draw() -> void:
-	var recoil := hit_dir * 3.0 * sin(clampf(hit_t / 0.25, 0, 1) * PI * 0.5)
-	Look.draw(self, {view = view, angle = facing, phase = phase, moving = moving and hit_t <= 0, zombie = true,
-			recoil = recoil, girth = KINDS[kind].girth}, {skin = skin, shirt = shirt, pants = pants, hair = hair, wear = wear_look})
+	var snap := sin(clampf(hit_t / 0.25, 0, 1) * PI * 0.5)
+	var st := {view = view, angle = facing, phase = phase, moving = moving and hit_t <= 0 and atk_t < 0.0, zombie = true,
+			recoil = hit_dir * 3.0 * snap, girth = KINDS[kind].girth, breed = kind, vary = vary,
+			hit = Vector2(hit_dir.x * (-1.0 if view[1] else 1.0), hit_dir.y) * 1.8 * snap, scream = 1.0 - scream_t if scream_t > 0.0 else 0.0}
+	if atk_t >= 0.0:
+		st.bite = clampf(atk_t / (LUNGE + 0.2), 0.0, 1.0)
+	# Knocked down: falls like a body, lies there, then pushes itself back up.
+	var fall := 0.0
+	if down_el >= 0.0:
+		fall = clampf(down_el / 0.6, 0.001, 1.0)
+	elif up_el >= 0.0:
+		fall = clampf(1.0 - up_el / 0.5, 0.0, 1.0)
+	if fall > 0.0:
+		st.fall = fall
+		st.fall_dir = fall_side
+	var lk := body_look()
+	lk.mouth = 1.0 if kind == "screamer" else 0.0
+	Look.draw(self, st, lk)
 	Look.draw_hp(self, hp / max_hp)
 	if alert_t > 0.0 and state > 0:
 		var a := clampf(alert_t / 0.4, 0.0, 1.0)
