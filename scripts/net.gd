@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 5
+const PROTOCOL := 6
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -97,16 +97,19 @@ func _claim_name(p: Player, wanted: String, secret: String) -> void:
 func _welcome(id: int) -> void:
 	init_world.rpc_id(id, main.world_seed)
 	var searched := []
+	var stripped := []
 	for f: FurnitureProp in main.world.container_nodes:
 		if f.searched:
 			searched.append(f.data.id)
+		if f.stripped:
+			stripped.append(f.data.id)
 	var items := []
 	for pid in main.pickups:
 		items.append([pid, main.pickups[pid].pos, main.pickups[pid].item])
 	var doors := []
 	for d in main.world.doors:
 		doors.append([d.id, d.closed, d.hp, d.boards, d.broken, d.kind if main.world.is_built(d.id) else "", d.cell])
-	sync_state.rpc_id(id, searched, items, doors)
+	sync_state.rpc_id(id, searched, items, doors, stripped)
 	main.things.send_all(id)
 	main._add_player(id)
 	print("Player %d joined (%d online)" % [id, main.players.size()])
@@ -122,13 +125,15 @@ func _on_peer_disconnected(id: int) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func sync_state(searched: Array, items: Array, doors: Array) -> void:
+func sync_state(searched: Array, items: Array, doors: Array, stripped: Array) -> void:
 	for e in doors:
 		if e[5] != "":
 			main.world.add_structure(e[0], e[6], e[5], e[2])
 		main.world.set_door(e[0], e[1], e[2], e[3], e[4])
 	for id in searched:
 		main.world.container_nodes[id].set_searched(true)
+	for id in stripped:
+		main.world.container_nodes[id].set_stripped(true)
 	for e in items:
 		main.pickup_add(e[0], e[1], e[2])
 

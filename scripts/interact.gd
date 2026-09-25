@@ -126,6 +126,11 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 				out.append(_act("look", "เปิดดู"))
 			else:
 				out.append(_act("search", "ค้นหา"))
+			var f: FurnitureProp = w.container_nodes[t.id]
+			if f.stripped:
+				out.append(_act("strip", "รื้อไปแล้ว", false, "เหลือแต่ซาก"))
+			else:
+				out.append(_act("strip", "รื้อเอาไม้ ตะปู เหล็ก (เสียงดัง)"))
 			if w.container_nodes[t.id].data.kind == "bed":
 				var why: String = main.survival.can_sleep(p)
 				out.append(_act("sleep", "นอนพัก", why == "", why))

@@ -240,23 +240,100 @@ static func display_name(id: String) -> String:
 	return def(id).get("name", id)
 
 
-## 0-3 random items from a loot table; about a quarter of places are already picked clean.
-static func roll(table: String, rng: RandomNumberGenerator) -> Array:
-	var entries: Array = LOOT.get(table, LOOT.home)
+## What searching turns up. Two steps, so that adding items never makes the
+## essentials rarer: first a *category* (what that piece of furniture holds,
+## tipped by the kind of place), then an item of that category that is found
+## in that kind of place, the rarer ones less often.
+const CATEGORIES := ["food", "drink", "medicine", "material", "clothes", "weapon", "junk"]
+## What each piece of furniture holds: category -> weight.
+const FURN_LOOT := {
+	fridge = {drink = 5, food = 4},
+	table = {food = 4, drink = 4, junk = 1, weapon = 1},  # a kitchen table
+	shelf = {food = 3, drink = 2, medicine = 1, material = 1, junk = 1},
+	counter = {junk = 2, food = 1, drink = 1, medicine = 1, material = 1, weapon = 1},
+	cabinet = {medicine = 3, clothes = 2, material = 1, junk = 1},
+	crate = {material = 5, weapon = 2, clothes = 1},
+	bed = {clothes = 3, junk = 2, medicine = 1},
+}
+## The kind of place tips it: a pharmacy's shelves hold medicine.
+const PLACE_BIAS := {
+	med = {medicine = 5.0},
+	food = {food = 3.0, drink = 2.0},
+	store = {food = 2.0, drink = 2.0},
+	tools = {material = 3.0, weapon = 2.0},
+	clothes = {clothes = 5.0},
+	valuables = {junk = 3.0, weapon = 1.5},
+}
+## Share of each piece of furniture already picked clean. Fridges most of all:
+## everyone raided those first.
+const EMPTY := {fridge = 0.3}
+const EMPTY_DEFAULT := 0.15
+
+
+## An item's category, from its type and tags.
+static func category(id: String) -> String:
+	var d := def(id)
+	match d.get("type"):
+		"use":
+			if has_tag(id, "medicine"):
+				return "medicine"
+			return "drink" if has_tag(id, "drink") else "food"
+		"material", "trap":
+			return "material"
+		"wear":
+			return "clothes"
+		"weapon":
+			return "weapon"
+	return "junk"
+
+
+## 0-3 random items from a piece of furniture (`kind`) in a kind of place (`table`).
+static func roll(table: String, kind: String, rng: RandomNumberGenerator) -> Array:
 	var out := []
-	if rng.randf() < 0.25:
+	if rng.randf() < EMPTY.get(kind, EMPTY_DEFAULT):
 		return out
-	var total := 0
-	for e in entries:
-		total += e[1]
+	var cats: Dictionary = FURN_LOOT.get(kind, FURN_LOOT.shelf)
+	var bias: Dictionary = PLACE_BIAS.get(table, {})
+	var weighted := {}
+	for c in cats:
+		if _in_category(table, c).is_empty():
+			continue
+		# What the place doesn't sell is only there by chance (a pharmacy's snack).
+		var sold: bool = table == "home" or LOOT.get(table, []).any(func(e): return category(e[0]) == c)
+		weighted[c] = cats[c] * bias.get(c, 1.0) * (1.0 if sold else 0.2)
+	if weighted.is_empty():
+		return out
 	for i in rng.randi_range(1, 3):
-		var r := rng.randi_range(1, total)
+		var entries := _in_category(table, _pick(weighted, rng))
+		var by_rarity := {}
 		for e in entries:
-			r -= e[1]
-			if r <= 0:
-				out.append(e[0])
-				break
+			by_rarity[e[0]] = e[1]
+		out.append(_pick(by_rarity, rng))
 	return out
+
+
+## [[item, rarity weight]] of a category found in a kind of place (falling back
+## to what homes have, so any furniture anywhere can hold its basics).
+static func _in_category(table: String, cat: String) -> Array:
+	var out := []
+	for e in LOOT.get(table, []):
+		if category(e[0]) == cat:
+			out.append(e)
+	if out.is_empty() and table != "home":
+		return _in_category("home", cat)
+	return out
+
+
+static func _pick(weights: Dictionary, rng: RandomNumberGenerator):
+	var total := 0.0
+	for k in weights:
+		total += weights[k]
+	var r := rng.randf() * total
+	for k in weights:
+		r -= weights[k]
+		if r <= 0.0:
+			return k
+	return weights.keys()[-1]
 
 
 # --- Icons ------------------------------------------------------------------

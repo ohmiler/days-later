@@ -66,3 +66,20 @@ func run() -> void:
 	c.req_craft("bandage")
 	simulate(3.0)
 	check(me.worn.has("body") and count(me, "bandage") == 0, "worn clothes are not used up")
+
+	# Pull a cupboard apart for wood and nails: slow by hand, faster with a hammer.
+	var f: FurnitureProp = null
+	for n: FurnitureProp in main.world.container_nodes:
+		if n.data.kind == "cabinet":
+			f = n
+			break
+	me.inv.fill(null)
+	me.position = f.position + Vector2(0, 6)
+	c.start_strip(me, f.data.id)
+	simulate(Crafting.STRIP_TIME * 0.6)
+	check(not f.stripped, "pulling a cupboard apart by hand takes a while")
+	simulate(Crafting.STRIP_TIME * 0.5)
+	check(f.stripped and count(me, "wood") == 2 and count(me, "nails") == 1, "a cupboard gives 2 boards and a nail (%s)" % bag(me))
+	var verbs := Interact.actions(main, me, {kind = "container", id = f.data.id}).filter(func(a): return a.verb == "strip")
+	check(not verbs.is_empty() and not verbs[0].ok, "and it can't be pulled apart twice")
+

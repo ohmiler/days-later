@@ -17,9 +17,26 @@ func run() -> void:
 	rng.seed = 7
 	var seen := {}
 	for i in 3000:
-		for id in Items.roll("tools", rng):
+		for id in Items.roll("tools", "crate", rng):
 			seen[id] = seen.get(id, 0) + 1
 	check(seen.get("hammer", 0) > seen.get("axe", 0) * 2, "common finds outnumber rare ones (hammer %d, axe %d)" % [seen.get("hammer", 0), seen.get("axe", 0)])
+
+	# What a piece of furniture holds is what you'd expect of it.
+	var cats := {}
+	for i in 1000:
+		for id in Items.roll("home", "fridge", rng):
+			cats[Items.category(id)] = true
+	check(cats.keys().all(func(c): return c in ["food", "drink"]), "a fridge holds food and drink (%s)" % [cats.keys()])
+	var essential := 0
+	for i in 1000:
+		if Items.roll("home", "table", rng).any(func(id): return Items.category(id) in ["food", "drink", "medicine"]):
+			essential += 1
+	check(essential > 700, "a kitchen table in a home mostly has something to eat or drink (%d%%)" % (essential / 10))
+	var meds := 0
+	for i in 1000:
+		if Items.roll("med", "shelf", rng).any(func(id): return Items.category(id) == "medicine"):
+			meds += 1
+	check(meds > 700, "a pharmacy shelf mostly has medicine (%d%%)" % (meds / 10))
 
 	# Rules go by tags, so a new blade works without code.
 	check(Items.has_tag("axe", "sever") and not Items.has_tag("bat", "blade"), "tags say what cuts")

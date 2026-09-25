@@ -10,6 +10,14 @@ const SIZE := 8  # slots in every cupboard, fridge and shelf
 const TALL := {shelf = 1.4, fridge = 1.35, cabinet = 2.0}
 
 var data: Dictionary  # {id, kind, cell, table, long (a bed two cells long: 2 = down into the room, 1 = to the right, -1 left)}
+## What taking each piece apart gives (see Crafting "strip").
+const STRIP := {
+	shelf = {scrap = 1, nails = 1}, fridge = {scrap = 2}, counter = {wood = 2, nails = 2},
+	cabinet = {wood = 2, nails = 1}, table = {wood = 1, nails = 2}, crate = {wood = 2, nails = 2},
+	bed = {wood = 2, rag = 2},
+}
+
+var stripped := false  # taken apart for its wood and nails: only a wreck is left
 var searched := false  # its loot has been rolled; after that it just holds what people leave in it
 var items: Array = []  # server: SIZE entries of null or {id, n, hp}
 var highlight := false
@@ -17,6 +25,11 @@ var highlight := false
 
 func set_searched(v: bool) -> void:
 	searched = v
+	queue_redraw()
+
+
+func set_stripped(v: bool) -> void:
+	stripped = v
 	queue_redraw()
 
 
@@ -88,6 +101,8 @@ func _draw() -> void:
 				draw_rect(Rect2(-7, -19, 14, 16), Color.from_hsv(rng.randf(), 0.35, 0.6))  # blanket
 				draw_rect(Rect2(-7, -19, 14, 1.5), Color(0, 0, 0, 0.15))
 				draw_set_transform(Vector2.ZERO)
+				if stripped:
+					draw_rect(Rect2(-7, -31, 14, 31), Color(0.1, 0.08, 0.06, 0.55))
 				if highlight and not searched:
 					draw_rect(Rect2(-9, -32, 18, 33), Color(1, 0.9, 0.5, 0.8), false, 0.8)
 				return
@@ -101,6 +116,11 @@ func _draw() -> void:
 				draw_rect(Rect2(x0 + 12, -13, w - 12, 10), Color.from_hsv(rng.randf(), 0.35, 0.6))  # blanket
 				draw_rect(Rect2(x0 + 12, -13, 1.5, 10), Color(0, 0, 0, 0.15))
 	draw_set_transform(Vector2.ZERO)
+	if stripped:  # pulled apart: dark, with the boards gone
+		var h2: float = 18.0 * TALL.get(data.kind, 1.0)
+		draw_rect(Rect2(-8, -h2, 16, h2), Color(0.1, 0.08, 0.06, 0.55))
+		draw_line(Vector2(-6, -h2 + 2), Vector2(5, -3), Color(0, 0, 0, 0.5), 1.0)
+		draw_line(Vector2(5, -h2 + 4), Vector2(-4, -6), Color(0, 0, 0, 0.4), 1.0)
 	if highlight and not searched:
 		var h: float = 23.0 * TALL.get(data.kind, 1.0)
 		var r := Rect2(bed_left() - 1 if data.kind == "bed" else -9, -h, 34 if data.get("long", 0) != 0 else 18, h + 1)

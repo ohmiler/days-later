@@ -28,10 +28,10 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | `test_things` | Taps run dry, radios draw zombies, vending machines break open; only changes are saved, they survive a reload, joiners get them |
 | `test_zombie` | The telegraphed bite, interrupting it, armour, chasing, getting back up |
 | `test_inventory` | Stack sizes, quick heal, drag/merge/split/drop, clothes slots, backpack size |
-| `test_crafting` | The recipe table has no typos, taking apart, making (standing still), mending, worn clothes never used up |
+| `test_crafting` | The recipe table has no typos, taking apart, making (standing still), mending, worn clothes never used up, pulling furniture apart |
 | `test_doors` | Opening, not shutting on someone, boarding, smashing windows |
 | `test_save` | Save and resume: doors, furniture contents, day/time, player, bag, clothes |
-| `test_items` | The item table in data/items.cfg has no typos, rare finds are rarer, tags, carrying too much slows you |
+| `test_items` | The item table in data/items.cfg has no typos, rare finds are rarer, furniture holds what you'd expect (fridges: food and drink), tags, carrying too much slows you |
 | `test_migration` | Old save formats upgrade (and the old file is kept), a damaged save loads from `.bak`, unreadable or newer saves are never written over, "new city" keeps the old one |
 | `test_identity` | A name belongs to whoever made it (by their copy's secret), others get a variation, old saves are claimed by the first, an out-of-date copy is turned away |
 | `test_net` | A second process joins over the network: names, looks, chat, snapshots, opening a cupboard |

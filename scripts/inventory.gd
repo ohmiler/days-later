@@ -440,7 +440,7 @@ func _tick_search(p: Player, delta: float) -> void:
 	container_searched.rpc(f.data.id)
 	# What turned up stays in the furniture: the bag screen opens on it and you
 	# take what you want. Anything left behind is still there later.
-	var found := Items.roll(f.data.table, _loot_rng)
+	var found := Items.roll(f.data.table, f.data.kind, _loot_rng)
 	f.items.resize(FurnitureProp.SIZE)
 	for id in found:
 		var it := {id = id, n = 1, hp = Items.def(id).get("hp", 0)}
