@@ -69,6 +69,10 @@ func server_tick(delta: float) -> void:
 			goal = investigate
 		if goal != Vector2.INF:
 			path.assign(world.path_between(position, goal))
+			# Standing at a shut door with the only other way in far around the block?
+			# Smash through instead of taking the long way.
+			if path.size() * World.TILE > 3.0 * position.distance_to(goal) + 48.0 and world.closed_door_near(position, 20.0) >= 0:
+				path.clear()
 		elif randf() < 0.3:
 			wander = Vector2.from_angle(randf() * TAU) if randf() < 0.6 else Vector2.ZERO
 	var prev_state := state
