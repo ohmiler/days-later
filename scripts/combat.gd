@@ -84,7 +84,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		# A good kick can put it on the ground (not the fat ones); a blade can take an arm.
 		if kind == Look.KICK and z.kind != "fat" and randf() < (0.5 if z.kind == "runner" else 0.3):
 			z.knock_down()
-		elif how in ["machete", "axe"] and randf() < SEVER_CHANCE:
+		elif Items.has_tag(how, "sever") and randf() < SEVER_CHANCE:
 			var bit := z.arm_left_to_cut()
 			if bit > 0:
 				z.missing |= bit
@@ -95,18 +95,16 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 
 ## How a zombie dies depends on what killed it (see Corpse for what each style looks like).
 static func death_style(how: String) -> String:
+	# A weapon's `death` in data/items.cfg: style -> chance.
 	var r := randf()
+	var styles: Dictionary = Items.def(how).get("death", {})
+	for style in styles:
+		r -= styles[style]
+		if r < 0.0:
+			return style
+	if not styles.is_empty():
+		return styles.keys()[-1]
 	match how:
-		"axe":
-			return "behead" if r < 0.55 else ("arm" if r < 0.85 else "cut")
-		"machete":
-			return "behead" if r < 0.35 else ("arm" if r < 0.8 else "cut")
-		"knife":
-			return "stab"
-		"hammer":
-			return "crush" if r < 0.5 else "blunt"
-		"bat", "pipe", "plank":
-			return "crush" if r < 0.3 else "blunt"
 		"gun":
 			return "burst"
 		"stomp":
@@ -203,7 +201,7 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, w
 		main.blood.append([pos + dir * randf_range(2, 8) + Vector2(randf_range(-3, 3), randf_range(-2, 2)),
 				randf_range(0.8, 2.2), Color(randf_range(0.35, 0.5), 0.02, 0.02, 0.85)])
 	main.decals.queue_redraw()
-	var blade := weapon_kind in ["knife", "machete", "axe"]
+	var blade := Items.has_tag(weapon_kind, "blade")
 	Sfx.play(main, "blade" if blade else ("kick" if strong else "hit"), pos)
 	if attacker == multiplayer.get_unique_id():
 		main.shake = maxf(main.shake, 2.2 if strong or weapon_kind != "" else 1.3)

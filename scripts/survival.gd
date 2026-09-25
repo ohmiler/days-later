@@ -63,7 +63,7 @@ func _tick_needs(p: Player, delta: float) -> void:
 	p.hunger = maxf(0.0, p.hunger - HUNGER_RATE * delta * (1.6 if running else 1.0))
 	p.thirst = maxf(0.0, p.thirst - THIRST_RATE * delta * (1.8 if running else 1.0))
 	if running:
-		p.stamina = maxf(0.0, p.stamina - 22.0 * delta)
+		p.stamina = maxf(0.0, p.stamina - 22.0 * delta / p.load_speed())  # heavier tires you faster
 		if p.stamina <= 0.0:
 			p.exhausted = true
 			main._toast(p, "หมดแรง! ต้องพักก่อนวิ่งต่อ")

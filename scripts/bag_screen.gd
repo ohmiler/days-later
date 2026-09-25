@@ -223,8 +223,15 @@ func _draw() -> void:
 			UiTheme.WARN if armor > 0 else Color(UiTheme.PAPER, 0.5))
 	var used := inv.filter(func(x): return x != null).size()
 	draw_string(head, Vector2(200, 40), "กระเป๋า", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.PAPER)
-	draw_string(body, Vector2(200, 56), "%d / %d ช่อง · แถวบนคือแถบด่วน 1–8" % [used, inv.size()], HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
-			Color(UiTheme.PAPER, 0.5))
+	var kg := 0.0
+	for it in inv + worn.values():
+		kg += Items.weight_of(it)
+	var limit := Items.CARRY + float(Items.def(worn.back.id if worn.get("back") != null else "").get("carry", 0.0))
+	var load_line := "%d / %d ช่อง · หนัก %.1f / %.0f กก." % [used, inv.size(), kg, limit]
+	if kg > limit:
+		load_line += " · หนักเกิน เดินช้าลง"
+	draw_string(body, Vector2(200, 56), load_line, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+			UiTheme.WARN if kg > limit else Color(UiTheme.PAPER, 0.5))
 	draw_string(head, Vector2(480, 40), box_title if box_id >= 0 else "พื้นใกล้ตัว", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.PAPER)
 	draw_string(body, Vector2(480, 56), "ลากของมาเก็บไว้ในนี้ได้" if box_id >= 0 else "ลากของมาวางที่นี่เพื่อทิ้ง",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(UiTheme.PAPER, 0.5))
@@ -274,6 +281,9 @@ func _draw() -> void:
 				line += " · " + Items.effect_text(hit.id)
 		if Items.stack(hit.id) > 1:
 			line += " · %d/%d" % [hit.n, Items.stack(hit.id)]
+		line += " · %.1f กก." % Items.weight_of(hit)
+		if Items.rarity_of(hit.id) != "common":
+			line += " · " + Items.RARITY_NAMES[Items.rarity_of(hit.id)]
 		info = line
 	draw_line(Vector2(20, H - 44), Vector2(W - 20, H - 44), UiTheme.LINE, 1)
 	draw_string(body, Vector2(24, H - 18), info, HORIZONTAL_ALIGNMENT_LEFT, W - 48, 14, Color(UiTheme.PAPER, 0.8))
@@ -299,6 +309,10 @@ func _take_all_rect() -> Rect2:
 
 func _draw_item(r: Rect2, it: Dictionary) -> void:
 	Items.draw_icon(self, r.grow(-10), it.id)
+	var rarity := Items.rarity_of(it.id)
+	if rarity != "common":  # a coloured corner marks the harder finds
+		draw_colored_polygon(PackedVector2Array([r.position + Vector2(4, 4), r.position + Vector2(14, 4), r.position + Vector2(4, 14)]),
+				Items.RARITY_COLORS[rarity])
 	if it.get("n", 1) > 1:
 		draw_string(UiTheme.heading(), r.end - Vector2(22, 5), "x%d" % it.n, HORIZONTAL_ALIGNMENT_RIGHT, 18, 12, UiTheme.INK)
 	var d := Items.def(it.id)

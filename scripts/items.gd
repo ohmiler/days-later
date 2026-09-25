@@ -1,93 +1,109 @@
 class_name Items
-## Every item in the game, the loot tables that fill shops and homes, and
-## how items are drawn as icons. Add an entry to DEFS to add an item.
-##
-## Weapon fields: range, dmg, cd (cooldown), stun, knock, dur (swing time),
-## hp (durability), cleave (hits everything in front), draw (see Look._draw_weapon).
+## Every item in the game, how searching turns them up, how much they weigh
+## and how they are drawn as icons. The items themselves are in
+## data/items.cfg, one section each (its top says what every field means):
+## to add an item, add a section there. This file is the rules around them.
 
+const DATA := "res://data/items.cfg"  # (exports must include *.cfg: Export > Resources > filters)
 const INV_SIZE := 8  # the hotbar; a bag adds slots after these, reached from the bag screen (Tab)
-## How many of a thing fit in one slot. Weapons and clothes never stack.
-const STACKS := {bandage = 10, painkiller = 10, firstaid = 3, antibiotic = 5, water = 6, mama = 6, snack = 8,
-		energy = 6, wire = 5, spikes = 5, wood = 10, gold = 10}
 
 ## Places on the body something can be worn, and what they're called.
 const SLOTS := ["head", "body", "legs", "feet", "back"]
 const SLOT_NAMES := {head = "หัว", body = "ตัว", legs = "ขา", feet = "เท้า", back = "หลัง"}
 const MAX_ARMOR := 0.6
 
-const DEFS := {
-	# Melee weapons
-	"plank": {name = "ไม้หน้าสาม", type = "weapon", range = 22.0, dmg = 16.0, cd = 0.55, stun = 0.4, knock = 5.0,
-			dur = 0.34, hp = 25, draw = {kind = "plank", grip = "sweep", len = 11.0, col = Color("9a7a52")}},
-	"bat": {name = "ไม้เบสบอล", type = "weapon", range = 24.0, dmg = 22.0, cd = 0.6, stun = 0.5, knock = 7.0,
-			dur = 0.34, hp = 40, draw = {kind = "bat", grip = "sweep", len = 11.5, col = Color("c8a878")}},
-	"pipe": {name = "ท่อเหล็ก", type = "weapon", range = 24.0, dmg = 26.0, cd = 0.7, stun = 0.55, knock = 8.0,
-			dur = 0.38, hp = 60, draw = {kind = "pipe", grip = "chop", len = 12.0, col = Color("8a9096")}},
-	"knife": {name = "มีดทำครัว", type = "weapon", range = 17.0, dmg = 18.0, cd = 0.35, stun = 0.2, knock = 2.0,
-			dur = 0.24, hp = 30, draw = {kind = "knife", grip = "stab", len = 6.5, col = Color("d0d4d8")}},
-	"machete": {name = "มีดพร้า", type = "weapon", range = 22.0, dmg = 30.0, cd = 0.55, stun = 0.3, knock = 3.0,
-			dur = 0.32, hp = 45, draw = {kind = "machete", len = 10.0, col = Color("b8bcc0")}},
-	"axe": {name = "ขวาน", type = "weapon", range = 23.0, dmg = 40.0, cd = 0.9, stun = 0.6, knock = 9.0,
-			dur = 0.45, hp = 35, cleave = true, draw = {kind = "axe", grip = "chop", len = 11.0, col = Color("7a8088")}},
-	"hammer": {name = "ค้อน", type = "weapon", range = 18.0, dmg = 24.0, cd = 0.55, stun = 0.5, knock = 5.0,
-			dur = 0.3, hp = 50, draw = {kind = "hammer", len = 8.0, col = Color("5a5e64")}},
-	# Consumables. heal = health, food / drink = hunger / thirst restored,
-	# cure = infection removed, stop_bleed, stamina.
-	"bandage": {name = "ผ้าพันแผล", type = "use", heal = 10.0, stop_bleed = true},
-	"painkiller": {name = "ยาแก้ปวด", type = "use", heal = 20.0},
-	"firstaid": {name = "ชุดปฐมพยาบาล", type = "use", heal = 50.0, stop_bleed = true},
-	"antibiotic": {name = "ยาปฏิชีวนะ", type = "use", cure = 60.0},
-	"water": {name = "น้ำดื่ม", type = "use", drink = 45.0},
-	"mama": {name = "บะหมี่กึ่งสำเร็จรูป", type = "use", food = 40.0, drink = -5.0},
-	"snack": {name = "ขนมถุง", type = "use", food = 20.0},
-	"energy": {name = "เครื่องดื่มชูกำลัง", type = "use", food = 5.0, drink = 25.0, stamina = 100.0},
-	# Traps: F sets one down on the ground in front of you
-	"wire": {name = "ลวดหนาม", type = "trap"},
-	"spikes": {name = "กับดักตะปู", type = "trap"},
-	# Building material: reinforce or repair doors (R)
-	"wood": {name = "ไม้กระดาน", type = "material"},
-	# Clothes and armour: F puts one on, Tab shows what you're wearing.
-	# armor = share of a bite's damage and infection stopped (pieces add up),
-	# hp = bites it takes before it's torn apart, bag = extra hotbar slots,
-	# speed = move speed multiplier, draw = how it looks (see Look).
-	"hoodie": {name = "เสื้อฮู้ด", type = "wear", slot = "body", armor = 0.05, hp = 15,
-			draw = {shape = "hoodie", col = Color("5a5e66")}},
-	"jacket": {name = "แจ็กเก็ตหนัง", type = "wear", slot = "body", armor = 0.15, hp = 30,
-			draw = {shape = "long", col = Color("3a2a22")}},
-	"rider": {name = "เสื้อวินมอไซค์", type = "wear", slot = "body", armor = 0.04, hp = 10,
-			draw = {shape = "vest", col = Color("d8781e"), plate = false}},
-	"vest": {name = "เสื้อเกราะตำรวจ", type = "wear", slot = "body", armor = 0.3, hp = 60, speed = 0.92,
-			draw = {shape = "vest", col = Color("2e3238"), plate = true}},
-	"jeans": {name = "กางเกงยีนส์", type = "wear", slot = "legs", armor = 0.08, hp = 25,
-			draw = {shape = "long", col = Color("34507a")}},
-	"shorts": {name = "กางเกงขาสั้น", type = "wear", slot = "legs", armor = 0.0, hp = 10,
-			draw = {shape = "shorts", col = Color("6a6a5e")}},
-	"helmet": {name = "หมวกกันน็อก", type = "wear", slot = "head", armor = 0.12, hp = 40,
-			draw = {shape = "helmet", col = Color("c8c4b8")}},
-	"cap": {name = "หมวกแก๊ป", type = "wear", slot = "head", armor = 0.0, hp = 10,
-			draw = {shape = "cap", col = Color("8a2a26")}},
-	"boots": {name = "รองเท้าบูท", type = "wear", slot = "feet", armor = 0.05, hp = 40,
-			draw = {shape = "boots", col = Color("3a2a1c")}},
-	"sneakers": {name = "รองเท้าผ้าใบ", type = "wear", slot = "feet", armor = 0.0, hp = 25, speed = 1.05,
-			draw = {shape = "shoes", col = Color("d8d8d0")}},
-	"schoolbag": {name = "กระเป๋านักเรียน", type = "wear", slot = "back", bag = 2, hp = 30,
-			draw = {shape = "pack", col = Color("2a3a6a"), big = false}},
-	"backpack": {name = "เป้เดินป่า", type = "wear", slot = "back", bag = 4, hp = 40, speed = 0.97,
-			draw = {shape = "pack", col = Color("4a5a3a"), big = true}},
-	# Valuables, for trading later
-	"gold": {name = "สร้อยทอง", type = "junk"},
-}
+## Kilograms a survivor carries before slowing down (a bag adds its `carry`).
+## Past it they slow, down to OVERLOAD_SPEED at OVERLOAD times the limit.
+const CARRY := 15.0
+const OVERLOAD := 1.5
+const OVERLOAD_SPEED := 0.6
 
-## What each kind of place can hold: [item, weight].
-const LOOT := {
-	"store": [["water", 4], ["mama", 3], ["snack", 4], ["energy", 2], ["painkiller", 1]],
-	"med": [["bandage", 4], ["painkiller", 3], ["firstaid", 1], ["antibiotic", 2], ["water", 1]],
-	"food": [["knife", 2], ["mama", 2], ["snack", 2], ["water", 2], ["energy", 1]],
-	"tools": [["helmet", 2], ["boots", 2], ["rider", 1], ["backpack", 1], ["pipe", 3], ["hammer", 3], ["plank", 3], ["axe", 1], ["machete", 1], ["wood", 5], ["wire", 2], ["spikes", 2]],
-	"valuables": [["vest", 1], ["jacket", 1], ["gold", 3], ["bat", 1], ["knife", 1]],
-	"clothes": [["hoodie", 3], ["jacket", 2], ["jeans", 3], ["shorts", 3], ["cap", 3], ["sneakers", 2], ["schoolbag", 2]],
-	"home": [["hoodie", 1], ["jeans", 1], ["shorts", 1], ["cap", 1], ["schoolbag", 1], ["plank", 2], ["bat", 1], ["knife", 2], ["water", 3], ["mama", 3], ["snack", 2], ["bandage", 2], ["wood", 3], ["spikes", 1]],
-}
+const TYPES := ["weapon", "use", "trap", "material", "wear", "junk"]
+const PLACES := ["store", "med", "food", "tools", "valuables", "clothes", "home"]
+## How often searching turns each up, relative to each other.
+const RARITY := {common = 4, uncommon = 2, rare = 1}
+const RARITY_NAMES := {common = "ธรรมดา", uncommon = "ไม่บ่อย", rare = "หายาก"}
+const RARITY_COLORS := {common = Color("c8c4b8"), uncommon = Color("6ab0e0"), rare = Color("e0b840")}
+## Icon shapes an item's `icon` can use (drawn in draw_icon).
+const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain"]
+
+## id -> fields, read from DATA the first time Items is used.
+static var DEFS: Dictionary = _load_defs()
+## place -> [[item, weight]], built from each item's places and rarity.
+static var LOOT: Dictionary = _build_loot()
+
+
+static func _load_defs() -> Dictionary:
+	var cf := ConfigFile.new()
+	var err := cf.load(DATA)
+	if err != OK:
+		push_error("Could not read %s (error %d)" % [DATA, err])
+		return {}
+	var out := {}
+	for id in cf.get_sections():
+		var d := {}
+		for key in cf.get_section_keys(id):
+			d[key] = _colours(key, cf.get_value(id, key))
+		out[id] = d
+	return out
+
+
+## Colours are written as hex strings in the file; any field named col... is one.
+static func _colours(key, v):
+	if v is Dictionary:
+		var out := {}
+		for k in v:
+			out[k] = _colours(k, v[k])
+		return out
+	if v is String and str(key).begins_with("col"):
+		return Color(v)
+	return v
+
+
+static func _build_loot() -> Dictionary:
+	var out := {}
+	for place in PLACES:
+		out[place] = []
+	for id in DEFS:
+		for place in DEFS[id].get("places", []):
+			if out.has(place):
+				out[place].append([id, RARITY.get(DEFS[id].get("rarity", "common"), 1)])
+	return out
+
+
+## What is wrong with the item table, one line each ([] when all is well).
+## The tests run this, so a typo in data/items.cfg is caught straight away.
+static func problems() -> Array:
+	var out := []
+	for id in DEFS:
+		var d: Dictionary = DEFS[id]
+		for key in ["name", "type", "weight", "rarity"]:
+			if not d.has(key):
+				out.append("%s: no %s" % [id, key])
+		if d.get("type") not in TYPES:
+			out.append("%s: unknown type %s" % [id, d.get("type")])
+		if d.get("rarity") not in RARITY:
+			out.append("%s: unknown rarity %s" % [id, d.get("rarity")])
+		if not (d.get("weight") is float or d.get("weight") is int) or d.get("weight", 0) < 0:
+			out.append("%s: weight must be a number" % id)
+		for place in d.get("places", []):
+			if place not in PLACES:
+				out.append("%s: unknown place %s" % [id, place])
+		match d.get("type"):
+			"weapon":
+				for key in ["range", "dmg", "cd", "dur", "hp", "draw"]:
+					if not d.has(key):
+						out.append("%s: a weapon needs %s" % [id, key])
+			"wear":
+				if d.get("slot") not in SLOTS:
+					out.append("%s: unknown slot %s" % [id, d.get("slot")])
+				if not d.has("draw") or not d.has("hp"):
+					out.append("%s: clothes need draw and hp" % id)
+			_:
+				if d.get("icon", {}).get("shape") not in ICONS:
+					out.append("%s: unknown icon shape %s" % [id, d.get("icon", {}).get("shape")])
+	return out
+
 
 ## Furniture that goes in each kind of place.
 const FURNITURE := {
@@ -194,7 +210,20 @@ static func wear_draw(ids: Dictionary) -> Dictionary:
 
 
 static func stack(id: String) -> int:
-	return STACKS.get(id, 1)
+	return def(id).get("stack", 1)
+
+
+static func has_tag(id: String, tag: String) -> bool:
+	return tag in def(id).get("tags", [])
+
+
+## Kilograms of one slot's worth: the item times how many.
+static func weight_of(it) -> float:
+	return 0.0 if it == null else float(def(it.id).get("weight", 0.0)) * it.get("n", 1)
+
+
+static func rarity_of(id: String) -> String:
+	return def(id).get("rarity", "common")
 
 
 static func is_weapon(id: String) -> bool:
@@ -240,55 +269,66 @@ static func draw_icon(ci: CanvasItem, r: Rect2, id: String) -> void:
 	if d.get("type") == "wear":
 		_wear_icon(ci, r, d)
 		return
+	_shape_icon(ci, r, d.get("icon", {}))
+
+
+## The icon shapes (see ICONS). `col` is the main colour, `col2` the detail.
+## Many items share one shape in different colours: a new drink is a
+## "bottle" with its own colours, no drawing code needed.
+static func _shape_icon(ci: CanvasItem, r: Rect2, icon: Dictionary) -> void:
+	var c := r.get_center()
 	var s := r.size.x / 40.0
-	match id:
-		"bandage":
-			ci.draw_circle(c, 11 * s, Color("e8e2d4"))
-			ci.draw_circle(c, 4 * s, Color("b8b0a0"))
-		"painkiller":
-			ci.draw_rect(Rect2(c - Vector2(12, 7) * s, Vector2(24, 14) * s), Color("e8e8f0"))
+	var col: Color = icon.get("col", Color("888888"))
+	var col2: Color = icon.get("col2", col.lightened(0.3))
+	match icon.get("shape", ""):
+		"roll":
+			ci.draw_circle(c, 11 * s, col)
+			ci.draw_circle(c, 4 * s, col2)
+		"blister":
+			ci.draw_rect(Rect2(c - Vector2(12, 7) * s, Vector2(24, 14) * s), col)
 			for i in 4:
-				ci.draw_circle(c + Vector2(-8 + i * 5.3, 0) * s, 2 * s, Color("d84a4a"))
-		"firstaid":
-			ci.draw_rect(Rect2(c - Vector2(13, 10) * s, Vector2(26, 20) * s), Color("e8e4dc"))
-			ci.draw_rect(Rect2(c - Vector2(2.5, 7) * s, Vector2(5, 14) * s), Color("c83030"))
-			ci.draw_rect(Rect2(c - Vector2(7, 2.5) * s, Vector2(14, 5) * s), Color("c83030"))
-		"water":
-			ci.draw_rect(Rect2(c - Vector2(5, 11) * s, Vector2(10, 22) * s), Color("a8d0e8"))
-			ci.draw_rect(Rect2(c - Vector2(3, 14) * s, Vector2(6, 4) * s), Color("3a6ac8"))
-			ci.draw_rect(Rect2(c - Vector2(5, 3) * s, Vector2(10, 6) * s), Color("3a8ad0"))
-		"mama":
+				ci.draw_circle(c + Vector2(-8 + i * 5.3, 0) * s, 2 * s, col2)
+		"kit":
+			ci.draw_rect(Rect2(c - Vector2(13, 10) * s, Vector2(26, 20) * s), col)
+			ci.draw_rect(Rect2(c - Vector2(2.5, 7) * s, Vector2(5, 14) * s), col2)
+			ci.draw_rect(Rect2(c - Vector2(7, 2.5) * s, Vector2(14, 5) * s), col2)
+		"bottle":
+			ci.draw_rect(Rect2(c - Vector2(5, 11) * s, Vector2(10, 22) * s), col)
+			ci.draw_rect(Rect2(c - Vector2(3, 14) * s, Vector2(6, 4) * s), col2)
+			ci.draw_rect(Rect2(c - Vector2(5, 3) * s, Vector2(10, 6) * s), col2.lightened(0.1))
+		"cup":
 			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-11, -8) * s, c + Vector2(11, -8) * s,
-					c + Vector2(8, 11) * s, c + Vector2(-8, 11) * s]), Color("e8c040"))
-			ci.draw_rect(Rect2(c + Vector2(-11, -10) * s, Vector2(22, 3) * s), Color("c83a2e"))
-		"snack":
-			ci.draw_rect(Rect2(c - Vector2(9, 12) * s, Vector2(18, 24) * s), Color("3a9a4a"))
-			ci.draw_circle(c, 5 * s, Color("e8d040"))
-		"energy":
-			ci.draw_rect(Rect2(c - Vector2(5, 10) * s, Vector2(10, 20) * s), Color("8a4a1a"))
-			ci.draw_rect(Rect2(c - Vector2(5, 3) * s, Vector2(10, 6) * s), Color("e8c040"))
-		"antibiotic":
-			ci.draw_rect(Rect2(c - Vector2(7, 8) * s, Vector2(14, 20) * s), Color("e0802a"))
-			ci.draw_rect(Rect2(c - Vector2(8, 13) * s, Vector2(16, 6) * s), Color("f0ece4"))
-			ci.draw_rect(Rect2(c - Vector2(5, 2) * s, Vector2(10, 7) * s), Color("f0ece4"))
-			ci.draw_rect(Rect2(c - Vector2(1, 1) * s, Vector2(2, 5) * s), Color("3a8a4a"))
-		"wire":
+					c + Vector2(8, 11) * s, c + Vector2(-8, 11) * s]), col)
+			ci.draw_rect(Rect2(c + Vector2(-11, -10) * s, Vector2(22, 3) * s), col2)
+		"packet":
+			ci.draw_rect(Rect2(c - Vector2(9, 12) * s, Vector2(18, 24) * s), col)
+			ci.draw_circle(c, 5 * s, col2)
+		"can":
+			ci.draw_rect(Rect2(c - Vector2(5, 10) * s, Vector2(10, 20) * s), col)
+			ci.draw_rect(Rect2(c - Vector2(5, 3) * s, Vector2(10, 6) * s), col2)
+		"pillbox":
+			var cap := Color("f0ece4")
+			ci.draw_rect(Rect2(c - Vector2(7, 8) * s, Vector2(14, 20) * s), col)
+			ci.draw_rect(Rect2(c - Vector2(8, 13) * s, Vector2(16, 6) * s), cap)
+			ci.draw_rect(Rect2(c - Vector2(5, 2) * s, Vector2(10, 7) * s), cap)
+			ci.draw_rect(Rect2(c - Vector2(1, 1) * s, Vector2(2, 5) * s), col2)
+		"coil":
 			for i in 3:
-				ci.draw_arc(c + Vector2(-7 + i * 7, 0) * s, 6 * s, 0, TAU, 12, Color("8a8e90"), 1.5 * s)
-		"spikes":
-			ci.draw_rect(Rect2(c - Vector2(12, 4) * s, Vector2(24, 9) * s), Color("7a5634"))
+				ci.draw_arc(c + Vector2(-7 + i * 7, 0) * s, 6 * s, 0, TAU, 12, col, 1.5 * s)
+		"board":
+			ci.draw_rect(Rect2(c - Vector2(12, 4) * s, Vector2(24, 9) * s), col)
 			for i in 5:
-				ci.draw_line(c + Vector2(-9 + i * 4.5, -4) * s, c + Vector2(-9 + i * 4.5, -11) * s, Color("c8ccd0"), 1.5 * s)
-		"wood":
+				ci.draw_line(c + Vector2(-9 + i * 4.5, -4) * s, c + Vector2(-9 + i * 4.5, -11) * s, col2, 1.5 * s)
+		"planks":
 			for i in 3:
 				var y := (-8 + i * 7) * s
-				ci.draw_rect(Rect2(c + Vector2(-13 * s, y), Vector2(26, 5) * s), Color("a8885a").darkened(i * 0.08))
-				ci.draw_rect(Rect2(c + Vector2(-13 * s, y), Vector2(26, 1.2) * s), Color("c8a878"))
-		"gold":
-			ci.draw_arc(c, 9 * s, 0, TAU, 20, Color("e0b840"), 3 * s)
-			ci.draw_circle(c + Vector2(0, 9) * s, 3 * s, Color("f0d060"))
+				ci.draw_rect(Rect2(c + Vector2(-13 * s, y), Vector2(26, 5) * s), col.darkened(i * 0.08))
+				ci.draw_rect(Rect2(c + Vector2(-13 * s, y), Vector2(26, 1.2) * s), col2)
+		"chain":
+			ci.draw_arc(c, 9 * s, 0, TAU, 20, col, 3 * s)
+			ci.draw_circle(c + Vector2(0, 9) * s, 3 * s, col2)
 		_:
-			ci.draw_circle(c, 8 * s, Color("888888"))
+			ci.draw_circle(c, 8 * s, col)
 
 
 ## Clothes drawn flat, like laid out on a table.
