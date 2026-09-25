@@ -119,6 +119,12 @@ static func draw(ci: CanvasItem, st: Dictionary, lk: Dictionary) -> void:
 	draw_rig(ci, Rig.build(st, lk), lk)
 
 
+## Draw, easing between poses (see Rig.build_eased). `mem` belongs to the
+## character: an empty dictionary it keeps between frames.
+static func draw_eased(ci: CanvasItem, st: Dictionary, lk: Dictionary, mem: Dictionary) -> void:
+	draw_rig(ci, Rig.build_eased(st, lk, mem, Time.get_ticks_msec() / 1000.0), lk)
+
+
 ## Paint a rig in layers, back to front: shadow, legs, far arms, torso, head,
 ## near arms (with whatever they hold), and a leg kicking at the camera.
 static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
@@ -229,7 +235,7 @@ static func _draw_leg(ci: CanvasItem, leg: Dictionary, lk: Dictionary) -> void:
 		"rect":
 			_leg_rect(ci, leg.x, leg.lift, col, shoe, shin, boot)
 		"line":
-			_leg_line(ci, leg.hip, leg.foot, col, shoe, shin, boot)
+			_leg_line(ci, leg.hip, leg.knee, leg.foot, col, shoe, shin, boot)
 		"limb":
 			var side: bool = leg.shoe == "side_kick"
 			var w := [3.1, 2.8, 2.4] if side else [3.2, 2.9, 2.5]
@@ -285,9 +291,9 @@ static func _leg_rect(ci: CanvasItem, x: float, up: float, pants: Color, shoe: C
 	_rect(ci, Rect2(x - 0.3, -up - 1.9 - boot, 3.4, 1.9 + boot), shoe)
 
 
-## Side leg from hip to foot with a slight forward knee; the shoe points forward.
-static func _leg_line(ci: CanvasItem, hip: Vector2, foot: Vector2, pants: Color, shoe: Color, shin: Color, boot: float) -> void:
-	var knee := hip.lerp(foot, 0.5) + Vector2(0.8, 0)
+## Side leg from hip to knee to foot; the shoe points forward.
+static func _leg_line(ci: CanvasItem, hip: Vector2, knee: Vector2, foot: Vector2, pants: Color, shoe: Color, shin: Color,
+		boot: float) -> void:
 	_line(ci, knee, foot + Vector2(0, -1.4), shin, 2.6 if shin == pants else 2.2)
 	_line(ci, hip, knee, pants, 2.9)
 	_rect(ci, Rect2(foot + Vector2(-1.3, -1.9 - boot), Vector2(3.8 - boot * 0.6, 1.9 + boot)), shoe)
