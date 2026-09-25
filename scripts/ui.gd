@@ -75,6 +75,22 @@ func _ready() -> void:
 	show_menu(true)
 
 
+## This copy of the game's secret: made once and kept in the settings file. It
+## is what proves a returning survivor is the same person, with no password.
+func secret() -> String:
+	if secret_override != "":
+		return secret_override
+	var s: String = cfg.get_value("player", "secret", "")
+	if s.length() < 32:
+		s = Crypto.new().generate_random_bytes(16).hex_encode()
+		cfg.set_value("player", "secret", s)
+		cfg.save(SETTINGS)
+	return s
+
+
+var secret_override := ""  # tests pose as someone else
+
+
 func player_name() -> String:
 	var n := name_edit.text.strip_edges().left(16)
 	return n if n != "" else "ผู้รอดชีวิต"

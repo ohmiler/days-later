@@ -13,13 +13,14 @@ class_name SaveGame
 ## (world.save.v1 and so on). A save that cannot be read, or that comes from a
 ## newer game, is never written over: the game says so and leaves it alone.
 
-const VERSION := 2
+const VERSION := 3
 const GAME_VERSION := "0.4"  # shown to people; not used for compatibility
 
 ## [kind, from version] -> the function that upgrades it one step.
 const MIGRATIONS := {
 	"world:1": "_world_1_to_2",
 	"player:1": "_player_1_to_2",
+	"player:2": "_player_2_to_3",
 }
 
 
@@ -137,8 +138,14 @@ static func save_player(p: Player) -> void:
 		version = VERSION, name = p.pname, alive = p.alive(),
 		pos = p.position, on_roof = p.on_roof, hp = p.hp, kills = p.kills,
 		hunger = p.hunger, thirst = p.thirst, infection = p.infection, bleeding = p.bleeding, stamina = p.stamina,
-		inv = p.inv, sel = p.sel, worn = p.worn,
+		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash,
 	})
+
+
+## Fingerprint of the secret that owns this name's save, or "" if nobody does.
+static func owner_of(name: String) -> String:
+	var r := _load(_player_path(name), "player")
+	return r.data.get("secret_hash", "") if r.state == "ok" else ("?" if r.state != "none" else "")
 
 
 ## Put a returning player back how they left. Returns false for a new name.
@@ -193,6 +200,13 @@ static func _world_1_to_2(d: Dictionary) -> Dictionary:
 
 static func _player_1_to_2(d: Dictionary) -> Dictionary:
 	d.merge({worn = {}}, false)
+	return d
+
+
+## v3 remembers who owns the name. Old saves have no owner yet: the first to
+## come back with that name claims it.
+static func _player_2_to_3(d: Dictionary) -> Dictionary:
+	d.merge({secret_hash = ""}, false)
 	return d
 
 

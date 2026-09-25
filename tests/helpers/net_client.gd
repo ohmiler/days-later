@@ -19,8 +19,13 @@ func _process(d: float) -> bool:
 		0:
 			if t > 0.5:
 				step = 1
-				main.port = int(OS.get_cmdline_user_args()[0])
+				var args := OS.get_cmdline_user_args()
+				main.port = int(args[0])
 				main.player_name = "Client"
+				main.ui.secret_override = "client-secret-0123456789abcdef0123"
+				if args.size() > 1 and args[1] == "old":
+					main.protocol = main.PROTOCOL - 1  # pretend to be an out-of-date copy
+					step = 10
 				main.ui.appearance = {skin = 2, hair = 3, style = 1, shirt = 4, pants = 2, build = 2}
 				main._join("127.0.0.1")
 		1:
@@ -40,6 +45,12 @@ func _process(d: float) -> bool:
 				lines.append("box %d" % main.ui.gear.box_id)
 				var f := FileAccess.open("user://net_client.txt", FileAccess.WRITE)
 				f.store_string("\n".join(lines))
+				f.close()
+				return true
+		10:
+			if t > 3.0:
+				var f := FileAccess.open("user://net_client.txt", FileAccess.WRITE)
+				f.store_string("\n".join(["in_game %s" % main.in_game, "status %s" % main.ui.status.text]))
 				f.close()
 				return true
 	return t > 20.0

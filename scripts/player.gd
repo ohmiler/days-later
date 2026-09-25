@@ -63,6 +63,7 @@ var look := {}  # colours and shapes to draw with, from app_code
 # the ids (slot -> id, from snapshots), which is all drawing and speed need.
 var worn := {}
 var wear_ids := {}
+var secret_hash := ""  # server: fingerprint of the secret that owns this name (never the secret itself)
 var say := ""  # last thing said in chat, shown over their head for say_t seconds
 var say_t := 0.0
 var open_box := -1  # server: the container this player has open in the bag screen
