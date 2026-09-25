@@ -30,7 +30,7 @@ func _ref_ok(p: Player, ref: Array) -> bool:
 		"inv":
 			return ref[1] is int and ref[1] >= -1 and ref[1] < p.inv.size()
 		"worn":
-			return ref[1] in Items.SLOTS
+			return ref[1] in Items.SLOTS or ref[1] in Items.HANDS
 		"ground":
 			return ref[1] == -1 or (main.pickups.has(ref[1]) and p.position.distance_to(main.pickups[ref[1]].pos) < GROUND_REACH)
 	return false
@@ -138,12 +138,33 @@ func req_move(a: Array, b: Array) -> void:
 	if b[0] == "ground" and p.on_roof:
 		main._toast(p, "วางของบนหลังคาไม่ได้")
 		return
+	# Hands take weapons. A two-handed one goes in the right hand, and needs the left free.
+	if b[0] == "worn" and b[1] in Items.HANDS:
+		if not Items.is_weapon(x.id):
+			main._toast(p, "ถือได้แต่อาวุธ")
+			return
+		if Items.two_handed(x.id):
+			b = ["worn", "hand_r"]
+			if p.worn.get("hand_l") != null and a != ["worn", "hand_l"]:
+				var free := p.inv.find(null)
+				if free < 0:
+					main._toast(p, "%sต้องใช้สองมือ · ปล่อยมือซ้ายก่อน" % Items.display_name(x.id))
+					return
+				p.inv[free] = p.worn.hand_l  # the left hand lets go to take the other end
+				p.worn.erase("hand_l")
+		elif b[1] == "hand_l" and p.worn.get("hand_r") != null and Items.two_handed(p.worn.hand_r.id):
+			main._toast(p, "ถือ%sสองมืออยู่" % Items.display_name(p.worn.hand_r.id))
+			return
+		if a == b:
+			return
 	var y = _ref_get(p, b)
 	# Only clothes go on the body, and only in their own place.
-	if b[0] == "worn" and (not Items.is_wear(x.id) or Items.def(x.id).slot != b[1]):
+	if b[0] == "worn" and b[1] not in Items.HANDS and (not Items.is_wear(x.id) or Items.def(x.id).slot != b[1]):
 		main._toast(p, "ใส่ตรงนั้นไม่ได้")
 		return
-	if a[0] == "worn" and y != null and b[0] != "ground" and (not Items.is_wear(y.id) or Items.def(y.id).slot != a[1]):
+	var fits_back: bool = y == null or (Items.is_weapon(y.id) if a[1] in Items.HANDS else (Items.is_wear(y.id) and Items.def(y.id).slot == a[1])) \
+			if a[0] == "worn" else true
+	if a[0] == "worn" and y != null and b[0] != "ground" and not fits_back:
 		b = ["inv", p.inv.find(null)]  # taking clothes off onto a full slot: find an empty one instead
 		if b[1] < 0:
 			main._toast(p, "กระเป๋าเต็ม")
@@ -321,6 +342,10 @@ func req_select(slot: int) -> void:
 	var p := main._sender()
 	if p and slot >= 0 and slot < mini(p.inv.size(), Items.INV_SIZE):
 		p.sel = slot
+		# Picking a weapon on the hotbar takes it in the right hand (what was there goes in its place).
+		if p.inv[slot] != null and Items.is_weapon(p.inv[slot].id):
+			_move_as(p, ["inv", slot], ["worn", "hand_r"])
+			return
 		_send_inv(p)
 
 
@@ -386,6 +411,9 @@ func _use_selected(p: Player) -> void:
 	var it = p.inv[p.sel]
 	if it != null and Items.is_wear(it.id):
 		_equip(p, p.sel)
+		return
+	if it != null and Items.is_weapon(it.id):
+		_move_as(p, ["inv", p.sel], ["worn", "hand_r"])  # "use" a weapon: hold it
 		return
 	if it != null and Items.def(it.id).get("type") == "trap":
 		main.doors._place_trap(p, it)

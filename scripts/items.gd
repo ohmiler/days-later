@@ -15,6 +15,19 @@ const SLOTS := ["head", "face", "neck", "body", "over", "arms", "hands", "legs",
 const SLOT_NAMES := {head = "หัว", face = "หน้า", neck = "คอ", body = "ตัว", over = "ทับเสื้อ", arms = "แขน", hands = "มือ",
 		legs = "ขา", knees = "เข่า/แข้ง", feet = "เท้า", back = "หลัง", strap = "สะพาย"}
 
+## What you hold, in each hand (kept with what you wear, under these names).
+## A weapon swung two-handed (a chop or a sweep) takes both: it sits in the
+## right hand and the left stays empty.
+const HANDS := ["hand_r", "hand_l"]
+const HAND_NAMES := {hand_r = "มือขวา", hand_l = "มือซ้าย"}
+const OFF_HAND := 0.7  # the left hand hits this hard (most people are right-handed)
+const DUAL_SPEED := 0.6  # a weapon in each hand: each swing comes this much sooner
+
+
+static func two_handed(id: String) -> bool:
+	return def(id).get("draw", {}).get("grip", "") in ["chop", "sweep"]
+
+
 ## Where a bite can land. Zombies bite what's nearest their mouth: a forearm
 ## thrown up to fend one off (most of all), the hands, the neck and shoulders
 ## when one gets you from behind, the calves when it's on the ground. What you

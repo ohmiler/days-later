@@ -131,7 +131,7 @@ func start_strip(p: Player, id: int) -> void:
 	var f: FurnitureProp = main.world.container_nodes[id]
 	if f.stripped:
 		return
-	var tool := p.held_weapon() in STRIP_TOOLS
+	var tool := p.holds(STRIP_TOOLS)
 	_start(p, {kind = "strip", id = id}, STRIP_TIME * (0.5 if tool else 1.0))
 	main._make_noise(f.position, main.NOISE_HIT)
 	if not tool:

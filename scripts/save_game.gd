@@ -13,7 +13,7 @@ class_name SaveGame
 ## (world.save.v1 and so on). A save that cannot be read, or that comes from a
 ## newer game, is never written over: the game says so and leaves it alone.
 
-const VERSION := 10
+const VERSION := 11
 const GAME_VERSION := "0.4"  # shown to people; not used for compatibility
 
 ## [kind, from version] -> the function that upgrades it one step.
@@ -30,6 +30,7 @@ const MIGRATIONS := {
 	"player:7": "_player_7_to_8",
 	"world:8": "_world_8_to_9",
 	"player:9": "_player_9_to_10",
+	"player:10": "_player_10_to_11",
 }
 
 
@@ -305,6 +306,16 @@ static func _player_7_to_8(d: Dictionary) -> Dictionary:
 ## v9 remembers bikes that were ridden, fuelled or hotwired.
 static func _world_8_to_9(d: Dictionary) -> Dictionary:
 	d.merge({vehicles = {}}, false)
+	return d
+
+
+## v11 holds weapons in hands: the one selected on the hotbar goes in the right.
+static func _player_10_to_11(d: Dictionary) -> Dictionary:
+	var inv: Array = d.get("inv", [])
+	var sel: int = d.get("sel", 0)
+	if sel >= 0 and sel < inv.size() and inv[sel] != null and Items.is_weapon(inv[sel].id):
+		d.worn["hand_r"] = inv[sel]
+		inv[sel] = null
 	return d
 
 

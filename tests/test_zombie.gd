@@ -17,6 +17,7 @@ func run() -> void:
 	# A hit during the wind-up cancels the bite. (Clear any bleeding from the
 	# first bite, or it would keep taking health on its own.)
 	me.bleeding = false
+	me.wounds.clear()  # (bleeding comes from the wound now: see Body)
 	me.infection = 0.0
 	me.hp = 100.0
 	z.attack_cd = 0.0

@@ -30,7 +30,7 @@ const CHEST := Vector2(0, -15)  # where guns and flashlights sit
 const HEAD := Vector2(0, -24)
 
 enum { FRONT, BACK, SIDE }
-enum { NONE, PUNCH_L, PUNCH_R, KICK, SWING }  # attack poses
+enum { NONE, PUNCH_L, PUNCH_R, KICK, SWING, SWING_L }  # attack poses (SWING_L: the weapon in the left hand)
 
 static var _cone: Texture2D
 static var _base := Transform2D.IDENTITY

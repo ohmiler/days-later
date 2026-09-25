@@ -117,8 +117,7 @@ func run() -> void:
 	check(not acts[0].ok, "no key, no ride (%s)" % acts[0].why)
 	me.inv.fill(null)
 	main.inventory._give(me, "screwdriver")
-	me.sel = 0
-	main.inventory._send_inv(me)
+	main.inventory.req_select(0)  # into the right hand
 	main.actions.req_act("vehicle", v3.id, "hotwire")
 	simulate(Vehicles.HOTWIRE_TIME + 0.3)
 	check(v3.key, "a screwdriver and a few seconds hotwire it")

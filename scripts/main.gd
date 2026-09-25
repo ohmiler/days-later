@@ -361,12 +361,21 @@ func _server_tick(delta: float) -> void:
 			if p.kicking:
 				combat._melee(p, Look.KICK, combat.KICK)
 			elif p.punching:
-				var wid := p.held_weapon()
+				# Swings alternate between the hands; a two-handed weapon uses both every time.
+				var hand := p.next_hand
+				if Items.two_handed(p.hand_weapon("r")):
+					hand = "r"
+				p.next_hand = "l" if hand == "r" else "r"
+				p.swing_hand = hand
+				var wid := p.hand_weapon(hand)
 				if wid == "":
-					combat._melee(p, Look.PUNCH_L, combat.PUNCH)
+					combat._melee(p, Look.PUNCH_R if hand == "r" else Look.PUNCH_L, combat.PUNCH)
 				else:
 					var w := Items.def(wid)
-					combat._melee(p, Look.SWING, [w.range, w.dmg, w.cd, w.stun, w.knock], w.dur * 0.45)
+					var dual: bool = p.hand_weapon("r") != "" and p.hand_weapon("l") != ""
+					var dmg: float = w.dmg * (Items.OFF_HAND if hand == "l" else 1.0)
+					combat._melee(p, Look.SWING if hand == "r" else Look.SWING_L,
+							[w.range, dmg, w.cd * (Items.DUAL_SPEED if dual else 1.0), w.stun, w.knock], w.dur * 0.45)
 		inventory._tick_search(p, delta)
 		crafting.server_tick(p, delta)
 		survival._tick_needs(p, delta)
