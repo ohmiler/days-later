@@ -45,6 +45,7 @@ var building_at := {}  # cell -> BuildingProp, for every cell of every footprint
 var containers: Array = []  # {id, kind, cell, table}, filled by CityGen
 var container_nodes: Array = []  # FurnitureProp, indexed by container id
 var doors: Array = []  # {id, cell, closed, hp, boards, broken}, filled by CityGen
+var decor: Array = []  # {kind, cell, seed, building}, filled by CityGen
 var door_at := {}  # cell -> door id
 var door_nodes: Array = []
 var overhead: Overhead
@@ -118,6 +119,32 @@ func _spawn_props() -> void:
 		prop_parent.add_child(n)
 		door_nodes.append(n)
 		astar.set_point_solid(d.cell, d.closed)
+	var bnode := {}
+	for b: BuildingProp in building_nodes:
+		bnode[b.data] = b
+	for rec in decor:
+		var dp := DecorProp.new()
+		dp.data = rec
+		dp.position = to_pos(rec.cell) + Vector2(0, TILE * 0.45)
+		var flat: bool = rec.kind in ["oil", "litter", "mattress"]
+		dp.z_index = 0 if flat else (3 if rec.kind == "bulb" else 1)
+		prop_parent.add_child(dp)
+		var b: BuildingProp = bnode.get(rec.building)
+		if rec.kind == "bulb":
+			# The bulb hangs above everyone, so only show it with the roof lifted;
+			# its light shows from outside too, like a lit window.
+			dp.visible = false
+			if b:
+				b.interior.append(dp)
+			var light := PointLight2D.new()
+			light.texture = StreetProp._lamp_texture()
+			light.texture_scale = 0.9
+			light.color = Color("ffcf80")
+			light.energy = 0.7
+			light.position = dp.position
+			light.visible = false
+			light.add_to_group("street_lights")
+			prop_parent.add_child(light)
 	for rec in containers:
 		var f := FurnitureProp.new()
 		f.data = rec

@@ -12,6 +12,7 @@ var w := 0.0  # footprint width in px
 var d := 0.0  # footprint depth in px
 var h := 0.0  # facade height in px
 var glow: Node2D  # unshaded layer for lit windows and signs at night
+var interior: Array = []  # nodes only shown while the roof is lifted off (hanging bulb)
 var rng := RandomNumberGenerator.new()
 
 
@@ -48,6 +49,12 @@ func setup(rec: Dictionary) -> void:
 func visual_rect() -> Rect2:
 	var top := -h - d - (40.0 if data.kind in ["temple", "chedi"] else 0.0)
 	return Rect2(position + Vector2(0, top), Vector2(w, -top))
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED:
+		for n in interior:
+			n.visible = not visible
 
 
 func _draw() -> void:

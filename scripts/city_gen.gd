@@ -17,6 +17,15 @@ const WALL_COLORS := [Color("d8cfb8"), Color("c9b89a"), Color("b8c4c0"), Color("
 		Color("c8c0c8"), Color("e0d8c0"), Color("9aa8b0"), Color("c8a888"), Color("b0a898")]
 const CAR_COLORS := [Color("e4e2dc"), Color("a8aaac"), Color("2a2c2e"), Color("8a2a26"), Color("34507a"), Color("6a6a5e")]
 const TAXI_COLORS := [Color("e0609a"), Color("e0802a"), Color("3a6ac8"), Color("3a8a4a")]
+## Dressing for each kind of place (see DecorProp); floor things never block.
+const DECOR := {
+	"food": ["chairs", "pot", "chairs", "litter"],
+	"tools": ["tires", "bike", "oil", "litter"],
+	"med": ["boxes", "litter"],
+	"valuables": ["boxes", "litter"],
+	"store": ["boxes", "litter", "litter"],
+	"home": ["mattress", "fan", "tv", "shrine", "litter"],
+}
 ## What a shop sells decides what you can find inside it (see Items.LOOT).
 const SIGN_LOOT := {
 	"ร้านขายยา": "med", "คลินิก": "med",
@@ -118,6 +127,23 @@ static func _make_enterable(w: World, rec: Dictionary, rng: RandomNumberGenerato
 			continue  # never block the way to the back door
 		w.blocked[cell] = true
 		w.containers.append({id = w.containers.size(), kind = kinds[i], cell = cell, table = rec.table})
+	_dress(w, rec, inner, door, back, rng)
+
+
+## Scatter decor over the free floor, keeping the walk between doors clear,
+## and hang a bulb in the middle.
+static func _dress(w: World, rec: Dictionary, inner: Rect2i, door: int, back: int, rng: RandomNumberGenerator) -> void:
+	var kinds: Array = DECOR.get(rec.table, DECOR.home)
+	var free := []
+	for y in range(inner.position.y, inner.end.y):
+		for x in range(inner.position.x, inner.end.x):
+			var c := Vector2i(x, y)
+			if x != door and x != back and not w.blocked.has(c):
+				free.append(c)
+	for i in mini(free.size(), rng.randi_range(1, 3)):
+		var c: Vector2i = free.pop_at(rng.randi() % free.size())
+		w.decor.append({kind = kinds[rng.randi() % kinds.size()], cell = c, seed = rng.randi(), building = rec})
+	w.decor.append({kind = "bulb", cell = Vector2i(inner.get_center()), seed = 0, building = rec})
 
 
 ## A door or window in a wall. Windows start intact (glass), some already smashed.
