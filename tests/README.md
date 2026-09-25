@@ -28,7 +28,7 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | `test_things` | Taps run dry, radios draw zombies, vending machines break open; only changes are saved, they survive a reload, joiners get them |
 | `test_vehicles` | Every bike model has ride data; riding is fast, burns fuel, is loud, knocks zombies down, can't go indoors; hotwiring, refuelling, and bikes stay where left after a reload |
 | `test_zombie` | The telegraphed bite, interrupting it, armour, chasing, getting back up |
-| `test_inventory` | Stack sizes, quick heal, drag/merge/split/drop, clothes slots, backpack size |
+| `test_inventory` | Stack sizes, quick heal, drag/merge/split/drop, clothes slots and layers, masks/gloves/knee pads, bags adding slots |
 | `test_crafting` | The recipe table has no typos, taking apart, making (standing still), mending, worn clothes never used up, pulling furniture apart |
 | `test_doors` | Opening, not shutting on someone, boarding, smashing windows |
 | `test_save` | Save and resume: doors, furniture contents, day/time, player, bag, clothes |
