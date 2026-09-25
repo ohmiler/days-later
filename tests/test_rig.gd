@@ -22,6 +22,11 @@ func run() -> void:
 		poses.append({zombie = true, bite = t})
 		poses.append({zombie = true, breed = "runner", moving = true, phase = t * TAU})
 	poses.append({zombie = true, moving = true, phase = 1.0, breed = "fat"})
+	for u in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]:
+		poses.append({zombie = true, rise = u, fall_dir = 1.0})
+		poses.append({rise = u, fall_dir = -1.0})
+	for t in [0.0, 1.5, 3.0, 4.5]:
+		poses.append({zombie = true, moving = true, phase = t, vary = {limp = 1.5, arm_y = 1.0}})
 	poses.append({zombie = true, scream = 0.5})
 
 	var arms_bad := []
@@ -92,6 +97,27 @@ func run() -> void:
 	var sh_idle: Vector2 = Rig.shoulders(Look.SIDE)[1]
 	check(absf(pr.upper.x) <= 1.0 and _arm_by_idx(pr, 1).sh.x > sh_idle.x + 1.0,
 			"punching, the shoulder goes forward, not the whole body (body %.1f)" % pr.upper.x)
+
+	# Zombies from behind still have arms (reaching away, hands by the shoulders).
+	var zb := Rig.build({view = [Look.BACK, false], angle = -PI / 2, zombie = true}, {})
+	check((zb.arms_back + zb.arms_front).size() == 2, "a zombie seen from behind has both arms")
+	# A limping zombie drags one foot: it never leaves the ground, and swings less.
+	var lifted := 0.0
+	var swing := [0.0, 0.0]
+	for t in 16:
+		var r := Rig.build({view = [Look.SIDE, false], zombie = true, moving = true, phase = t * TAU / 16.0,
+				vary = {limp = 1.5, arm_y = 1.0}}, {})
+		lifted = maxf(lifted, -(r.legs[1].foot as Vector2).y)
+		for i in 2:
+			swing[i] = maxf(swing[i], absf((r.legs[i].foot as Vector2).x - (r.legs[i].hip as Vector2).x))
+	check(lifted < 0.05 and swing[1] < swing[0], "a limping zombie drags its bad foot (lift %.2f, swing %.1f vs %.1f)" % [lifted, swing[1], swing[0]])
+	# Getting up: from lying flat, through sitting, to standing.
+	var down := Rig.build({view = [Look.SIDE, true], rise = 0.0, fall_dir = 1.0, zombie = true}, {})
+	var sit := Rig.build({view = [Look.SIDE, true], rise = 0.4, fall_dir = 1.0, zombie = true}, {})
+	var up := Rig.build({view = [Look.SIDE, true], rise = 1.0, fall_dir = 1.0, zombie = true}, {})
+	check(is_equal_approx(absf((down.base as Transform2D).get_rotation()), PI / 2) and is_zero_approx((up.base as Transform2D).get_rotation()),
+			"getting up starts lying flat and ends standing")
+	check(is_zero_approx((sit.base as Transform2D).get_rotation() + (sit.torso as float)), "half way, it sits upright")
 
 	# Easing: raising the fists eases in over BLEND_TIME instead of jumping.
 	var mem := {}

@@ -57,6 +57,7 @@ var moving := false
 ## are still in reach. Hitting it during the wind-up stops the bite.
 const LUNGE := 0.45
 const DOWN_TIME := 1.6
+const RISE_TIME := 0.8  # the end of DOWN_TIME, spent getting up
 var lunge_t := 0.0  # server: counting down to the bite
 var down_t := 0.0  # server: knocked flat, getting up when it runs out
 var missing := 0  # Look.LOST_* bits; arms can be cut off in a fight
@@ -65,6 +66,7 @@ var flags := 0  # 1 = lunging, 2 = down; from the server fields, or from snapsho
 var atk_t := -1.0
 var down_el := -1.0
 var up_el := -1.0
+var _risen := 0.0  # how far through getting up it had got when the server let it up
 var scream_t := 0.0
 var fall_side := 1.0
 # Looks that come from the id so every peer agrees.
@@ -342,7 +344,7 @@ func _process(delta: float) -> void:
 		up_el = 0.0
 	if up_el >= 0.0:
 		up_el += delta
-		if up_el > 0.5:
+		if up_el > 0.2:
 			up_el = -1.0
 	if kind == "screamer" and state == 2 and shown_state != 2:
 		scream_t = 1.0
@@ -419,14 +421,19 @@ func _draw() -> void:
 			hit = Vector2(hit_dir.x * (-1.0 if view[1] else 1.0), hit_dir.y) * 1.8 * snap, scream = 1.0 - scream_t if scream_t > 0.0 else 0.0}
 	if atk_t >= 0.0:
 		st.bite = clampf(atk_t / (LUNGE + 0.2), 0.0, 1.0)
-	# Knocked down: falls like a body, lies there, then pushes itself back up.
-	var fall := 0.0
+	# Knocked down: falls like a body, lies there, then sits up and gets back on
+	# its feet (finishing quickly if the server lets it up before that's done).
 	if down_el >= 0.0:
-		fall = clampf(down_el / 0.6, 0.001, 1.0)
+		var r := (down_el - (DOWN_TIME - RISE_TIME)) / RISE_TIME
+		if r > 0.0:
+			_risen = minf(r, 1.0)
+			st.rise = _risen
+		else:
+			_risen = 0.0
+			st.fall = clampf(down_el / 0.6, 0.001, 1.0)
+		st.fall_dir = fall_side
 	elif up_el >= 0.0:
-		fall = clampf(1.0 - up_el / 0.5, 0.0, 1.0)
-	if fall > 0.0:
-		st.fall = fall
+		st.rise = lerpf(_risen, 1.0, clampf(up_el / 0.2, 0.0, 1.0))
 		st.fall_dir = fall_side
 	var lk := body_look()
 	lk.mouth = 1.0 if kind == "screamer" else 0.0

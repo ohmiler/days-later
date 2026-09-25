@@ -34,6 +34,7 @@ enum { NONE, PUNCH_L, PUNCH_R, KICK, SWING, SWING_L }  # attack poses (SWING_L: 
 
 static var _cone: Texture2D
 static var _base := Transform2D.IDENTITY
+static var _torso_xf := Transform2D.IDENTITY  # the upper body turned about the hips (rig `torso`)
 static var body_xf := Transform2D.IDENTITY  # on top of everything: a rider turning or leaning with the bike; caller sets and resets
 static var _girth := 1.0  # body width multiplier (fat and skinny zombies)
 static var lift := Vector2.ZERO  # draw everything this far up (standing on a roof); caller sets and resets  # whole-body transform (used to topple a falling body)
@@ -129,6 +130,10 @@ static func draw_eased(ci: CanvasItem, st: Dictionary, lk: Dictionary, mem: Dict
 ## near arms (with whatever they hold), and a leg kicking at the camera.
 static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
 	_base = r.base
+	_torso_xf = Transform2D.IDENTITY
+	if r.get("torso", 0.0) != 0.0:
+		var pivot: Vector2 = r.upper + Vector2(0, Rig.HIP_Y)
+		_torso_xf = Transform2D(0, pivot) * Transform2D(r.torso, Vector2.ZERO) * Transform2D(0, -pivot)
 	_girth = r.girth
 	lk = _dress(lk, r.zombie)
 	var wear: Dictionary = lk.get("wear", {})
@@ -149,7 +154,7 @@ static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
 
 	Clothes.draw_layer(ci, "knee", r, lk)  # (worn things are drawn by Clothes at each layer)
 
-	_xf(ci, r.upper, Vector2(sx, 1))
+	_xf(ci, r.upper, Vector2(sx, 1), true)
 	Clothes.draw_layer(ci, "back_side", r, lk)  # behind everything, on the far side of the body
 	Clothes.draw_layer(ci, "coat", r, lk)
 	var missing: int = lk.get("missing", 0)
@@ -211,8 +216,8 @@ static func _dress(lk: Dictionary, zombie: bool) -> Dictionary:
 
 
 ## Set the drawing transform for a body part, on top of the whole-body transform.
-static func _xf(ci: CanvasItem, pos: Vector2, scale: Vector2) -> void:
-	_cur_xf = body_xf * Transform2D(0.0, lift) * _base * Transform2D(0.0, scale, 0.0, pos)
+static func _xf(ci: CanvasItem, pos: Vector2, scale: Vector2, upper := false) -> void:
+	_cur_xf = body_xf * Transform2D(0.0, lift) * _base * (_torso_xf if upper else Transform2D.IDENTITY) * Transform2D(0.0, scale, 0.0, pos)
 	ci.draw_set_transform_matrix(_cur_xf)
 
 
