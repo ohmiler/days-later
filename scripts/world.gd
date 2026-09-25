@@ -163,6 +163,8 @@ func _spawn_props() -> void:
 		var f := FurnitureProp.new()
 		f.data = rec
 		f.position = to_pos(rec.cell) + Vector2(0, TILE * 0.45)
+		if rec.get("long", 0) == 2:
+			f.position.y += TILE  # a bed down the room: sorts by its foot end
 		f.z_index = 1
 		prop_parent.add_child(f)
 		container_nodes.append(f)
@@ -179,7 +181,7 @@ func _spawn_props() -> void:
 		p.position = rec.pos
 		p.z_index = 0 if rec.get("flat", false) else 1  # litter lies under everyone
 		if rec.kind in StreetProp.VEHICLES:
-			p.scale = Vector2.ONE * StreetProp.VEHICLE_SCALE  # vehicles the size of vehicles
+			p.scale = Vector2.ONE * (StreetProp.MOTORBIKE_SCALE if rec.kind == "motorbike" else StreetProp.VEHICLE_SCALE)  # vehicles the size of vehicles
 		prop_parent.add_child(p)
 	overhead = Overhead.new()
 	overhead.world = self
@@ -191,6 +193,7 @@ func _add_tree(c: Vector2i) -> void:
 	var t := TreeProp.new()
 	t.cell = c
 	t.position = to_pos(c) + Vector2(0, TILE * 0.3)
+	t.scale = Vector2.ONE * TreeProp.SCALE  # Bangkok's street trees spread over the road
 	t.z_index = 1
 	prop_parent.add_child(t)
 	props[c] = t

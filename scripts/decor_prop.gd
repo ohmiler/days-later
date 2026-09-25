@@ -52,9 +52,10 @@ func _draw() -> void:
 			draw_rect(Rect2(-4, -11, 7, 5), Color("c8aa7a"))
 			draw_line(Vector2(-4, -8.5), Vector2(3, -8.5), Color("8a7040"), 0.6)  # tape
 		"mattress":
-			draw_rect(Rect2(-7, -5, 14, 4), Color("8a9ab0"))
-			draw_rect(Rect2(-7, -5, 14, 1), Color("aabacf"))
-			draw_rect(Rect2(-6, -6, 4, 2), Color("e8e4dc"))
+			# A thin floor mattress, a person's length (it lies over the next cell).
+			draw_rect(Rect2(-13, -9, 27, 7), Color("8a9ab0"))
+			draw_rect(Rect2(-13, -2, 27, 2), Color("6a7a90"))
+			draw_rect(Rect2(-12, -8, 5, 5), Color("e8e4dc"))  # pillow
 		"fan":
 			_shadow(4)
 			draw_line(Vector2(0, 0), Vector2(0, -9), Color("dcdcd4"), 1.2)

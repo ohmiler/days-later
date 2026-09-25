@@ -78,6 +78,7 @@ static func build(w: World, rng: RandomNumberGenerator) -> void:
 	_aftermath(w, rng)
 	Things.place_all(w, rng)
 	_size_vehicles(w)
+	_size_beds(w)
 
 
 static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGenerator) -> void:
@@ -520,6 +521,35 @@ static func _checkpoint(w: World, rng: RandomNumberGenerator, spawn: Vector2) ->
 			w.blocked[cell] = true
 		w.street_props.append({kind = "army", pos = Vector2(truck[0].x * World.TILE, (y + 3) * World.TILE), seed = rng.randi()})
 	w.checkpoint = it
+
+
+static func _size_beds(w: World) -> void:
+	# A bed is two cells long, a person's length: it takes the cell in front
+	# of it (headboard against the wall), or else to its right or left, when
+	# that is free floor off the walkway.
+	# Otherwise it stays a single mattress. No random numbers (see _size_vehicles).
+	# Clutter on the floor (a fan, a bucket) makes way; the stairs don't.
+	var stairs := {}
+	for d in w.decor:
+		if d.kind == "stairs":
+			stairs[d.cell] = true
+	for rec in w.buildings:
+		if not rec.has("keep_clear"):
+			continue
+		for f in w.containers:
+			if f.kind != "bed" or not rec.rect.has_point(f.cell):
+				continue
+			for side in [2, 1, -1]:
+				var step := Vector2i.DOWN if side == 2 else Vector2i(side, 0)
+				var c: Vector2i = f.cell + step
+				if c.x in rec.keep_clear or w.get_tile(c) != World.FLOOR or w.blocked.has(c) or stairs.has(c) or stairs.has(c + Vector2i.DOWN):
+					continue
+				if w.get_tile(c + step) == World.DOOR or w.get_tile(c + Vector2i.DOWN) == World.DOOR:
+					continue
+				w.blocked[c] = true
+				f.long = side
+				w.decor = w.decor.filter(func(d): return d.cell != c or d.kind == "bulb")
+				break
 
 
 ## Vehicles are drawn at StreetProp.VEHICLE_SCALE, bigger than the cells they

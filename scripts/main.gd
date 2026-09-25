@@ -382,7 +382,7 @@ func _server_tick(delta: float) -> void:
 		var ps := []
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed],
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed],
 					p.app_code, p.wear_ids])
 		var zs := []
 		for z: Zombie in zombies.values():
@@ -764,8 +764,8 @@ func _fade_trees_near(pos: Vector2) -> void:
 			t.modulate.a = 1.0
 	faded.clear()
 	var c := world.to_cell(pos)
-	for dy in range(0, 3):
-		for dx in range(-1, 2):
+	for dy in range(0, 4):  # (trees are big: see TreeProp.SCALE)
+		for dx in range(-2, 3):
 			var t: TreeProp = world.props.get(c + Vector2i(dx, dy))
 			if t:
 				t.modulate.a = 0.45
@@ -890,10 +890,12 @@ func _draw_decals() -> void:
 		Look._dot(decals, b[0], b[1], b[2])  # fast circles: this redraws on every hit
 	for pid in pickups:
 		var pu: Dictionary = pickups[pid]
+		# Things on the ground at their real size, with a glint so they are still seen.
 		decals.draw_set_transform(pu.pos + Vector2(0, 1), 0, Vector2(1, 0.4))
-		Look._dot(decals, Vector2.ZERO, 5, Color(0, 0, 0, 0.35))
+		Look._dot(decals, Vector2.ZERO, 3.5, Color(0, 0, 0, 0.35))
 		decals.draw_set_transform(Vector2.ZERO)
-		Items.draw_icon(decals, Rect2(pu.pos + Vector2(-6, -9), Vector2(12, 12)), pu.item.id)
+		Items.draw_icon(decals, Rect2(pu.pos + Vector2(-3.5, -6), Vector2(7, 7)), pu.item.id)
+		Look._dot(decals, pu.pos + Vector2(2.5, -5.5), 0.9, Color(1, 1, 0.9, 0.9))
 
 
 

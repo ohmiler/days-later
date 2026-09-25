@@ -8,6 +8,7 @@ static var _glow_tex: Texture2D
 ## Vehicles are drawn this much bigger than their shapes below, so a car is
 ## longer than a person is tall (see CityGen._size_vehicles for what they block).
 const VEHICLE_SCALE := 1.6
+const MOTORBIKE_SCALE := 2.2  # its sketch is small: this makes it about 1.9 m long
 const VEHICLES := ["car", "taxi", "tuktuk", "motorbike", "wreck", "army"]
 
 var data: Dictionary

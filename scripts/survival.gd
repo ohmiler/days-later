@@ -109,7 +109,8 @@ func can_sleep(p: Player) -> String:
 func start_sleep(p: Player, bed: int) -> void:
 	p.sleeping = true
 	if bed >= 0:
-		p.position = main.world.container_nodes[bed].position
+		var f: FurnitureProp = main.world.container_nodes[bed]
+		p.position = f.position + (Vector2(0, 0.1) if f.data.get("long", 0) == 2 else Vector2(f.bed_left() + 8.0, 0))  # head on the pillow
 	p.sleep_check = 0.0
 	p.sleep_bed = bed
 	var where := "บนเตียง" if bed >= 0 else "บนพื้น"
