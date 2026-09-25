@@ -523,6 +523,9 @@ func damage_door(id: int, dmg: float) -> void:
 @rpc("authority", "call_local", "reliable")
 func door_state(id: int, closed: bool, hp: float, boards: int, broken: bool) -> void:
 	world.set_door(id, closed, hp, boards, broken)
+	var me: Player = players.get(multiplayer.get_unique_id())
+	if closed and me and not multiplayer.is_server() and world.door_overlap(id, me.position) > 0:
+		me.position = world.nudge_out_of_door(id, me.position)
 
 
 ## A screamer that spots you shrieks: every zombie for a long way comes running.
@@ -596,14 +599,22 @@ func _toggle_door(p: Player, id: int) -> void:
 		_toast(p, "ประตูพัง ต้องซ่อมด้วยไม้กระดาน [R]")
 		return
 	if not d.closed:
-		# Don't shut it on someone standing in the doorway.
-		var c := world.to_pos(d.cell)
+		# Never shut it on someone standing in the doorway; anyone just
+		# brushing its edge gets eased out to their own side first.
 		for q: Player in players.values():
-			if q.alive() and q.position.distance_to(c) < 9.0:
+			if q.alive() and not q.on_roof and world.door_overlap(id, q.position) == 2:
+				_toast(p, "ออกจากช่องประตูก่อนปิด" if q == p else "มีคนยืนขวางประตูอยู่")
 				return
 		for z: Zombie in zombies.values():
-			if z.position.distance_to(c) < 9.0:
+			if world.door_overlap(id, z.position) == 2:
+				_toast(p, "มีซอมบี้ขวางประตูอยู่!")
 				return
+		for q: Player in players.values():
+			if q.alive() and not q.on_roof and world.door_overlap(id, q.position) == 1:
+				q.position = world.nudge_out_of_door(id, q.position)
+		for z: Zombie in zombies.values():
+			if world.door_overlap(id, z.position) == 1:
+				z.position = world.nudge_out_of_door(id, z.position)
 	door_state.rpc(id, not d.closed, d.hp, d.boards, false)
 	fx_sound.rpc("door", world.to_pos(d.cell))
 
@@ -1420,7 +1431,10 @@ func _update_prompt(me: Player) -> void:
 		if d.broken:
 			prompt = "ประตูพัง" + ("  [R] ซ่อม" if has_wood else "  (ต้องมีไม้กระดาน)")
 		else:
-			prompt = ("[E] เปิดประตู" if d.closed else "[E] ปิดประตู") + ("  [R] ตอกไม้" if has_wood and d.boards < World.MAX_BOARDS else "")
+			if not d.closed and world.door_overlap(door, me.position) == 2:
+				prompt = "ถอยออกจากช่องประตูก่อนปิด"
+			else:
+				prompt = ("[E] เปิดประตู" if d.closed else "[E] ปิดประตู") + ("  [R] ตอกไม้" if has_wood and d.boards < World.MAX_BOARDS else "")
 		prompt_pos = world.to_pos(d.cell) + Vector2(0, -22)
 		return
 	var f := _container_near(me.position)

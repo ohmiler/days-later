@@ -276,6 +276,25 @@ func set_door(id: int, closed: bool, hp: float, boards: int, broken: bool) -> vo
 	door_nodes[id].queue_redraw()
 
 
+## Would a body at `pos` overlap this door's cell? 0 = clear, 1 = only its edge
+## (can be nudged out), 2 = standing in the doorway itself.
+func door_overlap(id: int, pos: Vector2, r := 5.0) -> int:
+	var off := pos - to_pos(doors[id].cell)
+	var reach := TILE * 0.5 + r
+	if absf(off.x) >= reach or absf(off.y) >= reach:
+		return 0
+	return 2 if absf(off.y) < 6.0 else 1
+
+
+## Push a body that overlaps a door's cell out to the side it's already on.
+## Doors sit in east-west walls, so that's straight north or south.
+func nudge_out_of_door(id: int, pos: Vector2, r := 5.0) -> Vector2:
+	var c := to_pos(doors[id].cell)
+	var side := 1.0 if pos.y >= c.y else -1.0
+	var out := Vector2(pos.x, c.y + side * (TILE * 0.5 + r + 0.5))
+	return out if can_stand(out, r) else pos
+
+
 func door_near(pos: Vector2, reach: float) -> int:
 	var c := to_cell(pos)
 	var best := -1
@@ -332,6 +351,18 @@ func to_pos(c: Vector2i) -> Vector2:
 
 ## Move a body by `v`, sliding along walls one axis at a time.
 func slide(pos: Vector2, v: Vector2, r: float, roof := false) -> Vector2:
+	var stuck := _solid_corner_cells(pos, r, roof)
+	if not stuck.is_empty():
+		# Already overlapping something solid (a door shut on us): only allow
+		# moves heading away from it, never deeper in or along it.
+		var centre := Vector2.ZERO
+		for c in stuck:
+			centre += to_pos(c) / stuck.size()
+		var away := pos - centre
+		for step in [v, Vector2(v.x, 0), Vector2(0, v.y)]:
+			if step.dot(away) > 0.0 and _solid_corner_cells(pos + step, r, roof).size() <= stuck.size():
+				return pos + step
+		return pos
 	var nx := pos + Vector2(v.x, 0)
 	if can_stand(nx, r, roof):
 		pos = nx
@@ -339,6 +370,15 @@ func slide(pos: Vector2, v: Vector2, r: float, roof := false) -> Vector2:
 	if can_stand(ny, r, roof):
 		pos = ny
 	return pos
+
+
+func _solid_corner_cells(p: Vector2, r: float, roof: bool) -> Array:
+	var out := []
+	for o in [Vector2(-r, -r), Vector2(r, -r), Vector2(-r, r), Vector2(r, r)]:
+		var c := to_cell(p + o)
+		if (not is_roof(c)) if roof else is_solid(c):
+			out.append(c)
+	return out
 
 
 ## On the ground, stand anywhere not solid; on the roof, only on shophouse roofs.
