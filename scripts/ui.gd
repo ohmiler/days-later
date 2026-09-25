@@ -24,7 +24,9 @@ var name_edit: LineEdit
 var address_edit: LineEdit
 var status: Label
 var hud: Control
+var admin: AdminPanel  # F2, host only (see Admin)
 var statuses: StatusRow
+var weapons: WeaponPanel
 var vitals: Vitals
 var clock: Clock
 var tut: TutorialCard
@@ -66,6 +68,9 @@ func _ready() -> void:
 	gear = BagScreen.new()
 	gear.visible = false
 	add_child(gear)
+	admin = AdminPanel.new()
+	admin.visible = false
+	add_child(admin)
 	city_map = CityMap.new()
 	city_map.visible = false
 	add_child(city_map)
@@ -121,8 +126,13 @@ func set_worn(worn: Dictionary) -> void:
 	var held := []
 	for h in Items.HANDS:
 		if worn.get(h) != null:
-			held.append(Items.display_name(worn[h].id))
+			var it: Dictionary = worn[h]
+			if Items.is_gun(it.id):
+				held.append("%s %d/%d" % [Items.display_name(it.id), it.get("ammo", 0), Items.def(it.id).mag])
+			else:
+				held.append(Items.display_name(it.id))
 	hotbar.hands = " + ".join(held)
+	hotbar.has_gun = Items.HANDS.any(func(h): return worn.get(h) != null and Items.is_gun(worn[h].id))
 	hotbar.queue_redraw()
 	gear.worn = worn
 	gear.queue_redraw()
@@ -160,7 +170,7 @@ func typing() -> bool:
 
 
 func overlay_open() -> bool:
-	return pause.visible or city_map.visible or gear.visible or help.visible
+	return pause.visible or city_map.visible or gear.visible or help.visible or admin.visible
 
 
 func toggle_map() -> void:
@@ -175,7 +185,9 @@ func toggle_pause() -> void:
 
 ## The Esc key: close whatever is open, or bring up the pause menu.
 func escape() -> void:
-	if chat.visible:
+	if admin.visible:
+		admin.visible = false
+	elif chat.visible:
 		close_chat()
 	elif city_map.visible:
 		city_map.visible = false
@@ -358,6 +370,15 @@ func toggle_help() -> void:
 # --- Message feed ------------------------------------------------------------
 
 func push_feed(text: String, kind := "info") -> void:
+	if feed.get_child_count() > 0:
+		var last := feed.get_child(feed.get_child_count() - 1)
+		if last.get_meta("text", "") == text:
+			var n: int = last.get_meta("n", 1) + 1
+			last.set_meta("n", n)
+			last.set_meta("age", 0.0)
+			last.modulate.a = 1.0
+			(last.get_child(0) as Label).text = "%s  ×%d" % [text, n]
+			return
 	var p := PanelContainer.new()
 	var sb := UiTheme.box(UiTheme.CARD, 4)
 	sb.border_width_left = 3
@@ -368,6 +389,7 @@ func push_feed(text: String, kind := "info") -> void:
 	p.add_theme_stylebox_override("panel", sb)
 	p.size_flags_horizontal = Control.SIZE_SHRINK_END
 	p.set_meta("age", 0.0)
+	p.set_meta("text", text)
 	var l := Label.new()
 	l.text = text
 	l.add_theme_font_override("font", UiTheme.body_bold())
@@ -423,6 +445,9 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	vitals.offset_top = vitals.offset_bottom - (150 if vitals.hint != "" else 126)
 	vitals.queue_redraw()
 	statuses.items = Body.statuses(me) if me.alive() else []
+	weapons.me = me
+	weapons.t = vitals.t
+	weapons.queue_redraw()
 	statuses.t = vitals.t
 	statuses.offset_bottom = vitals.offset_bottom - (vitals.offset_bottom - vitals.offset_top) - 6
 	statuses.offset_top = statuses.offset_bottom - 30
@@ -522,6 +547,18 @@ func _build_hud() -> void:
 	vitals.offset_top = -24 - 126
 	hud.add_child(vitals)
 
+	weapons = WeaponPanel.new()
+	weapons.anchor_left = 1.0
+	weapons.anchor_right = 1.0
+	weapons.anchor_top = 1.0
+	weapons.anchor_bottom = 1.0
+	weapons.offset_left = -24 - 250
+	weapons.offset_right = -24
+	weapons.offset_top = -24 - 64
+	weapons.offset_bottom = -24
+	weapons.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(weapons)
+
 	statuses = StatusRow.new()
 	statuses.anchor_top = 1.0
 	statuses.anchor_bottom = 1.0
@@ -557,8 +594,8 @@ func _build_hud() -> void:
 	feed.anchor_bottom = 1.0
 	feed.offset_left = -420
 	feed.offset_right = -24
-	feed.offset_top = -330
-	feed.offset_bottom = -130
+	feed.offset_top = -360
+	feed.offset_bottom = -160  # (above the weapon cards)
 	feed.alignment = BoxContainer.ALIGNMENT_END
 	feed.add_theme_constant_override("separation", 6)
 	feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -970,6 +1007,52 @@ class Vitals extends Control:
 
 ## Icons for what's wrong with you (see Body.statuses): red means deal with it
 ## now, yellow means watch out. Point at one for what it is.
+## Bottom right: a card for each hand that holds something: its icon, name and
+## wear, and for a gun the rounds in it and in the bag (flashing when empty).
+class WeaponPanel extends Control:
+	var me: Player
+	var t := 0.0
+
+	func _draw() -> void:
+		if me == null or not me.alive():
+			return
+		var cards := []
+		for h in ["hand_r", "hand_l"]:
+			var it = me.worn.get(h) if me.worn.has(h) else null
+			if it == null and me.wear_ids.has(h):
+				it = {id = me.wear_ids[h], n = 1, hp = 0}  # (someone else's copy: no numbers)
+			if it != null:
+				cards.append([h, it])
+		var y := size.y
+		for c in cards:
+			y -= 64
+			var it: Dictionary = c[1]
+			var d := Items.def(it.id)
+			var r := Rect2(0, y, size.x, 58)
+			var gun := Items.is_gun(it.id)
+			var empty: bool = gun and it.get("ammo", 0) <= 0
+			var pulse := 0.5 + 0.5 * sin(t * 6.0)
+			draw_style_box(UiTheme.box(UiTheme.CARD, 8, Color(1, 0.4, 0.3, pulse) if empty else UiTheme.LINE, 2 if empty else 1), r)
+			Items.draw_icon(self, Rect2(r.position + Vector2(8, 8), Vector2(42, 42)), it.id)
+			var f := UiTheme.heading()
+			var hand: String = Items.HAND_NAMES[c[0]] + (" · สองมือ" if Items.two_handed(it.id) else "")
+			draw_string(UiTheme.body(), r.position + Vector2(58, 18), hand, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(UiTheme.PAPER, 0.5))
+			draw_string(f, r.position + Vector2(58, 36), Items.display_name(it.id), HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 130, 14, UiTheme.PAPER)
+			if d.has("hp") and it.get("hp", 0) > 0:
+				var frac: float = float(it.hp) / d.hp
+				draw_rect(Rect2(r.position + Vector2(58, 44), Vector2(r.size.x - 130, 3)), Color(1, 1, 1, 0.1))
+				draw_rect(Rect2(r.position + Vector2(58, 44), Vector2((r.size.x - 130) * frac, 3)), Color("4f9a3a") if frac > 0.3 else Color("c8502a"))
+			if gun:
+				var loaded: int = it.get("ammo", 0)
+				var carried := Crafting.count_in(me.inv, d.ammo)
+				draw_string(UiTheme.medium(), Vector2(r.end.x - 66, r.position.y + 34), "%d" % loaded, HORIZONTAL_ALIGNMENT_RIGHT, 30, 22,
+						Color(1, 0.45, 0.35, 0.5 + 0.5 * pulse) if empty else UiTheme.PAPER)
+				draw_string(UiTheme.body(), Vector2(r.end.x - 34, r.position.y + 34), "/%d" % carried, HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+						Color(UiTheme.PAPER, 0.55))
+				draw_string(UiTheme.body(), Vector2(r.end.x - 70, r.position.y + 50), "กด R บรรจุ" if empty and carried > 0 else
+						("หมดกระสุน" if empty else ""), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 0.55, 0.45))
+
+
 class StatusRow extends Control:
 	var items: Array = []
 	var t := 0.0
@@ -984,6 +1067,9 @@ class StatusRow extends Control:
 			var pulse := 0.5 + 0.5 * sin(t * 6.0) if it.level == 2 else 1.0
 			draw_style_box(UiTheme.box(Color(0.08, 0.07, 0.06, 0.85), 7, Color(col, 0.5 + 0.5 * pulse), 2), r)
 			Body.draw_icon(self, r.get_center(), it.icon, col, 1.1)
+			if it.get("n", 1) > 1:
+				draw_string_outline(UiTheme.heavy(), r.position + Vector2(0, 30), "%d" % it.n, HORIZONTAL_ALIGNMENT_RIGHT, 28, 12, 4, Color.BLACK)
+				draw_string(UiTheme.heavy(), r.position + Vector2(0, 30), "%d" % it.n, HORIZONTAL_ALIGNMENT_RIGHT, 28, 12, UiTheme.PAPER)
 			if r.has_point(m):
 				tip = it.text
 		if tip != "":

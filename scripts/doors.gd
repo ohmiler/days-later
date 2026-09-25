@@ -45,6 +45,12 @@ func req_reinforce() -> void:
 		return
 	var t := Interact.target(main, p)
 	var list := Interact.actions(main, p, t)
+	# R is also reload: with a gun in hand and no door to board, that's what it does.
+	var board := Interact.find_action(list, "board")
+	var fix := Interact.find_action(list, "repair")
+	if p.gun_hand() != "" and not (not board.is_empty() and board.ok) and not (not fix.is_empty() and fix.ok):
+		main.crafting._reload(p)
+		return
 	for verb in ["board", "repair"]:
 		var a := Interact.find_action(list, verb)
 		if not a.is_empty():

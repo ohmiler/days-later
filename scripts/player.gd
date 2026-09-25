@@ -29,6 +29,8 @@ var inv: Array = []  # INV_SIZE entries of null or {id, n, hp}
 var sel := 0
 var weapon_id := ""  # what everyone sees in this player's right hand (the left is in wear_ids)
 var next_hand := "r"  # server: the hand the next swing comes from (swings alternate)
+var muzzle := Vector2(0, -15)  # tip of the gun as last drawn, in this node's space
+var aiming := false  # right mouse held with a gun in hand: raised, slow, the left button fires
 var swing_hand := "r"  # server: the hand of the swing under way
 var search_id := -1  # server only: container being searched
 var search_t := 0.0
@@ -105,6 +107,14 @@ func _init() -> void:
 
 
 ## The weapon in the selected slot, or "" for bare fists.
+## The hand holding a gun ("r" first), or "".
+func gun_hand() -> String:
+	for h in ["r", "l"]:
+		if Items.is_gun(hand_weapon(h)):
+			return h
+	return ""
+
+
 ## The weapon in the right hand (every machine knows, from wear_ids), or "".
 func held_weapon() -> String:
 	return wear_ids.get("hand_r", "")
@@ -181,6 +191,8 @@ func speed_mult() -> float:
 		m *= 0.85
 	if Body.sprained(wounds):
 		m *= 0.8  # limping
+	if aiming:
+		m = minf(m, 0.55)  # steady, careful steps
 	for slot in wear_ids:
 		m *= Items.def(wear_ids[slot]).get("speed", 1.0)
 	return m * load_speed()
@@ -493,11 +505,14 @@ func _draw() -> void:
 		ext = sin(anim_t / dur * PI) if anim in [Look.PUNCH_L, Look.PUNCH_R] else anim_t / dur
 	# Sneaking: crouched low, a slow creep.
 	Look.lift = Vector2(0, -lift)
+	Look.muzzle = null
 	Look.draw_eased(self, {view = view, angle = aim.angle(), phase = phase * (0.6 if sneak else 1.0), moving = moving and ext == 0.0,
 			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = anim != Look.NONE and anim_t < 1.2,
-			crouch = 3.0 if sneak else 0.0, weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}),
+			crouch = 3.0 if sneak else 0.0, weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = aiming,
 			breath = Time.get_ticks_msec() * 0.0016 + get_instance_id() % 7}, look, _pose)
 	Look.lift = Vector2.ZERO
+	if Look.muzzle != null:
+		muzzle = Look.muzzle  # (the flash of a shot comes from here)
 	draw_set_transform(Vector2(0, -lift))
 	Look.draw_hp(self, hp / MAX_HP)
 	draw_set_transform(Vector2.ZERO)

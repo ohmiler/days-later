@@ -226,7 +226,7 @@ func _actions(ref: Array, it: Dictionary) -> Array:
 	var out := []
 	match ref[0]:
 		"inv":
-			if d.get("type") == "weapon":
+			if Items.is_weapon(it.id):
 				out.append(["ถือสองมือ" if Items.two_handed(it.id) else "ถือขวา", "hold_r"])
 				if not Items.two_handed(it.id):
 					out.append(["ถือซ้าย", "hold_l"])
@@ -570,6 +570,8 @@ func _draw_card(head: Font, body: Font) -> void:
 			stats.append(["use", Items.effect_text(it.id)])
 	if d.has("hp") and d.get("type") in ["weapon", "wear"]:
 		stats.append(["hp", "ทนทาน %d/%d" % [it.hp, d.hp]])
+	if d.get("type") == "gun":
+		stats.push_front(["hit", "กระสุน %d/%d · ใช้%s" % [it.get("ammo", 0), d.mag, Items.display_name(d.ammo)]])
 	stats.append(["kg", "%.1f กก." % Items.weight_of(it)])
 	if Items.stack(it.id) > 1:
 		stats.append(["n", "%d/%d" % [it.get("n", 1), Items.stack(it.id)]])
@@ -840,7 +842,7 @@ func _draw_item(r: Rect2, it: Dictionary, named := false) -> void:
 		draw_colored_polygon(PackedVector2Array([r.position + Vector2(4, 4), r.position + Vector2(14, 4), r.position + Vector2(4, 14)]),
 				Items.RARITY_COLORS[rarity])
 	if it.get("n", 1) > 1:
-		draw_string(UiTheme.heading(), r.end - Vector2(22, 5), "x%d" % it.n, HORIZONTAL_ALIGNMENT_RIGHT, 18, 12, UiTheme.INK)
+		draw_string(UiTheme.heading(), Vector2(r.position.x + 2, r.end.y - 5), "x%d" % it.n, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 6, 12, UiTheme.INK)  # (the whole slot's width: "x100" fits)
 	var d := Items.def(it.id)
 	if d.get("type") in ["weapon", "wear"] and d.has("hp"):
 		var frac: float = float(it.hp) / d.hp

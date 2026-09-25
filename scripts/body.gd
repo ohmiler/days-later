@@ -149,6 +149,17 @@ static func statuses(p: Player) -> Array:
 				out.append({icon = "scratch", level = 1, text = "%s · ยังไม่พันแผล" % title(w)})
 			"sprain":
 				out.append({icon = "sprain", level = 1, text = "%s · วิ่งไม่ได้ เดินช้าลง · %s" % [title(w), heal_text(w)]})
+	# Several of one kind share an icon with a count.
+	var grouped := []
+	for s in out:
+		var same = grouped.filter(func(g): return g.icon == s.icon)
+		if same.is_empty():
+			grouped.append(s.merged({n = 1}))
+		else:
+			same[0].n += 1
+			same[0].text += "
+" + s.text
+	out = grouped
 	if p.bleeding:
 		out.append({icon = "bleed", level = 2, text = "เลือดออก · พันแผลด่วน"})
 	if p.infection > 0.0:

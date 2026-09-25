@@ -161,7 +161,7 @@ func _start(p: Player, job: Dictionary, seconds: float) -> void:
 func server_tick(p: Player, delta: float) -> void:
 	if p.craft.is_empty():
 		return
-	if not p.alive() or p.move.length() > 0.1 or p.sleeping:
+	if not p.alive() or (p.move.length() > 0.1 and not p.craft.get("mobile", false)) or p.sleeping:
 		p.craft = {}
 		main._notify(p.peer_id, &"search_started", [0.0])
 		return
@@ -171,7 +171,8 @@ func server_tick(p: Player, delta: float) -> void:
 	var job := p.craft
 	p.craft = {}
 	main._make_noise(p.position, main.NOISE_SEARCH)
-	main.fx_sound.rpc("pickup", p.position)
+	if job.kind != "reload":
+		main.fx_sound.rpc("pickup", p.position)
 	match job.kind:
 		"craft":
 			_finish_craft(p, job.id)
@@ -183,6 +184,8 @@ func server_tick(p: Player, delta: float) -> void:
 			_finish_strip(p, job.id)
 		"hotwire":
 			main.vehicles.finish_hotwire(p, job.id)
+		"reload":
+			_finish_reload(p, job.hand)
 	main.inventory._send_inv(p)
 
 
@@ -205,6 +208,9 @@ func _finish_salvage(p: Player, job: Dictionary) -> void:
 		it.n -= 1
 	else:
 		p.inv[job.idx] = null
+	if it.get("ammo", 0) > 0:
+		for i in it.ammo:
+			_give_or_drop(p, Items.def(it.id).ammo)
 	var parts: Dictionary = Items.def(job.id).salvage
 	var got := []
 	for part in parts:
@@ -239,6 +245,43 @@ func _finish_strip(p: Player, id: int) -> void:
 			_give_or_drop(p, part)
 		got.append("%s ×%d" % [Items.display_name(part), parts[part]])
 	main._toast(p, "รื้อได้ %s" % ", ".join(got))
+
+
+## R: fill the gun in hand from the bag's ammo. Takes a moment; you can walk meanwhile.
+@rpc("any_peer", "call_remote", "reliable")
+func req_reload() -> void:
+	_reload(main._sender())
+
+
+func _reload(p: Player) -> void:
+	if p == null or not p.alive() or not p.craft.is_empty():
+		return
+	var hand := p.gun_hand()
+	if hand == "":
+		return
+	var gun: Dictionary = p.worn["hand_" + hand]
+	var d := Items.def(gun.id)
+	if gun.get("ammo", 0) >= d.mag:
+		main._toast(p, "กระสุนเต็มแล้ว")
+		return
+	if count_in(p.inv, d.ammo) <= 0:
+		main._toast(p, "ไม่มี%sในกระเป๋า" % Items.display_name(d.ammo))
+		return
+	_start(p, {kind = "reload", hand = hand, mobile = true}, d.reload)
+	main.fx_sound.rpc("reload", p.position)
+
+
+func _finish_reload(p: Player, hand: String) -> void:
+	var gun = p.worn.get("hand_" + hand)
+	if gun == null:
+		return
+	var d := Items.def(gun.id)
+	var n := mini(d.mag - gun.get("ammo", 0), count_in(p.inv, d.ammo))
+	if n <= 0:
+		return
+	_take(p, d.ammo, n)
+	gun.ammo = gun.get("ammo", 0) + n
+	main._toast(p, "บรรจุกระสุน %d/%d" % [gun.ammo, d.mag])
 
 
 ## Use up `n` of what fits `need` from the bag.

@@ -19,6 +19,8 @@ class_name Rig
 ## Zombies also take: breed ("normal", "runner", "fat", "screamer"), bite
 ## (0..1 through a lunge, or absent), scream (0..1), hit (head snap offset),
 ## and vary: {tilt, arm_y, droop, limp} so no two shamble quite the same.
+
+
 static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var vf: Array = st.view
 	var angle: float = st.get("angle", 0.0)
@@ -30,6 +32,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var guard: bool = st.get("guard", false)
 	var weapon: Dictionary = st.get("weapon", {})
 	var weapon_l: Dictionary = st.get("weapon_l", {})  # a second weapon, in the left hand
+	var aiming: bool = st.get("aiming", false)  # a gun raised to the aim
 	var fall: float = st.get("fall", 0.0)
 	var fall_dir: float = st.get("fall_dir", 1.0)
 	var girth: float = st.get("girth", 1.0) * lk.get("build", 1.0)
@@ -105,7 +108,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	elif zombie and fall <= 0.0:
 		arms = _zombie_arms(view, phase, girth, breed, vary, bite, scream)
 	elif not zombie and (attack != Look.NONE or guard or not weapon.is_empty() or not weapon_l.is_empty()):
-		arms = _fist_arms(view, angle, sx, attack, ext, weapon, weapon_l, girth)
+		arms = _fist_arms(view, angle, sx, attack, ext, weapon, weapon_l, girth, aiming)
 	else:
 		arms = _idle_arms(view, s, girth)
 	for i in arms.size():
@@ -332,7 +335,7 @@ static func _idle_arms(view: int, s: float, girth := 1.0) -> Array:
 ## Boxing guard with fists by the chin; a punch drives one fist straight out
 ## along the aim. With a weapon, the right hand holds it instead.
 static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: float, weapon: Dictionary,
-		weapon_l := {}, girth := 1.0) -> Array:
+		weapon_l := {}, girth := 1.0, aiming := false) -> Array:
 	var d := local_dir(angle, sx)
 	var side := d.orthogonal().normalized()
 	var sh := shoulders(view, girth)
@@ -341,7 +344,7 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 	var reach := [Look.PUNCH_L, Look.PUNCH_R]
 	var out := []
 	var grip: String = weapon.get("grip", "swing")
-	var two_hands := grip in ["chop", "sweep"]
+	var two_hands := grip in ["chop", "sweep", "rifle"]
 	for i in 2:
 		# Back view: both arms are behind the body. Side view: the far arm (i == 0) is.
 		var behind := view == Look.BACK or (view == Look.SIDE and i == 0)
@@ -352,15 +355,17 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 			# Facing the camera or away, it's held low, by the belly, so the arms
 			# hang down to it in a V instead of folding across the chest.
 			var pivot: Vector2 = sh[1]
-			if two_hands:
-				pivot = (sh[0] + sh[1]) * 0.5 + (Vector2.ZERO if view == Look.SIDE else Vector2(0, 3.0))
+			if two_hands:  # (a long gun from the chest, not dropped to the belly)
+				pivot = (sh[0] + sh[1]) * 0.5 + (Vector2.ZERO if view == Look.SIDE or grip == "rifle" else Vector2(0, 3.0))
 			var main_arm := _weapon_arm(d, sh[1], Look.SWING if attack == Look.SWING else Look.NONE, ext, weapon, behind, dim,
-					_elbow_pref(view, 1), _elbow_bend(view), pivot)
+					_elbow_pref(view, 1), _elbow_bend(view), pivot, aiming)
 			if two_hands:
 				# The other hand holds the handle lower down, so both arms follow the swing.
 				var far := view == Look.BACK or view == Look.SIDE
 				var dim0 := 0.25 if view == Look.SIDE else 0.0
-				var off := _on_handle(sh[0], main_arm.hand, main_arm.weapon.dir, -2.6, weapon.get("len", 10.0))
+				# (A long gun's other hand is out along the barrel; a club's is lower on the handle.)
+				var off := _on_handle(sh[0], main_arm.hand, main_arm.weapon.dir, 5.0 if grip == "rifle" else -2.6,
+						weapon.get("len", 10.0))
 				var off_arm := _reach_arm(sh[0], off, _elbow_pref(view, 0), far, {fist = true, dim = dim0}, _elbow_bend(view))
 				out.insert(0, off_arm)  # replaces the guard arm
 				out.remove_at(1)
@@ -369,7 +374,7 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 		if i == 0 and not weapon_l.is_empty() and not two_hands:
 			# A second weapon in the left hand: held and swung the same way, from the left shoulder.
 			out.append(_weapon_arm(d, sh[0], Look.SWING if attack == Look.SWING_L else Look.NONE, ext, weapon_l, behind, dim,
-					_elbow_pref(view, 0), _elbow_bend(view)))
+					_elbow_pref(view, 0), _elbow_bend(view), Vector2.INF, aiming))
 			continue
 		var fist: Vector2 = guard[i]
 		var from: Vector2 = sh[i]
@@ -441,7 +446,7 @@ static func stab_reach(t: float) -> float:
 
 ## The weapon hand: holds the weapon ready, or moves it through its attack.
 static func _weapon_arm(d: Vector2, sh: Vector2, attack: int, t: float, weapon: Dictionary, behind: bool, dim: float,
-		elbow_pref: Vector2, bend: float, pivot := Vector2.INF) -> Dictionary:
+		elbow_pref: Vector2, bend: float, pivot := Vector2.INF, aiming := false) -> Dictionary:
 	var at := sh if pivot == Vector2.INF else pivot  # what the weapon moves around
 	var grip: String = weapon.get("grip", "swing")
 	var base := atan2(d.y, d.x)
@@ -449,7 +454,15 @@ static func _weapon_arm(d: Vector2, sh: Vector2, attack: int, t: float, weapon: 
 	var dv: Vector2
 	var hand: Vector2
 	var k := 0.0
-	if grip == "stab":
+	if grip in ["pistol", "rifle"] and attack != Look.SWING:
+		# A gun: raised along the aim when aiming, else held low and forward.
+		if aiming:
+			dv = d.normalized()
+			hand = at + Vector2(d.x, d.y * 0.8) * (7.5 if grip == "pistol" else 5.0) + Vector2(0, 1.0)
+		else:
+			dv = (Vector2(d.x, d.y * 0.6) + Vector2(0, 0.9)).normalized()
+			hand = at + Vector2(d.x * 2.0, 5.5)
+	elif grip == "stab":
 		# Blade held low and forward, point toward the target; the thrust drives straight out.
 		k = stab_reach(t) if attack == Look.SWING else 0.0
 		dv = Vector2.from_angle(base + 0.35 * (1.0 - maxf(k, 0.0)))
@@ -535,7 +548,7 @@ const BLEND_TIME := 0.1  # seconds
 static func pose_kind(st: Dictionary) -> Array:
 	var fight: bool = st.get("attack", Look.NONE) != Look.NONE or st.get("guard", false) 			or not st.get("weapon", {}).is_empty() or not st.get("weapon_l", {}).is_empty()
 	return [fight, st.get("weapon", {}).get("kind", ""), st.get("weapon_l", {}).get("kind", ""),
-			st.get("moving", false), st.get("crouch", 0.0) > 0.0]
+			st.get("moving", false), st.get("crouch", 0.0) > 0.0, st.get("aiming", false)]
 
 
 ## Build `st`'s rig, eased in from what this character last showed. `mem` is the

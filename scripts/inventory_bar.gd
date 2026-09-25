@@ -12,6 +12,7 @@ var slots: Array = []
 var selected := 0
 var hover := -1  # slot under the mouse: highlighted, and its details shown instead
 var hands := ""  # what's held, e.g. "มีดทำครัว + ค้อน" ("" empty-handed)
+var has_gun := false
 
 
 func _ready() -> void:
@@ -79,7 +80,7 @@ func _draw() -> void:
 				Color(UiTheme.INK, 0.6))
 		Items.draw_icon(self, r.grow(-12), it.id)
 		if it.n > 1:
-			draw_string(UiTheme.heading(), r.end - Vector2(24, 6), "x%d" % it.n, HORIZONTAL_ALIGNMENT_RIGHT, 20, 14, UiTheme.INK)
+			draw_string(UiTheme.heading(), Vector2(r.position.x + 2, r.end.y - 6), "x%d" % it.n, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 6, 14, UiTheme.INK)  # (the whole slot's width: "x100" fits)
 		var d := Items.def(it.id)
 		if d.get("type") in ["weapon", "wear"]:
 			var frac: float = float(it.hp) / d.hp
@@ -92,6 +93,8 @@ func _draw() -> void:
 	var cur = slots[shown] if shown < slots.size() else null
 	var name := (hands if hands != "" else "มือเปล่า") if hover < 0 else "ช่องว่าง"
 	var info := ("คลิกซ้ายฟาด สลับมือ · คลิกขวาเตะ" if hands != "" else "คลิกซ้ายต่อย · คลิกขวาเตะ") if hover < 0 else "คลิกเพื่อเลือก"
+	if hover < 0 and has_gun:
+		info = "คลิกขวาค้างเล็ง · คลิกซ้ายยิง · [R] บรรจุ · [Space] เตะ"
 	if hover < 0 and cur != null and Items.is_weapon(cur.id):
 		cur = null  # (weapons are in your hands now: the label says what they hold)
 	if cur != null:
