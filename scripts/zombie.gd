@@ -70,6 +70,7 @@ var vary := {}
 var gore := 0
 var hair_style := "short"
 var gait := 1.0
+var _path_goal := Vector2.INF  # where the current path leads, to reuse it while that stays put
 
 
 ## Server only. Chase what it can see; otherwise go and look at what it heard.
@@ -91,23 +92,27 @@ func server_tick(delta: float) -> void:
 			target.bite(bite_damage())
 		return
 	if repath <= 0:
-		repath = 0.5
+		repath = randf_range(0.4, 0.7)  # spread out, so they do not all think on the same frame
 		target = _nearest_player(SIGHT_NIGHT if world.is_night else SIGHT_DAY)
-		path.clear()
 		var goal := Vector2.INF
 		if target:
 			goal = target.position
 			investigate_t = 0.0
 		elif investigate_t > 0.0:
 			goal = investigate
-		if goal != Vector2.INF:
+		if goal == Vector2.INF:
+			path.clear()
+			if randf() < 0.3:
+				wander = Vector2.from_angle(randf() * TAU) if randf() < 0.6 else Vector2.ZERO
+		elif target and position.distance_to(goal) < 140.0 and _clear_line(goal):
+			path.clear()  # it can see you and you are close: straight at you, no route needed
+		elif path.is_empty() or goal.distance_to(_path_goal) > 24.0:
+			_path_goal = goal
 			path.assign(world.path_between(position, goal))
 			# Standing at a shut door with the only other way in far around the block?
 			# Smash through instead of taking the long way.
 			if path.size() * World.TILE > 3.0 * position.distance_to(goal) + 48.0 and world.closed_door_near(position, 20.0) >= 0:
 				path.clear()
-		elif randf() < 0.3:
-			wander = Vector2.from_angle(randf() * TAU) if randf() < 0.6 else Vector2.ZERO
 	var prev_state := state
 	state = 2 if target else (1 if investigate_t > 0.0 else 0)
 	scream_cd -= delta
@@ -142,6 +147,12 @@ func server_tick(delta: float) -> void:
 
 
 ## If a closed door is in the way, pound on it. Returns true while bashing.
+## Nothing solid between here and `to` (so walking straight there works).
+func _clear_line(to: Vector2) -> bool:
+	var d := to - position
+	return world.ray_length(position + Vector2(0, -4), d.normalized(), d.length()) >= d.length() - 4.0
+
+
 ## Fewer arms, less to grab you with.
 func bite_damage() -> float:
 	var arms := 2 - int(missing & Look.LOST_ARM_L != 0) - int(missing & Look.LOST_ARM_R != 0)
@@ -348,6 +359,41 @@ func _process(delta: float) -> void:
 			Sfx.play(get_parent(), "groan", position, -8.0, randf_range(0.85, 1.15))
 	# Flash bright for an instant when struck.
 	modulate = Color(1, 1, 1).lerp(Color(2.2, 1.6, 1.5), clampf(hit_t / 0.25, 0, 1) ** 2)
+	_maybe_redraw(delta)
+
+
+## Drawing a zombie is the costly part of a frame, so only redraw when it
+## shows: never off screen, once when it stands still, and less often the
+## further it is from the middle of the screen.
+var _redraw_t := 0.0
+var _drawn_still := false
+var _drawn_hp := -1.0
+
+
+func _maybe_redraw(delta: float) -> void:
+	var vp := get_viewport()
+	var at := get_global_transform_with_canvas().origin
+	var screen := vp.get_visible_rect()
+	var on := screen.grow(90.0).has_point(at)
+	if visible != on:
+		visible = on
+		_drawn_still = false
+	if not on:
+		return
+	var busy := moving or hit_t > 0.0 or atk_t >= 0.0 or down_el >= 0.0 or up_el >= 0.0 or scream_t > 0.0 or alert_t > 0.0
+	if not busy:
+		if not _drawn_still or hp != _drawn_hp:
+			_drawn_still = true
+			_drawn_hp = hp
+			queue_redraw()
+		return
+	_drawn_still = false
+	_redraw_t -= delta
+	if _redraw_t > 0.0:
+		return
+	var off_centre := at.distance_to(screen.get_center()) / (screen.size.length() * 0.5)
+	_redraw_t = 0.0 if off_centre < 0.35 else (1.0 / 30.0 if off_centre < 0.7 else 1.0 / 20.0)
+	_drawn_hp = hp
 	queue_redraw()
 
 

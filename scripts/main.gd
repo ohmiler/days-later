@@ -488,18 +488,29 @@ func _server_tick(delta: float) -> void:
 
 
 ## Keep bodies from stacking: zombies push each other and get pushed off players.
+## Keep bodies from overlapping. Zombies are bucketed into 16 px cells so each
+## only checks the ones around it, not every other zombie in the city.
 func _separate() -> void:
-	var zs: Array = zombies.values()
-	for i in zs.size():
-		var a: Zombie = zs[i]
-		for j in range(i + 1, zs.size()):
-			var b: Zombie = zs[j]
-			var v := b.position - a.position
-			var dist := v.length()
-			if dist < 9.0 and dist > 0.01:
-				var push := v / dist * (9.0 - dist) * 0.5
-				a.position = world.slide(a.position, -push, Zombie.RADIUS)
-				b.position = world.slide(b.position, push, Zombie.RADIUS)
+	var grid := {}
+	for z: Zombie in zombies.values():
+		var k := Vector2i(z.position / 16.0)
+		if grid.has(k):
+			grid[k].append(z)
+		else:
+			grid[k] = [z]
+	for a: Zombie in zombies.values():
+		var k := Vector2i(a.position / 16.0)
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				for b: Zombie in grid.get(k + Vector2i(dx, dy), []):
+					if b.zid <= a.zid:
+						continue  # each pair once
+					var v := b.position - a.position
+					var dist := v.length()
+					if dist < 9.0 and dist > 0.01:
+						var push := v / dist * (9.0 - dist) * 0.5
+						a.position = world.slide(a.position, -push, Zombie.RADIUS)
+						b.position = world.slide(b.position, push, Zombie.RADIUS)
 		for p: Player in players.values():
 			var v := a.position - p.position
 			var dist := v.length()
