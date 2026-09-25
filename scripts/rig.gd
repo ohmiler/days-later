@@ -84,9 +84,12 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 		walk = {stride = 3.0, drag = drag}
 	r.legs = _legs(view, s, angle, sx, attack, ext, walk)
 
-	# The upper body bobs with the walk, leans in (zombies), lunges into punches,
-	# rocks back from kicks and hits, and drops when crouching.
-	var lean := 1.2 if zombie and view == Look.SIDE else 0.0
+	# The upper body bobs with the walk, lunges into punches, rocks back from
+	# kicks and hits, and drops when crouching. Zombies lean and throw
+	# themselves by bending at the hips (`tilt`, forward; `roll`, side to side),
+	# so the body stays on its legs instead of sliding off them.
+	var tilt := 0.13 if zombie else 0.0
+	var roll := 0.0
 	# (Only a little for a punch: the shoulder turns into it instead, see _fist_arms.)
 	var lunge := Vector2.from_angle(angle) * Vector2(0.8, 0.5) * ext if attack in [Look.PUNCH_L, Look.PUNCH_R] else Vector2.ZERO
 	if attack == Look.KICK:
@@ -95,20 +98,30 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	if zombie and fall <= 0.0:
 		match breed:
 			"runner":  # hunched low and forward, like it's about to pounce
-				lean = 2.6 if view == Look.SIDE else 0.0
+				tilt = 0.3
 				crouch += 1.2
 			"fat":  # rolls from side to side as it walks
 				if moving:
-					lunge.x += sin(phase * 0.5) * 1.1 * sx
+					roll = sin(phase * 0.5) * 0.1
 		if bite >= 0.0:
-			# Lunge: rear back, then throw the whole body at the target.
-			var f := Vector2.from_angle(angle) * Vector2(1.0, 0.7)
-			lunge += -f * 1.6 * clampf(bite / 0.6, 0, 1) if bite < 0.6 else f * 4.5 * sin(clampf((bite - 0.6) / 0.4, 0, 1) * PI)
+			# Lunge: rear back, then throw itself at the target, bending at the hips
+			# (and a short step in).
+			var strike := sin(clampf((bite - 0.6) / 0.4, 0, 1) * PI)
+			tilt += -0.2 * clampf(bite / 0.6, 0, 1) if bite < 0.6 else 0.45 * strike
+			lunge += Vector2.from_angle(angle) * Vector2(1.2, 0.8) * strike
 		if scream > 0.0:
 			crouch -= 1.0 * sin(clampf(scream, 0, 1) * PI)  # rises up to scream
 	if st.has("breath") and not moving and fall <= 0.0:
 		bob += (sin(st.get("breath", 0.0)) * 0.5 + 0.5) * 0.35  # breathing, so standing still isn't frozen
-	r.upper = Vector2(lean * sx, -bob + sink * (1.0 - tip) + crouch) + lunge + recoil
+	r.upper = Vector2(0, -bob + sink * (1.0 - tip) + crouch) + lunge + recoil
+	if fall <= 0.0:
+		if view == Look.SIDE:
+			r.torso = tilt * sx  # (forward is +x, mirrored)
+		else:
+			# Bending toward or away from the camera just shortens the body a little;
+			# rolling side to side shows as a tilt.
+			r.torso = roll * (1.0 if view == Look.FRONT else -1.0)
+			r.upper.y += absf(tilt - (0.13 if zombie else 0.0)) * 2.5
 
 	# Fists come up when fighting; otherwise arms hang and swing with the walk.
 	# A falling body's arms go limp, even a zombie's.
