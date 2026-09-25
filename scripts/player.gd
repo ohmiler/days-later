@@ -57,6 +57,11 @@ var warned := {}  # server: which low-need warnings were already sent
 var fall_dir := 1.0
 var last_death_pos := Vector2.ZERO
 var shoot_cd := 0.0
+var punch_buf := 0.0  # a click that came while still busy: acted on when ready (see set_attack_input)
+var kick_buf := 0.0
+var hitstop := 0.0  # the attack animation holds still this long when a blow lands
+var local_cd := 0.0  # client, local player: its own guess at shoot_cd, to swing on the click
+var predicted := 0  # client, local player: swings shown early, still to be confirmed by the server
 var respawn := 0.0
 var net_pos := Vector2.ZERO
 var skin: Color
@@ -147,11 +152,36 @@ func take_damage(amount: float) -> void:
 func play_attack(kind: int) -> void:
 	anim = kind  # (the server says which hand: swings alternate between them)
 	anim_t = 0.0
+	hitstop = 0.0
+
+
+const ATTACK_BUFFER := 0.25  # how early a click can come and still count
+
+
+## The attack buttons as they are this frame. A new press while still busy is
+## remembered for a moment, so clicking in rhythm never loses a blow.
+func set_attack_input(punch: bool, kick: bool) -> void:
+	if punch and not punching:
+		punch_buf = ATTACK_BUFFER
+	if kick and not kicking:
+		kick_buf = ATTACK_BUFFER
+	punching = punch
+	kicking = kick
+
+
+func wants_punch() -> bool:
+	return punching or punch_buf > 0.0
+
+
+func wants_kick() -> bool:
+	return kicking or kick_buf > 0.0
 
 
 ## Server only.
 func server_tick(delta: float) -> void:
 	shoot_cd -= delta
+	punch_buf -= delta
+	kick_buf -= delta
 	if not alive():
 		respawn -= delta
 		if respawn <= 0:
@@ -446,7 +476,10 @@ func _process(delta: float) -> void:
 	flashlight.position = Look.CHEST + Vector2(0, -lift)
 	z_index = 2 if on_roof or lift > 1.0 else 1  # above the buildings while up there
 	view = Look.pick_view(aim.angle(), view)
-	anim_t += delta
+	if hitstop > 0.0:
+		hitstop -= delta  # the blow landed: hold the pose a beat
+	else:
+		anim_t += delta
 	if alive():
 		if death_t > 0.0:
 			# Respawned: leave the old body where it fell.

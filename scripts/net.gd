@@ -161,8 +161,7 @@ func send_input(move: Vector2, aim: Vector2, punch: bool, kick: bool, sprint: bo
 		p.sneak = sneak
 		p.move = move.limit_length(1.0)
 		p.aim = aim
-		p.punching = punch
-		p.kicking = kick
+		p.set_attack_input(punch, kick)
 
 
 # --- Chat and leaving --------------------------------------------------------

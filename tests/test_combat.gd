@@ -106,3 +106,42 @@ func run() -> void:
 	main.combat._resolve_melee(me, Look.SWING, [26.0, 5.0, 0.5, 0.1, 0.0])
 	check(main.zombies.size() == n0 - 1, "a killing blow removes the zombie")
 	check(me.kills >= 1, "and counts as a kill")
+
+	# Feel: a click while still busy isn't lost, the 1-2 starts again after a pause,
+	# a blow that lands holds the pose a beat, and your own swing shows on the click.
+	for h in ["hand_r", "hand_l"]:
+		if me.worn.get(h) != null:
+			main.inventory.req_move(["worn", h], ["inv", -1])
+	simulate(1.0)
+	me.set_attack_input(false, false)
+	me.shoot_cd = 0.2  # still recovering from the last punch
+	me.anim = Look.NONE
+	me.set_attack_input(true, false)  # a quick click...
+	simulate(0.05)
+	me.set_attack_input(false, false)  # ...let go before the punch was ready
+	simulate(0.3)
+	check(me.anim in [Look.PUNCH_L, Look.PUNCH_R], "a click while still busy punches as soon as it can")
+	me.next_hand = "l"
+	me.anim_t = 0.3
+	check(Combat.next_swing(me).hand == "l", "punching on, the hands alternate")
+	me.anim_t = Combat.COMBO_RESET + 0.5
+	check(Combat.next_swing(me).hand == "r", "after a pause the 1-2 starts again from the first punch")
+	me.anim_t = 0.1
+	me.hitstop = 0.0
+	main.combat.fx_hit(-1, me.position, Vector2.RIGHT, false, me.peer_id)
+	check(me.hitstop > 0.0, "a blow that lands holds the swing a beat")
+	var zf := zombie_at(me.position + Vector2(40, 0))
+	zf.flinch(Vector2.RIGHT)
+	check(zf.freeze > 0.0 and zf.hit_t > 0.0, "and the zombie's flinch with it")
+	# (What the client does for its own player, run here on the host's.)
+	me.predicted = 0
+	me.local_cd = 0.0
+	me.anim = Look.NONE
+	me.anim_t = 2.0
+	me.set_attack_input(true, false)
+	main.combat.predict(me, 0.016)
+	me.set_attack_input(false, false)
+	check(me.anim == Look.PUNCH_R and me.predicted == 1, "your own punch shows the moment you click")
+	me.anim_t = 0.05
+	main.combat.fx_melee(me.peer_id, Look.PUNCH_R)
+	check(me.predicted == 0 and is_equal_approx(me.anim_t, 0.05), "and isn't played again when the server confirms it")

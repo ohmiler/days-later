@@ -32,6 +32,7 @@ var wander := Vector2.ZERO
 var stun := 0.0  # staggered after being hit
 var hit_t := 0.0  # > 0 while flinching from a hit (visual, every peer)
 var hit_dir := Vector2.ZERO
+var freeze := 0.0  # client: the flinch holds still this long when struck (hitstop)
 var groan_t := randf_range(2.0, 10.0)
 const SIGHT_DAY := 120.0
 const SIGHT_NIGHT := 180.0
@@ -352,7 +353,10 @@ func _process(delta: float) -> void:
 	if moving and hit_t <= 0:
 		facing = lerp_angle(facing, moved.angle(), minf(1.0, 8.0 * delta))
 	view = Look.pick_view(facing, view)
-	hit_t = maxf(0.0, hit_t - delta)
+	if freeze > 0.0:
+		freeze -= delta  # held at the moment of the blow
+	else:
+		hit_t = maxf(0.0, hit_t - delta)
 	# Show ? when it hears something, ! when it spots someone.
 	if state > shown_state:
 		alert_t = 1.3
@@ -410,6 +414,7 @@ func _maybe_redraw(delta: float) -> void:
 
 func flinch(dir: Vector2) -> void:
 	hit_t = 0.25
+	freeze = Combat.HITSTOP
 	hit_dir = dir
 	facing = (-dir).angle()  # stay facing whoever hit it while being knocked back
 
