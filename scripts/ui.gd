@@ -34,6 +34,8 @@ var death_label: Label
 var death_sub: Label
 var done_steps := {}
 var cfg := ConfigFile.new()
+var appearance := {}
+var preview: Preview
 
 
 func _ready() -> void:
@@ -51,6 +53,11 @@ func _ready() -> void:
 func player_name() -> String:
 	var n := name_edit.text.strip_edges().left(16)
 	return n if n != "" else "ผู้รอดชีวิต"
+
+
+## The look picked in the character creator, packed (see Look.pack).
+func appearance_code() -> int:
+	return Look.pack(appearance)
 
 
 func show_menu(v: bool) -> void:
@@ -403,6 +410,7 @@ func _build_menu() -> void:
 	form.add_child(row)
 	status = _label("", UiTheme.body(), 15, UiTheme.WARN)
 	form.add_child(status)
+	_build_creator()
 	var ver := _label("v0.3 · ต้นแบบ · กด H ในเกมเพื่อดูวิธีเล่น", UiTheme.body(), 14, Color(UiTheme.PAPER, 0.4))
 	ver.anchor_top = 1.0
 	ver.anchor_bottom = 1.0
@@ -411,8 +419,98 @@ func _build_menu() -> void:
 	menu.add_child(ver)
 
 
+## Character creator: a turning preview with a picker for each part of the look.
+func _build_creator() -> void:
+	if cfg.has_section_key("player", "look"):
+		appearance = Look.unpack(posmod(int(cfg.get_value("player", "look")), Look.appearance_count()))
+	else:
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		appearance = Look.random_appearance(rng)
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UiTheme.box(Color(0.03, 0.03, 0.02, 0.72), 10, UiTheme.LINE, 1))
+	panel.position = Vector2(740, 150)
+	panel.custom_minimum_size = Vector2(430, 0)
+	menu.add_child(panel)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	panel.add_child(row)
+	var stage := Control.new()
+	stage.custom_minimum_size = Vector2(130, 260)
+	stage.clip_contents = true
+	row.add_child(stage)
+	preview = Preview.new()
+	preview.position = Vector2(65, 225)
+	preview.scale = Vector2(6.5, 6.5)
+	stage.add_child(preview)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 4)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(col)
+	col.add_child(_label("หน้าตาผู้รอดชีวิต", UiTheme.heading(), 18, UiTheme.PAPER))
+	var names := {skin = "สีผิว", style = "ทรงผม", hair = "สีผม", shirt = "เสื้อ", pants = "กางเกง", build = "รูปร่าง"}
+	var sizes := {skin = Look.SKINS.size(), style = Look.HAIR_STYLES.size(), hair = Look.HAIRS.size(),
+			shirt = Look.SHIRTS.size(), pants = Look.PANTS.size(), build = Look.BUILDS.size()}
+	var values := {}
+	for key in ["skin", "style", "hair", "shirt", "pants", "build"]:
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 6)
+		col.add_child(line)
+		var l := _label(names[key], UiTheme.body(), 15, Color(UiTheme.PAPER, 0.7))
+		l.custom_minimum_size = Vector2(70, 0)
+		line.add_child(l)
+		var prev := _small_button("‹")
+		var val := _label("", UiTheme.medium(), 15, UiTheme.PAPER)
+		val.custom_minimum_size = Vector2(90, 0)
+		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		var next := _small_button("›")
+		values[key] = val
+		for b: Button in [prev, next]:
+			var step := -1 if b == prev else 1
+			b.pressed.connect(func():
+				appearance[key] = posmod(appearance[key] + step, sizes[key])
+				_refresh_creator(values))
+		line.add_child(prev)
+		line.add_child(val)
+		line.add_child(next)
+	var dice := _button("สุ่มหน้าตา", false)
+	dice.pressed.connect(func():
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		appearance = Look.random_appearance(rng)
+		_refresh_creator(values))
+	col.add_child(dice)
+	_refresh_creator(values, false)
+
+
+func _refresh_creator(values: Dictionary, save := true) -> void:
+	for key in values:
+		var v: int = appearance[key]
+		var text := "%d / %d" % [v + 1, {skin = Look.SKINS.size(), hair = Look.HAIRS.size(),
+				shirt = Look.SHIRTS.size(), pants = Look.PANTS.size()}.get(key, 1)]
+		if key == "style":
+			text = Look.HAIR_STYLE_NAMES[v]
+		elif key == "build":
+			text = Look.BUILD_NAMES[v]
+		values[key].text = text
+	preview.look = Look.look_of(appearance)
+	preview.queue_redraw()
+	if save:
+		cfg.set_value("player", "look", appearance_code())
+		cfg.save(SETTINGS)
+
+
+func _small_button(text: String) -> Button:
+	var b := _button(text, false)
+	b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b.add_theme_font_size_override("font_size", 16)
+	b.custom_minimum_size = Vector2(32, 28)
+	return b
+
+
 func _remember_name() -> void:
 	cfg.set_value("player", "name", player_name())
+	cfg.set_value("player", "look", appearance_code())
 	cfg.save(SETTINGS)
 
 
@@ -454,6 +552,27 @@ func _button(text: String, primary: bool) -> Button:
 
 
 # --- Custom-drawn pieces -------------------------------------------------------
+
+## The character creator's model: stands and slowly turns, walking now and then.
+class Preview extends Node2D:
+	var look := {}
+	var t := 0.0
+	var view := [Look.FRONT, false]
+
+	func _process(delta: float) -> void:
+		if not is_visible_in_tree():
+			return
+		t += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		if look.is_empty():
+			return
+		var angle := PI / 2 - t * 0.6
+		view = Look.pick_view(angle, view)
+		var walking := fmod(t, 8.0) > 5.0
+		Look.draw(self, {view = view, angle = angle, phase = t * 9.0, moving = walking}, look)
+
 
 class Vitals extends Control:
 	var pname := ""

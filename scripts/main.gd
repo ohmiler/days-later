@@ -182,6 +182,7 @@ func _host(dedicated: bool, resume := false) -> void:
 	if not dedicated:
 		var p := _add_player(1)
 		p.pname = player_name if player_name != "" else ui.player_name()
+		p.set_appearance(ui.appearance_code())
 		SaveGame.load_player_into(p, p.pname)
 		_send_inv(p)
 	ui.show_menu(false)
@@ -275,7 +276,7 @@ func init_world(seed_val: int) -> void:
 	_make_world(seed_val)
 	in_game = true
 	ui.show_menu(false)
-	req_set_name.rpc_id(1, player_name if player_name != "" else ui.player_name())
+	req_set_name.rpc_id(1, player_name if player_name != "" else ui.player_name(), ui.appearance_code())
 	print("Joined world, seed %d" % seed_val)
 
 
@@ -321,10 +322,11 @@ func _add_zombie(id: int, pos: Vector2) -> Zombie:
 # --- Server simulation ------------------------------------------------------
 
 @rpc("any_peer", "call_remote", "reliable")
-func req_set_name(n: String) -> void:
+func req_set_name(n: String, app_code: int) -> void:
 	var p := _sender()
 	if p == null:
 		return
+	p.set_appearance(posmod(app_code, Look.appearance_count()))
 	var wanted := n.strip_edges().left(16)
 	# Two people online can't be the same survivor.
 	var taken := players.values().filter(func(q): return q != p and q.pname == wanted)
@@ -413,7 +415,8 @@ func _server_tick(delta: float) -> void:
 		var ps := []
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof]])
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof],
+					p.app_code])
 		var zs := []
 		for z: Zombie in zombies.values():
 			zs.append([z.zid, z.position, z.hp, z.state])
@@ -1109,6 +1112,8 @@ func snapshot(ps: Array, zs: Array, t: float, d: int) -> void:
 		p.kills = e[4]
 		p.weapon_id = e[5]
 		p.pname = e[6]
+		if e[8] != p.app_code:
+			p.set_appearance(e[8])
 		var n: Array = e[7]
 		p.hunger = n[0]
 		p.thirst = n[1]

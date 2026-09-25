@@ -57,6 +57,8 @@ var skin: Color
 var shirt: Color
 var hair: Color
 var pants: Color
+var app_code := -1  # appearance, packed (Look.pack); the player picks it in the menu
+var look := {}  # colours and shapes to draw with, from app_code
 var phase := 0.0
 var view := [Look.FRONT, false]
 var moving := false
@@ -128,14 +130,22 @@ func speed_mult() -> float:
 	return m
 
 
+func set_appearance(code: int) -> void:
+	app_code = code
+	look = Look.look_of(Look.unpack(code))
+	skin = look.skin
+	shirt = look.shirt
+	pants = look.pants
+	hair = look.hair
+	queue_redraw()
+
+
 func _ready() -> void:
-	# Looks are picked from the peer id so every client agrees on them.
-	var rng := RandomNumberGenerator.new()
-	rng.seed = peer_id
-	skin = Look.SKINS[rng.randi() % Look.SKINS.size()]
-	shirt = Look.SHIRTS[rng.randi() % Look.SHIRTS.size()]
-	hair = Look.HAIRS[rng.randi() % Look.HAIRS.size()]
-	pants = Look.PANTS[rng.randi() % Look.PANTS.size()]
+	if app_code < 0:
+		# Until the player's chosen look arrives, pick one from the peer id.
+		var rng := RandomNumberGenerator.new()
+		rng.seed = peer_id
+		set_appearance(Look.pack(Look.random_appearance(rng)))
 	flashlight = PointLight2D.new()
 	flashlight.texture = Look.cone_texture()
 	flashlight.texture_scale = 1.6
@@ -186,8 +196,7 @@ func _draw() -> void:
 		if turned:
 			return  # the body got up and walked off as a zombie
 		Look.draw_blood_pool(self, fall_dir, clampf((death_t - 0.5) / 3.0, 0.0, 1.0))
-		Look.draw_human(self, [Look.SIDE, fall_dir > 0], 0.0, 0.0, false, skin, shirt, pants, hair, false,
-				Look.NONE, 0.0, false, false, Vector2.ZERO, {}, clampf(death_t / 0.75, 0.001, 1.0), fall_dir)
+		Look.draw(self, {view = [Look.SIDE, fall_dir > 0], fall = clampf(death_t / 0.75, 0.001, 1.0), fall_dir = fall_dir}, look)
 		return
 	var wdef := Items.def(weapon_id)
 	var dur := 0.22
@@ -200,11 +209,10 @@ func _draw() -> void:
 		# Punches use a quick out-and-back curve; kicks and swings pass their raw timeline.
 		ext = sin(anim_t / dur * PI) if anim in [Look.PUNCH_L, Look.PUNCH_R] else anim_t / dur
 	# Sneaking: crouched low, a slow creep.
-	var crouch := Vector2(0, 3.0) if sneak else Vector2.ZERO
 	Look.lift = Vector2(0, -lift)
-	Look.draw_human(self, view, aim.angle(), phase * (0.6 if sneak else 1.0), moving and ext == 0.0, skin, shirt, pants, hair, false,
-			anim if ext > 0.0 else Look.NONE, ext, false, anim != Look.NONE and anim_t < 1.2, crouch,
-			wdef.get("draw", {}))
+	Look.draw(self, {view = view, angle = aim.angle(), phase = phase * (0.6 if sneak else 1.0), moving = moving and ext == 0.0,
+			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = anim != Look.NONE and anim_t < 1.2,
+			crouch = 3.0 if sneak else 0.0, weapon = wdef.get("draw", {})}, look)
 	Look.lift = Vector2.ZERO
 	draw_set_transform(Vector2(0, -lift))
 	Look.draw_hp(self, hp / MAX_HP)
