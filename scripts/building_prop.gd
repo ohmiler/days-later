@@ -4,8 +4,8 @@ extends Node2D
 ## so it y-sorts against characters by its front wall. The front wall (facade)
 ## rises `h` pixels above the footprint's bottom edge and the roof sits on top.
 
-const FLOOR_H := 13.0
-const GROUND_H := 15.0
+const FLOOR_H := 24.0
+const GROUND_H := 30.0
 
 var data: Dictionary
 var w := 0.0  # footprint width in px
@@ -27,13 +27,13 @@ func setup(rec: Dictionary) -> void:
 		"condo":
 			h = rec.floors * 11.0 + 8.0
 		"temple":
-			h = 34.0
+			h = 56.0
 		"chedi":
 			h = 0.0
 		"sala":
-			h = 16.0
+			h = 28.0
 		"store":
-			h = GROUND_H + 6.0
+			h = GROUND_H + 8.0
 		_:
 			h = GROUND_H + (rec.floors - 1) * FLOOR_H + 4.0
 	position = Vector2(r.position.x, r.end.y) * World.TILE
@@ -192,9 +192,9 @@ func _windows() -> Array:
 	var count := maxi(1, int(w / 22))
 	var span := w / count
 	for f in range(1, data.floors):
-		var y := -GROUND_H - f * FLOOR_H + 3.0
+		var y := -GROUND_H - f * FLOOR_H + 5.0
 		for i in count:
-			out.append(Rect2(i * span + span * 0.5 - 6, y, 12, 7))
+			out.append(Rect2(i * span + span * 0.5 - 6, y, 12, 13))
 	return out
 
 
@@ -228,11 +228,11 @@ func _draw_shop() -> void:
 	for wr: Rect2 in _windows():
 		draw_rect(wr.grow(1), col.darkened(0.35))
 		draw_rect(wr, Color("262b30"))
-		draw_line(wr.position + Vector2(2, 6), wr.position + Vector2(6, 1), Color(1, 1, 1, 0.12), 1.5)
+		draw_line(wr.position + Vector2(2, wr.size.y - 2), wr.position + Vector2(7, 2), Color(1, 1, 1, 0.12), 1.5)
 		for gx in range(2, 12, 3):
-			draw_line(wr.position + Vector2(gx, 0), wr.position + Vector2(gx, 7), Color("8a8a82"), 0.4)  # grille
+			draw_line(wr.position + Vector2(gx, 0), wr.position + Vector2(gx, wr.size.y), Color("8a8a82"), 0.4)  # grille
 		if rng.randf() < 0.45:
-			var ac := Rect2(wr.position + Vector2(rng.randf_range(-2, 7), 7.5), Vector2(6, 4))  # air-con unit
+			var ac := Rect2(wr.position + Vector2(rng.randf_range(-2, 7), wr.size.y + 1.5), Vector2(6, 4))  # air-con unit under the sill
 			draw_rect(ac, Color("c8c8c0"))
 			draw_circle(ac.get_center() + Vector2(0.8, 0), 1.3, Color("6a6a66"))
 	# Ground floor: open shop front with an awning, or a pulled-down shutter.
@@ -270,11 +270,11 @@ func _facade_life(col: Color) -> void:
 		var roll := e.randf()
 		if roll < 0.18:
 			for k in 3:  # planks nailed across
-				var y := wr.position.y + 1 + k * 2.4
+				var y := wr.position.y + 1.5 + k * (wr.size.y - 3.0) / 2.0
 				draw_line(Vector2(wr.position.x - 1, y + (k % 2) * 1.2), Vector2(wr.end.x + 1, y + 1.5 - (k % 2) * 1.2), Color("8a6a44"), 1.6)
 		elif roll < 0.3:
-			draw_line(wr.position + Vector2(3, 0), wr.position + Vector2(6, 5), Color(0.8, 0.85, 0.9, 0.5), 0.5)  # cracked pane
-			draw_line(wr.position + Vector2(6, 5), wr.position + Vector2(10, 3), Color(0.8, 0.85, 0.9, 0.5), 0.5)
+			draw_line(wr.position + Vector2(3, 0), wr.position + Vector2(6, wr.size.y * 0.6), Color(0.8, 0.85, 0.9, 0.5), 0.5)  # cracked pane
+			draw_line(wr.position + Vector2(6, wr.size.y * 0.6), wr.position + Vector2(10, wr.size.y * 0.3), Color(0.8, 0.85, 0.9, 0.5), 0.5)
 		elif roll < 0.42:
 			for k in 3:  # potted plants on the sill
 				draw_circle(Vector2(wr.position.x + 2 + k * 4, wr.end.y + 0.5), 1.6, Color("4a7038").lightened(k * 0.05))

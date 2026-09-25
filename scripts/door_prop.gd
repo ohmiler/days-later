@@ -3,6 +3,10 @@ extends Node2D
 ## A shop door in its doorway: open, shut, boarded up or smashed in.
 ## Origin is the bottom-left of the doorway cell.
 
+## Doors and windows are drawn 15 px tall and stretched to BuildingProp.GROUND_H.
+const DOOR_STRETCH := 2.0
+const WINDOW_STRETCH := 1.8
+
 var door: Dictionary
 
 

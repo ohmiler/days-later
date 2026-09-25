@@ -19,7 +19,19 @@ func _stand_by(th: Dictionary) -> void:
 		if not w.is_solid(c) and w.building_at.get(c) == w.building_at.get(th.cell):
 			me.position = w.to_pos(c)
 			me.aim = w.to_pos(th.cell) - me.position
-			return
+			if Interact.target(main, me).get("id") == th.id:
+				return  # (not a side where stairs or a cupboard are nearer)
+
+
+## A free cell a few steps from a thing, in the same building, away from me.
+func _near(th: Dictionary) -> Vector2:
+	var w: World = main.world
+	for r in range(3, 0, -1):
+		for d in [Vector2i(r, 0), Vector2i(-r, 0), Vector2i(0, r), Vector2i(0, -r)]:
+			var c: Vector2i = th.cell + d
+			if not w.is_solid(c) and w.building_at.get(c) == w.building_at.get(th.cell) and w.to_pos(c) != me.position:
+				return w.to_pos(c)
+	return w.to_pos(th.cell) + Vector2(70, 0)
 
 
 func run() -> void:
@@ -56,7 +68,7 @@ func run() -> void:
 	_stand_by(radio)
 	main.things.act(me, radio.id, "toggle")
 	check(radio.state.on, "the radio switches on")
-	var z := zombie_at(w.to_pos(radio.cell) + Vector2(70, 0))
+	var z := zombie_at(_near(radio))
 	simulate(6.0)
 	check(z.investigate_t > 0.0 or z.target != null, "a playing radio draws a zombie to look")
 
