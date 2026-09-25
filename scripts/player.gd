@@ -140,7 +140,30 @@ func speed_mult() -> float:
 		m *= 0.85
 	for slot in wear_ids:
 		m *= Items.def(wear_ids[slot]).get("speed", 1.0)
-	return m
+	return m * load_speed()
+
+
+## Kilograms carried: the bag and what you're wearing.
+func load_kg() -> float:
+	var kg := 0.0
+	for it in inv:
+		kg += Items.weight_of(it)
+	for slot in wear_ids:
+		kg += float(Items.def(wear_ids[slot]).get("weight", 0.0))
+	return kg
+
+
+## Kilograms you carry before slowing down: your own strength plus a bag's.
+func carry_limit() -> float:
+	return Items.CARRY + float(Items.def(wear_ids.get("back", "")).get("carry", 0.0))
+
+
+## 1.0 up to the limit, then slower the more you're over it.
+func load_speed() -> float:
+	var over := load_kg() / carry_limit()
+	if over <= 1.0:
+		return 1.0
+	return lerpf(1.0, Items.OVERLOAD_SPEED, clampf((over - 1.0) / (Items.OVERLOAD - 1.0), 0.0, 1.0))
 
 
 ## Share of a bite stopped by what you're wearing.
