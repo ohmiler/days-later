@@ -37,7 +37,21 @@ func setup(w: World, settings: ConfigFile, city_seed: int) -> void:
 				img.set_pixel(x, y, col if x > r.position.x and y > r.position.y else col.darkened(0.3))
 	tex = ImageTexture.create_from_image(img)
 	fog = Image.create(World.W, World.H, false, Image.FORMAT_L8)
-	var saved: PackedByteArray = cfg.get_value("map", _key("seen"), PackedByteArray())
+	var saved := PackedByteArray()
+	if FileAccess.file_exists(_seen_path()):
+		saved = FileAccess.get_file_as_bytes(_seen_path())
+	# Older copies kept this in the settings file, which made every settings save
+	# slow (it became a huge line of text). Move it out once.
+	if cfg.has_section("map"):
+		var moved := false
+		for k in cfg.get_section_keys("map"):
+			if k.begins_with("seen_"):
+				if k == _key("seen") and saved.is_empty():
+					saved = cfg.get_value("map", k)
+				cfg.erase_section_key("map", k)
+				moved = true
+		if moved:
+			cfg.save(GameUI.SETTINGS)
 	if saved.size() == World.W * World.H:
 		fog.set_data(World.W, World.H, false, Image.FORMAT_L8, saved)
 	pins = cfg.get_value("map", _key("pins"), [])
@@ -82,13 +96,33 @@ func reveal(pos: Vector2) -> void:
 				_dirty = true
 
 
+## What you have explored lives in its own small file, one byte per tile.
+func _seen_path() -> String:
+	return "user://map/seen_%d.bin" % seed_key
+
+
+func save_seen() -> void:
+	if fog == null:
+		return
+	DirAccess.make_dir_recursive_absolute("user://map")
+	var f := FileAccess.open(_seen_path(), FileAccess.WRITE)
+	if f:
+		f.store_buffer(fog.get_data())
+		f.close()
+	_dirty = false
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_EXIT_TREE:
+		if _dirty:
+			save_seen()
+
+
 func _process(delta: float) -> void:
 	_save_t -= delta
 	if _dirty and _save_t <= 0.0:
-		_save_t = 10.0
-		_dirty = false
-		cfg.set_value("map", _key("seen"), fog.get_data())
-		cfg.save(GameUI.SETTINGS)
+		_save_t = 30.0
+		save_seen()
 	if visible:
 		queue_redraw()
 

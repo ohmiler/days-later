@@ -73,10 +73,9 @@ static func save_world(main: Node) -> void:
 	var zs := []
 	for z: Zombie in main.zombies.values():
 		zs.append([z.zid, z.position, z.hp, z.outfit, z.missing])
-	var path := dir() + "/world.save"
-	if _blocked(path):
-		return
-	_write(path, {
+	# (No need to check the file first: a world save we cannot use stops the
+	# game from starting at all, so we only get here with one we loaded.)
+	_write(dir() + "/world.save", {
 		version = VERSION, game = GAME_VERSION, saved_at = int(Time.get_unix_time_from_system()),
 		seed = main.world_seed, day = main.day, time = main.time,
 		next_zid = main.next_zid, next_pickup = main.next_pickup,

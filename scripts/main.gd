@@ -126,6 +126,7 @@ func _ready() -> void:
 	post.add_child(grade)
 	ui = GameUI.new()
 	add_child(ui)
+	_warm_glyphs()
 	var sounds := Soundscape.new()
 	sounds.main = self
 	add_child(sounds)
@@ -454,6 +455,22 @@ func _notification(what: int) -> void:
 	# Closing the window saves before the game quits.
 	if what == NOTIFICATION_WM_CLOSE_REQUEST and in_game and multiplayer.is_server():
 		_save_all()
+
+
+## Draw every letter the city's signs and graffiti use once, while the title
+## screen is up. The first time a letter is drawn its sharp (MSDF) image is
+## generated, 2-7 ms per sign; done on the fly, walking into a street full of
+## new signs stalled the game for a tenth of a second.
+func _warm_glyphs() -> void:
+	var texts: Array = CityGen.SIGNS + BuildingProp.GRAFFITI + ["มินิมาร์ท 24 ชม.", "0123456789 SOS X"]
+	var warm := Node2D.new()
+	warm.position = Vector2(-99999, -99999)
+	warm.draw.connect(func():
+		var font := Look.thai_font()
+		for i in texts.size():
+			warm.draw_string(font, Vector2(0, i * 20), texts[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color.WHITE))
+	add_child(warm)
+	get_tree().create_timer(1.0).timeout.connect(warm.queue_free)
 
 
 ## Weather: dry spells and downpours of a few minutes, more often at night.
@@ -2253,12 +2270,14 @@ func _draw_roof_guides(me: Player, font: Font) -> void:
 
 
 func _draw_decals() -> void:
+	if blood.size() > 600:
+		blood = blood.slice(blood.size() - 600)  # oldest stains fade from memory
 	for b in blood:
-		decals.draw_circle(b[0], b[1], b[2])
+		Look._dot(decals, b[0], b[1], b[2])  # fast circles: this redraws on every hit
 	for pid in pickups:
 		var pu: Dictionary = pickups[pid]
 		decals.draw_set_transform(pu.pos + Vector2(0, 1), 0, Vector2(1, 0.4))
-		decals.draw_circle(Vector2.ZERO, 5, Color(0, 0, 0, 0.35))
+		Look._dot(decals, Vector2.ZERO, 5, Color(0, 0, 0, 0.35))
 		decals.draw_set_transform(Vector2.ZERO)
 		Items.draw_icon(decals, Rect2(pu.pos + Vector2(-6, -9), Vector2(12, 12)), pu.item.id)
 

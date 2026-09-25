@@ -53,9 +53,31 @@ func _fade(p: AudioStreamPlayer, target_db: float, delta: float) -> void:
 		p.stop()
 
 
+## Sound effects not yet loaded; one is loaded per frame so the first time a
+## sound plays it does not stall the game while every variant loads.
+var _warm: Array = []
+
+
+func _warm_list() -> Array:
+	var names := {}
+	for f in DirAccess.get_files_at(Sfx.DIR):
+		var base := f.trim_suffix(".import").trim_suffix(".ogg")
+		if f.ends_with(".ogg") or f.ends_with(".ogg.import"):
+			var cut := base.rfind("_")
+			if cut > 0 and base.substr(cut + 1).is_valid_int():
+				base = base.substr(0, cut)
+			names[base] = true
+	return names.keys()
+
+
 func _process(delta: float) -> void:
 	if loops.is_empty():
 		return
+	if _warm.is_empty() and not get_meta("warmed", false):
+		set_meta("warmed", true)
+		_warm = _warm_list()
+	if not _warm.is_empty():
+		Sfx.stream(_warm.pop_back())
 	var in_game: bool = main.in_game
 	var night: bool = main.world != null and main.world.is_night
 	var raining: bool = main.raining

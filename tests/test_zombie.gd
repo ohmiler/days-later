@@ -40,7 +40,14 @@ func run() -> void:
 	# It comes for you from across the street.
 	z.queue_free()
 	main.zombies.erase(z.zid)
-	var far := zombie_at(home + Vector2(90, 0))
+	# (Along whichever direction is open: the spawn point is random, and a
+	# building in the way would make this a test of path finding instead.)
+	var open_dir := Vector2.RIGHT
+	for dir in [Vector2.RIGHT, Vector2.LEFT, Vector2.DOWN, Vector2.UP]:
+		if main.world.ray_length(me.position + Vector2(0, -4), dir, 100.0) >= 100.0:
+			open_dir = dir
+			break
+	var far := zombie_at(me.position + open_dir * 90.0)
 	var d0 := far.position.distance_to(me.position)
 	simulate(2.0)
 	check(far.position.distance_to(me.position) < d0 - 20.0, "a zombie that sees you closes in (%.0f -> %.0f)" % [d0,
