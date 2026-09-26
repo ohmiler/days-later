@@ -1,7 +1,10 @@
 class_name InventoryBar
 extends Control
 ## The 8-slot hotbar at the bottom of the screen, styled like cardboard.
-## The selected slot lifts up and its name shows above the bar.
+## The selected slot lifts up. What you hold and how to use it shows above
+## the bar for a moment when it changes (or while the mouse is over a slot),
+## then fades: the screen stays clear the rest of the time. Empty slots are
+## drawn small and faint.
 ## Slot contents come from the server as an array of null or {id, n, hp}.
 
 const SLOT := 64.0
@@ -13,6 +16,10 @@ var selected := 0
 var hover := -1  # slot under the mouse: highlighted, and its details shown instead
 var hands := ""  # what's held, e.g. "มีดทำครัว + ค้อน" ("" empty-handed)
 var has_gun := false
+var label_t := 0.0  # seconds since what's held changed: its name shows for a moment
+var _held := ""
+
+const LABEL_FOR := 2.5
 
 
 func _ready() -> void:
@@ -41,10 +48,19 @@ func slot_at(p: Vector2) -> int:
 	return -1
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	var h := slot_at(get_local_mouse_position()) if is_visible_in_tree() else -1
 	if h != hover:
 		hover = h
+		queue_redraw()
+	# Show the label again whenever what's held (or selected) changes.
+	var it = slots[selected] if selected < slots.size() else null
+	var held := "%d|%s|%s" % [selected, hands, it.id if it != null else ""]
+	if held != _held:
+		_held = held
+		label_t = 0.0
+	if label_t < LABEL_FOR + 0.6:
+		label_t += delta
 		queue_redraw()
 
 
@@ -64,9 +80,11 @@ func _draw() -> void:
 		if i == hover and not sel:
 			r.position.y -= 3.0
 		if it == null:
-			draw_style_box(UiTheme.box(Color(0.11, 0.1, 0.08, 0.65), 6, UiTheme.WARN if sel else Color(0.23, 0.2, 0.17), 2), r)
-			draw_string(UiTheme.heading(), r.position + Vector2(6, 16), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
-					Color(UiTheme.PAPER, 0.35))
+			# Empty: small and faint, unless it's the one selected.
+			var er := r if sel or i == hover else r.grow(-10)
+			draw_style_box(UiTheme.box(Color(0.11, 0.1, 0.08, 0.5 if sel else 0.3), 6, UiTheme.WARN if sel else Color(0.23, 0.2, 0.17, 0.6), 2), er)
+			draw_string(UiTheme.heading(), er.position + Vector2(5, 14), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+					Color(UiTheme.PAPER, 0.3))
 			continue
 		# Cardboard slot with a drop shadow; a glow ring when selected.
 		draw_style_box(UiTheme.box(Color(0, 0, 0, 0.35), 6), Rect2(r.position + Vector2(0, 3), r.size))
@@ -113,8 +131,10 @@ func _draw() -> void:
 				info = "ยืนที่ประตูแล้วกด R เพื่อตอกเสริม · หรือใช้ทำของ (Tab)" if cur.id == "wood" else "ใช้ทำของและซ่อม (Tab > ทำของ)"
 			_:
 				info = "ใช้ทำของ (Tab > ทำของ)" if cur.id == "magazine" else "เก็บไว้แลกของ"
-	var cx := size.x / 2
-	draw_string_outline(UiTheme.medium(), Vector2(0, 26), name, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, 8, Color(0, 0, 0, 0.6))
-	draw_string(UiTheme.medium(), Vector2(0, 26), name, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, UiTheme.PAPER)
-	draw_string_outline(UiTheme.body(), Vector2(0, 46), info, HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, 6, Color(0, 0, 0, 0.6))
-	draw_string(UiTheme.body(), Vector2(0, 46), info, HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, Color(UiTheme.PAPER, 0.75))
+	var a := 1.0 if hover >= 0 else clampf((LABEL_FOR + 0.6 - label_t) / 0.6, 0.0, 1.0)
+	if a <= 0.0:
+		return
+	draw_string_outline(UiTheme.medium(), Vector2(0, 26), name, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, 8, Color(0, 0, 0, 0.6 * a))
+	draw_string(UiTheme.medium(), Vector2(0, 26), name, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, Color(UiTheme.PAPER, a))
+	draw_string_outline(UiTheme.body(), Vector2(0, 46), info, HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, 6, Color(0, 0, 0, 0.6 * a))
+	draw_string(UiTheme.body(), Vector2(0, 46), info, HORIZONTAL_ALIGNMENT_CENTER, size.x, 14, Color(UiTheme.PAPER, 0.75 * a))
