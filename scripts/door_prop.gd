@@ -64,10 +64,11 @@ func _draw_shutter() -> void:
 	if not door.closed and not door.broken:
 		return
 	var bottom := -6.0 if door.broken else 0.0
-	draw_rect(Rect2(0, -15, T, 15 + bottom), steel)
-	for y in range(-14, int(bottom), 1):
+	var top := -13.5  # (up to the bottom of the box it rolls into: see BuildingProp)
+	draw_rect(Rect2(0, top, T, bottom - top), steel)
+	for y in range(-13, int(bottom), 1):
 		draw_line(Vector2(0, y + 0.5), Vector2(T, y + 0.5), steel.darkened(0.18 if y % 2 else 0.05), 0.4)
-	draw_line(Vector2(0, -15), Vector2(0, bottom), Color("5a5c5e"), 0.8)  # the guide rails
+	draw_line(Vector2(0, top), Vector2(0, bottom), Color("5a5c5e"), 0.8)  # the guide rails
 	if door.broken:
 		# Bent up and out: a jagged lip over a dark gap.
 		draw_rect(Rect2(0, -6, T, 6), Color("15120f"))
