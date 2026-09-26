@@ -45,6 +45,7 @@ var infection := 0.0  # 100 = you turn
 var bleeding := false
 var stamina := 100.0
 var exhausted := false  # ran dry: no sprinting until stamina recovers
+var exert_t := 0.0  # server: just threw a blow; no getting your breath back until this runs out
 var sprint := false
 var sneak := false  # Ctrl / C: slow, quiet, harder to spot
 var on_roof := false  # up on the shophouse roofs: zombies can't follow

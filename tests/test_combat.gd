@@ -145,3 +145,28 @@ func run() -> void:
 	me.anim_t = 0.05
 	main.combat.fx_melee(me.peer_id, Look.PUNCH_R)
 	check(me.predicted == 0 and is_equal_approx(me.anim_t, 0.05), "and isn't played again when the server confirms it")
+
+	# Fighting tires you: every blow costs breath, none comes back for a moment
+	# after, and worn out the blows come slower and softer.
+	me.stamina = 100.0
+	me.exhausted = false
+	me.swing_hand = "r"
+	main.combat._melee(me, Look.PUNCH_R, Combat.PUNCH.duplicate())
+	var after_punch := me.stamina
+	check(is_equal_approx(after_punch, 100.0 - Combat.PUNCH_COST), "a punch costs stamina (%.0f left)" % after_punch)
+	main.combat._melee(me, Look.KICK, Combat.kick_stats(me))
+	check(me.stamina < after_punch - Combat.PUNCH_COST, "a kick costs more (%.0f left)" % me.stamina)
+	var before_rest := me.stamina
+	main.survival._tick_needs(me, 0.5)
+	check(is_equal_approx(me.stamina, before_rest), "no breath back straight after a blow")
+	main.survival._tick_needs(me, 0.6)
+	main.survival._tick_needs(me, 0.5)
+	check(me.stamina > before_rest, "then it comes back")
+	check(Combat.blow_cost(Look.SWING, "axe") > Combat.blow_cost(Look.SWING, "knife"), "a heavy axe tires you more than a knife")
+	var fresh := Combat.kick_stats(me)
+	me.stamina = Combat.TIRED - 1.0
+	var worn := Combat.kick_stats(me)
+	check(worn[2] > fresh[2] and worn[1] < fresh[1], "worn out, blows come slower and land softer")
+	me.stamina = 2.0
+	main.combat._melee(me, Look.KICK, Combat.kick_stats(me))
+	check(me.stamina == 0.0 and me.exhausted, "fought to a standstill: spent")
