@@ -64,6 +64,7 @@ var street_props: Array = []
 var roads: Array = []  # {rect: Rect2i, horizontal: bool}
 var intersections: Array = []  # Rect2i
 var wires: Array = []  # [from, to] pole tops
+var light_spots: Array = []  # [position, radius]: where street lamps and lit rooms light up the night (see is_lit)
 var checkpoint := Rect2i()  # the junction the army held
 var city_seed := 0  # the seed this city was built from
 var vehicles: Array = []  # bikes you can ride (see Vehicles)
@@ -163,6 +164,7 @@ func _spawn_props() -> void:
 			light.visible = false
 			light.add_to_group("street_lights")
 			prop_parent.add_child(light)
+			light_spots.append([dp.position, BULB_LIGHT])
 	for rec in containers:
 		var f := FurnitureProp.new()
 		f.data = rec
@@ -180,6 +182,8 @@ func _spawn_props() -> void:
 		prop_parent.add_child(tp)
 		thing_nodes.append(tp)
 	for rec in street_props:
+		if rec.kind == "pole" and rec.get("lamp", Vector2.ZERO) != Vector2.ZERO:
+			light_spots.append([rec.pos + Vector2(rec.lamp.x, 0), LAMP_LIGHT])  # (the pool it throws on the street below)
 		var p := StreetProp.new()
 		p.data = rec
 		p.position = rec.pos
@@ -193,6 +197,21 @@ func _spawn_props() -> void:
 	overhead.world = self
 	overhead.z_index = 4
 	prop_parent.add_child(overhead)
+
+
+const LAMP_LIGHT := 64.0  # how far a street lamp lights the ground around it (pixels)
+const BULB_LIGHT := 40.0
+
+
+## At night, is `pos` somewhere lit (under a street lamp, in a lit room)? By day
+## everywhere is.
+func is_lit(pos: Vector2) -> bool:
+	if not is_night:
+		return true
+	for l in light_spots:
+		if pos.distance_squared_to(l[0]) < l[1] * l[1]:
+			return true
+	return false
 
 
 func _add_tree(c: Vector2i) -> void:

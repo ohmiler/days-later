@@ -1127,7 +1127,7 @@ class Clock extends Control:
 		elif time >= 0.70 and time < 0.764:
 			warn = "อีก %d นาทีจะมืด ซอมบี้จะออกมามากขึ้น" % ceili((0.764 - time) * 24.0 * 60.0)
 		elif night:
-			warn = "ซอมบี้มองเห็นไกลขึ้นในความมืด"
+			warn = "มืดแล้ว · ซอมบี้เห็นเราแค่ใกล้ ๆ เว้นแต่ยืนใต้ไฟ"
 			wc = Color("ff8a7a")
 		if warn != "":
 			draw_string_outline(UiTheme.body_bold(), Vector2(0, 88), warn, HORIZONTAL_ALIGNMENT_RIGHT, w, 15, 5, Color(0, 0, 0, 0.55))

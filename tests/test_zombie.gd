@@ -80,6 +80,7 @@ func run() -> void:
 			break
 	check(open_dir != Vector2.ZERO, "found an open line to test along")
 	var far := zombie_at(me.position + open_dir * 90.0)
+	far.facing = (-open_dir).angle()  # looking your way
 	var d0 := far.position.distance_to(me.position)
 	simulate(2.0)
 	check(far.position.distance_to(me.position) < d0 - 20.0, "a zombie that sees you closes in (%.0f -> %.0f)" % [d0,
@@ -92,6 +93,32 @@ func run() -> void:
 	check(far.position.distance_to(at) < 0.5, "a downed zombie does not move")
 	simulate(1.2)
 	check(far.down_t <= 0.0, "it gets back up")
+
+	# What it can see: it looks the way it faces, and at night only the lit
+	# or the close. (Asked directly, as the server does when it looks around.)
+	simulate(1.0)
+	far.target = null
+	far.position = me.position + open_dir * 60.0
+	main.world.is_night = false
+	far.facing = (-open_dir).angle()
+	check(far._nearest_player() == me, "by day it sees you across the street, facing you")
+	far.facing = open_dir.angle()
+	check(far._nearest_player() == null, "but not from behind: you can creep up on it")
+	far.position = me.position + open_dir * 16.0
+	check(far._nearest_player() == me, "right up close it knows you're there anyway")
+	far.position = me.position + open_dir * 60.0
+	far.facing = (-open_dir).angle()
+	main.world.is_night = true
+	var saved_lights: Array = main.world.light_spots
+	main.world.light_spots = []
+	check(far._nearest_player() == null, "at night, in the dark, it doesn't see you across the street")
+	far.position = me.position + open_dir * 40.0
+	check(far._nearest_player() == me, "only close by")
+	far.position = me.position + open_dir * 90.0
+	main.world.light_spots = [[me.position, 40.0]]  # a street lamp over you
+	check(far._nearest_player() == me, "stand under a street lamp and it sees you from far off")
+	main.world.light_spots = saved_lights
+	main.world.is_night = false
 
 	# Breeds and looks come from the id, the same on every machine.
 	check(Zombie.kind_for(12345) == Zombie.kind_for(12345), "breed is fixed by id")
