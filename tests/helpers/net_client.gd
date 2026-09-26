@@ -6,6 +6,7 @@ var main: Node
 var t := 0.0
 var step := 0
 var lines := []
+var arrived_at := -1.0
 
 
 func _initialize() -> void:
@@ -45,8 +46,21 @@ func _process(d: float) -> bool:
 						lines.append("host_name %s" % p.pname)
 						lines.append("host_said %s" % p.say)
 				lines.append("box %d" % main.ui.gear.box_id)
+				lines.append("zone %s" % main.zone)
 				var f := FileAccess.open("user://net_client.txt", FileAccess.WRITE)
 				f.store_string("\n".join(lines))
+				f.close()
+				step = 3
+		3:
+			# The host takes the group on to the next zone: we should follow.
+			if main.zone != "" and main.zone != Zones.first() and main.world and main.world.zone == main.zone:
+				if arrived_at < 0.0:
+					arrived_at = t  # (a moment for the host's first snapshot of us there)
+				if t - arrived_at < 0.6:
+					return false
+				var me: Player = main.players.get(main.multiplayer.get_unique_id())
+				var f := FileAccess.open("user://net_client_zone.txt", FileAccess.WRITE)
+				f.store_string("zone %s\nstand %s\nplayers %d" % [main.zone, main.world.can_stand(me.position, 5.0) if me else false, main.players.size()])
 				f.close()
 				return true
 		10:

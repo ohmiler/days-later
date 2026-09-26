@@ -28,6 +28,8 @@ static func target(main: Node, p: Player) -> Dictionary:
 		var score := to.length() - 6.0 * (facing.dot(to.normalized()) if to.length() > 0.5 else 1.0)
 		if t.kind == "door" and w.door_overlap(t.id, p.position) == 2:
 			score = -100.0
+		if t.kind == "car" and p.on_car < 0:
+			score += 14.0  # (climbing is rarely what E beside a car means: a bike or a door by it comes first)
 		if score < best_score:
 			best_score = score
 			best = t
@@ -91,6 +93,10 @@ static func _candidates(main: Node, p: Player) -> Array:
 		var at := w.to_pos(th.cell)
 		if p.position.distance_to(at) < Things.REACH and w.building_at.get(th.cell) == here:
 			out.append({kind = "thing", id = th.id, pos = at, title = Things.title_of(th)})
+	for e in w.exits:
+		var r: Rect2i = e.rect
+		if Rect2(r.position * World.TILE, r.size * World.TILE).grow(12.0).has_point(p.position) and not p.up:
+			out.append({kind = "exit", id = e.id, pos = p.position + Vector2(0, -2), title = "ทางไป" + Zones.name_of(e.to)})
 	for n in w.near(p.position):
 		if n is StreetProp and n.data.kind in StreetProp.CLIMB and not p.up \
 				and p.position.distance_to(StreetProp.middle(n.data)) < CAR_REACH:
@@ -179,6 +185,10 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 					out.append(_act("claim", "ตั้งเป็นเตียงประจำ (ตายแล้วตื่นที่นี่)"))
 		"zombie":
 			out.append(_act("stomp", "เหยียบหัวให้ตาย"))
+		"exit":
+			var ex: Array = w.exits.filter(func(e): return e.id == t.id)
+			if not ex.is_empty():
+				out.append(_act("travel", "เดินทางไป%s" % Zones.name_of(ex[0].to)))
 		"car":
 			if p.on_car >= 0:
 				out.append(_act("jumpdown", "กระโดดลง (ทางที่หัน)"))

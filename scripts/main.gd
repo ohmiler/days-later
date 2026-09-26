@@ -59,6 +59,8 @@ var players := {}  # peer_id -> Player
 var zombies := {}  # zid -> Zombie
 var next_zid := 1
 var world_seed := 0
+var zone := ""  # the zone this server runs (see Zones); "" until one is loaded
+var address := ""  # the server joined (to find the next zone's server on the same machine)
 var time := 0.3
 var spawn_timer := 0.0
 var snap_timer := 0.0
@@ -172,6 +174,8 @@ func _ready() -> void:
 			port = int(arg.trim_prefix("--port="))
 		elif arg.begins_with("--name="):
 			player_name = arg.trim_prefix("--name=")
+		elif arg.begins_with("--zone="):
+			zone = arg.trim_prefix("--zone=")  # a dedicated server for this zone (see Zones)
 	for arg in args:
 		if arg == "--server":
 			_host(true, SaveGame.has_world() and not args.has("--new"))
@@ -186,7 +190,7 @@ func _ready() -> void:
 ## A real city at dusk behind the title menu, slowly drifting past.
 func _make_backdrop() -> void:
 	var before := get_children()
-	_make_world(20260924)
+	_make_world(20260924, "backdrop")
 	for c in get_children():
 		if not before.has(c):
 			backdrop_nodes.append(c)
@@ -196,6 +200,8 @@ func _make_backdrop() -> void:
 
 
 func _clear_backdrop() -> void:
+	if not backdrop_nodes.is_empty() and world:
+		world.dispose()
 	for n in backdrop_nodes:
 		n.queue_free()
 	backdrop_nodes.clear()
@@ -207,6 +213,11 @@ func _clear_backdrop() -> void:
 
 ## Start a server. `resume` loads the saved city; otherwise a new one replaces it.
 func _host(dedicated: bool, resume := false) -> void:
+	if zone == "" and resume:
+		zone = SaveGame.last_zone()
+	if zone == "" or not Zones.ZONES.has(zone):
+		zone = Zones.first()
+	SaveGame.zone = zone
 	var saved := {}
 	if resume:
 		# Never start a fresh city over a save we could not read: it would be
@@ -254,9 +265,10 @@ func _host(dedicated: bool, resume := false) -> void:
 	print("Server listening on port %d" % port)
 
 
-func _join(address: String) -> void:
+func _join(to: String) -> void:
+	address = to
 	var peer := WebSocketMultiplayerPeer.new()
-	var url := "ws://%s:%d" % [address, port]
+	var url := "ws://%s:%d" % [to, port]
 	if peer.create_client(url) != OK:
 		ui.set_status("ที่อยู่ไม่ถูกต้อง")
 		return
@@ -283,12 +295,12 @@ func _exit_tree() -> void:
 			pair[0].disconnect(pair[1])
 
 
-func _make_world(seed_val: int) -> void:
+func _make_world(seed_val: int, zone_id := "") -> void:
 	world = World.new()
 	world.prop_parent = self
 	add_child(world)
 	move_child(world, 0)
-	world.generate(seed_val)
+	world.generate(seed_val, zone_id if zone_id != "" else zone)
 	ui.city_map.setup(world, ui.cfg, seed_val)
 	decals = Node2D.new()
 	decals.draw.connect(_draw_decals)
@@ -328,6 +340,103 @@ func _add_zombie(id: int, pos: Vector2) -> Zombie:
 	add_child(z)
 	zombies[id] = z
 	return z
+
+
+## Take the zone down (to load another): the world and all it made, the
+## zombies and things lying about. Players stay.
+func _drop_world() -> void:
+	if world == null:
+		return
+	for z in zombies.values():
+		z.queue_free()
+	zombies.clear()
+	pickups.clear()
+	outfits.clear()
+	actions.alarms.clear()
+	hidden_building = null
+	world.dispose()
+	world.queue_free()
+	world = null
+	for n in [decals, decals_up]:
+		if n:
+			n.queue_free()
+
+
+## Someone at a way out of the zone goes through. Zones run as separate
+## servers: they alone are handed over to the next one. Otherwise (a game
+## with friends) the whole group travels together.
+func travel(p: Player, e: Dictionary) -> void:
+	var dest: String = e.to
+	if not Zones.ZONES.has(dest):
+		return
+	if DisplayServer.get_name() == "headless" and multiplayer.get_unique_id() == 1 and not players.has(1) \
+			and Zones.def(dest).port > 0 and Zones.def(dest).port != port:
+		p.travel_to = dest
+		p.travel_exit = e.to_exit
+		vehicles.dismount(p)
+		SaveGame.save_player(p)
+		net.go_zone.rpc_id(p.peer_id, dest, Zones.def(dest).port)
+		return
+	survival.fx_announce.rpc("กำลังเดินทางไป%s" % Zones.name_of(dest), false)
+	for q: Player in players.values():
+		vehicles.dismount(q)
+		q.travel_to = dest
+		q.travel_exit = e.to_exit
+		SaveGame.save_player(q)
+	SaveGame.save_world(self)
+	switch_zone(dest, e.to_exit)
+
+
+## Load zone `dest` in place of this one (keeping the day and the hour), and
+## bring everyone here in by the way in `arrive`.
+func switch_zone(dest: String, arrive: String) -> void:
+	var d0 := day
+	var t0 := time
+	_drop_world()
+	zone = dest
+	SaveGame.zone = dest
+	var r := SaveGame.load_world()
+	if r.state == "oldcity":
+		SaveGame.move_to_new_city()
+		r = {state = "none", data = {}}
+	var saved: Dictionary = r.data if r.state == "ok" else {}
+	world_seed = saved.get("seed", randi())
+	_make_world(world_seed)
+	if not saved.is_empty():
+		SaveGame.load_world_into(self, saved)
+	day = d0
+	time = t0
+	var at := world.to_pos(Zones.arrival(arrive, Vector2i(World.W, World.H)))
+	var i := 0
+	for q: Player in players.values():
+		q.world = world
+		q.position = world.slide(at, Vector2(i % 3 - 1, i / 3) * 10.0, Player.RADIUS)
+		q.net_pos = q.position
+		q.up = false
+		q.on_roof = false
+		q.on_car = -1
+		q.sleeping = false
+		q.sitting = -1
+		q.craft = {}
+		q.travel_to = ""
+		q.travel_exit = ""
+		i += 1
+	for peer in multiplayer.get_peers():
+		net.send_world(peer)
+	for k in 12:
+		survival._spawn_zombie()
+
+
+## A dedicated zone server handed us over: on to the next zone's server.
+func travel_to_server(dest: String, port_: int) -> void:
+	multiplayer.multiplayer_peer.close()
+	_drop_world()
+	for p in players.values():
+		p.queue_free()
+	players.clear()
+	zone = dest
+	port = port_
+	_join(address)
 
 
 func _save_all() -> void:

@@ -6,7 +6,8 @@ extends Control
 ## a place to avoid), click a pin to remove it. Pins and what you have
 ## explored are kept per city in the settings file.
 
-const SIZE := Vector2(960, 600)  # the map panel, in screen pixels
+const MAX_SIZE := Vector2(960, 600)  # the map panel, in screen pixels (smaller on a small screen)
+var panel := MAX_SIZE  # (fitted to the screen each time it shows)
 const ZOOMS := [1.25, 2.0, 3.0, 4.5, 6.0]  # screen pixels a tile
 const REVEAL := 11  # tiles around you that count as seen
 var zoom_i := 2
@@ -71,10 +72,10 @@ func setup(w: World, settings: ConfigFile, city_seed: int) -> void:
 	_fog_dirty = false
 	pins = cfg.get_value("map", _key("pins"), [])
 	set_anchors_preset(Control.PRESET_CENTER)
-	offset_left = -SIZE.x / 2
-	offset_right = SIZE.x / 2
-	offset_top = -SIZE.y / 2 - 20
-	offset_bottom = SIZE.y / 2 - 20
+	offset_left = -panel.x / 2
+	offset_right = panel.x / 2
+	offset_top = -panel.y / 2 - 20
+	offset_bottom = panel.y / 2 - 20
 	clip_contents = true
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
@@ -147,10 +148,19 @@ func _process(delta: float) -> void:
 		# Centred on you, but never past the edges of the city.
 		px = ZOOMS[zoom_i]
 		var at: Vector2 = me.position / World.TILE if me else Vector2(World.W, World.H) / 2
+		var screen := get_viewport_rect().size
+		var fit := Vector2(minf(MAX_SIZE.x, screen.x - 40.0), minf(MAX_SIZE.y, screen.y - 90.0))
+		if fit != panel:
+			panel = fit
+			offset_left = -panel.x / 2
+			offset_right = panel.x / 2
+			offset_top = -panel.y / 2 - 20
+			offset_bottom = panel.y / 2 - 20
 		var span := Vector2(World.W, World.H) * px
-		origin = SIZE / 2 - at * px
-		origin.x = clampf(origin.x, minf(0.0, SIZE.x - span.x), maxf(0.0, (SIZE.x - span.x) / 2))
-		origin.y = clampf(origin.y, minf(0.0, SIZE.y - span.y), maxf(0.0, (SIZE.y - span.y) / 2))
+		origin = panel / 2 - at * px
+		# Smaller than the panel: in the middle. Bigger: follow you, but not past the edges.
+		origin.x = (panel.x - span.x) / 2 if span.x <= panel.x else clampf(origin.x, panel.x - span.x, 0.0)
+		origin.y = (panel.y - span.y) / 2 if span.y <= panel.y else clampf(origin.y, panel.y - span.y, 0.0)
 		queue_redraw()
 
 
@@ -177,7 +187,7 @@ func _gui_input(e: InputEvent) -> void:
 func _draw() -> void:
 	if tex == null:
 		return
-	var sz := SIZE
+	var sz := panel
 	draw_rect(Rect2(Vector2.ZERO, sz), Color(0.06, 0.055, 0.045, 0.97))
 	var span := Vector2(World.W, World.H) * px
 	draw_texture_rect(tex, Rect2(origin, span), false)
@@ -185,10 +195,20 @@ func _draw() -> void:
 	draw_texture_rect(fog_tex, Rect2(origin, span), false)
 	draw_rect(Rect2(Vector2.ZERO, sz), UiTheme.LINE, false, 1)
 	draw_rect(Rect2(Vector2.ZERO, Vector2(sz.x, 30)), Color(0.06, 0.055, 0.045, 0.85))
-	draw_string(UiTheme.heading(), Vector2(12, 22), "แผนที่เมือง", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UiTheme.PAPER)
+	draw_string(UiTheme.heading(), Vector2(12, 22), "แผนที่ · " + Zones.name_of(world.zone), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UiTheme.PAPER)
 	draw_string(UiTheme.body(), Vector2(0, 21), "ลูกกลิ้งเมาส์ซูม · คลิกขวาปักหมุด · คลิกหมุดเพื่อเอาออก · [M] ปิด  ", HORIZONTAL_ALIGNMENT_RIGHT, sz.x, 13,
 			Color(UiTheme.PAPER, 0.6))
 	var f := UiTheme.body_bold()
+	# The ways out to other zones.
+	for e in world.exits:
+		var c: Vector2 = origin + Vector2(e.rect.get_center()) * px
+		draw_circle(c, 6.0, Color("1e6a3a"))
+		draw_arc(c, 6.0, 0, TAU, 16, Color("e8e8e0"), 1.2)
+		var label: String = "ไป" + Zones.name_of(e.to)
+		var w := f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+		var at := c + Vector2(-w - 10.0 if e.id == "east" else 10.0, 4.0)
+		draw_string_outline(f, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, 3, Color(0, 0, 0, 0.8))
+		draw_string(f, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("e8f0e0"))
 	for i in pins.size():
 		var p := origin + (Vector2(pins[i]) + Vector2(0.5, 0.5)) * px
 		draw_circle(p + Vector2(0, -8), 5.5, Color("c83a2e"))
@@ -204,5 +224,5 @@ func _draw() -> void:
 		draw_colored_polygon(PackedVector2Array([p + d * 9, p + d.orthogonal() * 5 - d * 4, p - d.orthogonal() * 5 - d * 4]), UiTheme.WARN)
 		draw_arc(p, 11, 0, TAU, 20, Color(UiTheme.WARN, 0.5 + 0.3 * sin(Time.get_ticks_msec() / 200.0)), 1.5)
 	draw_rect(Rect2(Vector2(0, sz.y - 24), Vector2(sz.x, 24)), Color(0.06, 0.055, 0.045, 0.85))
-	draw_string(UiTheme.body(), Vector2(12, sz.y - 7), "สีแดง = วัด · สีฟ้า = มินิมาร์ท · สีเทาอ่อน = คอนโด · ที่มืดคือที่ยังไม่เคยไป",
+	draw_string(UiTheme.body(), Vector2(12, sz.y - 7), "สีแดง = วัด · สีฟ้า = มินิมาร์ท · สีเทาอ่อน = คอนโด · วงเขียว = ทางไปย่านอื่น · ที่มืดคือที่ยังไม่เคยไป",
 			HORIZONTAL_ALIGNMENT_LEFT, sz.x, 13, Color(UiTheme.PAPER, 0.55))

@@ -1,5 +1,5 @@
 extends "res://tests/test_base.gd"
-## A big city that stays quick: only what's around the view is in the scene
+## A big zone that stays quick: only what's around the view is in the scene
 ## (the rest still exists for the rules), zombies are about around the players
 ## and drop away where nobody is, and each player is sent only the zombies
 ## around them.
@@ -10,7 +10,7 @@ func run() -> void:
 	seed(3)
 	await host(9480)
 	var w: World = main.world
-	check(World.W * World.TILE >= 7000 and World.H * World.TILE >= 5000, "the city is big (%d x %d px)" % [World.W * World.TILE, World.H * World.TILE])
+	check(World.W * World.TILE >= 5000 and World.H * World.TILE >= 3800, "a zone is a good size (%d x %d px)" % [World.W * World.TILE, World.H * World.TILE])
 
 	# Streaming: a headless server has nothing in the scene; a view brings in its surroundings.
 	var total := 0
@@ -29,13 +29,13 @@ func run() -> void:
 		w.stream_around(view)
 	var near: int = in_scene.call()
 	check(near > 0 and near < total / 4, "a view brings in what's around it (%d of %d)" % [near, total])
-	var far_view := Rect2(Vector2(World.W * World.TILE, World.H * World.TILE) - Vector2(600, 400), Vector2(480, 270))
+	var far_view := Rect2(Vector2.ZERO, Vector2(480, 270))  # (the far corner from the spawn, near the middle)
 	for i in 40:
 		w.stream_around(far_view)
 	var here := w.near(me.position).filter(func(x): return x.get_parent() != null)
 	check(here.is_empty(), "and lets go of it when the view moves far off")
-	var any_container: FurnitureProp = w.container_nodes[0]
-	check(any_container.get_parent() == null and any_container.data.has("kind"), "what's out of the scene is still there for the rules")
+	var out_of_scene: Array = w.container_nodes.filter(func(x): return x.get_parent() == null)
+	check(not out_of_scene.is_empty() and out_of_scene[0].data.has("kind"), "what's out of the scene is still there for the rules")
 
 	# Zombies turn up around the player, out of sight, not across the city.
 	for z in main.zombies.values():
