@@ -28,10 +28,16 @@ var spurts := false
 var burn := -1.0  # seconds since it was set alight (-1: not burning)
 var up := false  # on the floor upstairs (drawn a storey up)
 var _redraw_t := 0.0
+var _fx_t := 0.0
+var _fx: Node2D  # the flies and flames, redrawn often; the body itself seldom
+var _fx_on := false
 var _light: PointLight2D
 
 
 func _ready() -> void:
+	_fx = Node2D.new()
+	_fx.draw.connect(_draw_fx)
+	add_child(_fx)
 	lk = lk.duplicate()
 	lk.spurt_seed = randi() % 100
 	if Look.low_gore and style in ["behead", "arm", "burst", "crush"]:
@@ -112,12 +118,20 @@ func _process(delta: float) -> void:
 	elif _light:
 		_light.queue_free()
 		_light = null
-	# Redrawn while something moves (the fall, flies, flames), at 12 a second.
+	# The body is redrawn while it falls and bleeds (12 a second), then only as
+	# it slowly rots or chars; the flies and flames on their own, 12 a second.
 	_redraw_t -= delta
-	var busy := t < 3.0 or (t > ROT and t < BONES) or (burn >= 0.0 and burn < BURN_TIME + 2.0) or age > end - FADE
+	var every := 1.0 / 12.0 if t < 3.0 else (0.5 if burn >= 0.0 and burn < BURN_TIME + 22.0 else 1.0)
+	var busy := t < 3.0 or (t > ROT and t < BONES + 1.0) or (burn >= 0.0 and burn < BURN_TIME + 22.0)
 	if busy and _redraw_t <= 0.0:
-		_redraw_t = 1.0 / 12.0
+		_redraw_t = every
 		queue_redraw()
+	_fx_t -= delta
+	var fx := (t > ROT and t < BONES and burn < 0.0) or (burn >= 0.0 and burn < BURN_TIME)
+	if (fx or _fx_on) and _fx_t <= 0.0:
+		_fx_t = 1.0 / 12.0
+		_fx_on = fx
+		_fx.queue_redraw()
 
 
 func _fire_light() -> void:
@@ -132,16 +146,23 @@ func _fire_light() -> void:
 
 
 func _draw() -> void:
+	# All of it in one batch: dozens of draw calls a body otherwise.
+	var ci := MeshCanvas.new(self, Look.dot_tex())
+	_draw_body(ci)
+	ci.commit()
+
+
+func _draw_body(ci: MeshCanvas) -> void:
 	var lift := Vector2(0, -BuildingProp.GROUND_H if up else 0.0)
-	draw_set_transform(lift)
+	ci.draw_set_transform(lift)
 	var burnt := clampf(burn / BURN_TIME, 0.0, 1.0) if burn >= 0.0 else 0.0
 	if burn >= BURN_TIME:
-		_draw_ash()
+		_draw_ash(ci)
 		return
 	var gory := style in ["behead", "arm", "burst", "crush"]
-	Look.draw_blood_pool(self, fall_dir, clampf((t - 0.5) / 3.0, 0.0, 1.0) * (1.4 if gory else 1.0))
+	Look.draw_blood_pool(ci, fall_dir, clampf((t - 0.5) / 3.0, 0.0, 1.0) * (1.4 if gory else 1.0))
 	if t > BONES and burn < 0.0:
-		_draw_bones()
+		_draw_bones(ci)
 		return
 	if spurts:
 		lk.spurt = clampf(1.0 - t / SPURT_TIME, 0.0, 1.0)
@@ -156,66 +177,71 @@ func _draw() -> void:
 				col = col.lerp(Color("4a5040") if key == "skin" else col.darkened(0.5), rot * (0.7 if key == "skin" else 0.5))
 				body[key] = col.lerp(Color("1a1612"), burnt * 0.85)
 	Look.lift = lift
-	Look.draw(self, {view = [Look.SIDE, fall_dir > 0], zombie = zombie, fall = clampf(t / 0.75, 0.001, 1.0), fall_dir = fall_dir}, body)
+	Look.draw(ci, {view = [Look.SIDE, fall_dir > 0], zombie = zombie, fall = clampf(t / 0.75, 0.001, 1.0), fall_dir = fall_dir}, body)
 	Look.lift = Vector2.ZERO
-	draw_set_transform(lift)
-	if rot > 0.0 and burn < 0.0:
-		_draw_flies(rot)
-	if burn >= 0.0:
-		_draw_fire()
+
+
+func _draw_fx() -> void:
+	var ci := MeshCanvas.new(_fx, Look.dot_tex())
+	ci.draw_set_transform(Vector2(0, -BuildingProp.GROUND_H if up else 0.0))
+	if t > ROT and t < BONES and burn < 0.0:
+		_draw_flies(ci, clampf((t - ROT) / (BONES - ROT), 0.0, 1.0))
+	elif burn >= 0.0 and burn < BURN_TIME:
+		_draw_fire(ci)
+	ci.commit()
 
 
 ## The flies over a rotting body.
-func _draw_flies(rot: float) -> void:
+func _draw_flies(ci: MeshCanvas, rot: float) -> void:
 	var n := 2 + int(rot * 5)
 	for i in n:
 		var a := t * (3.0 + i * 0.7) + i * 2.1
 		var p := Vector2(fall_dir * 12.0 + cos(a) * (6 + i % 3 * 3), -6 + sin(a * 1.3) * 3 - i % 2 * 3)
-		draw_circle(p, 0.6, Color(0.05, 0.05, 0.05, 0.9))
+		ci.draw_circle(p, 0.6, Color(0.05, 0.05, 0.05, 0.9))
 
 
 ## Flames along the body, and the smoke going up from them.
-func _draw_fire() -> void:
+func _draw_fire(ci: MeshCanvas) -> void:
 	var k := 1.0 - absf(burn / BURN_TIME * 2.0 - 1.0) * 0.6  # (catching, roaring, dying down)
 	for i in 7:
 		var x := fall_dir * (2.0 + i * 3.6)
 		var h := (6.0 + 5.0 * sin(t * 11.0 + i * 1.7) + 4.0 * sin(t * 5.3 + i)) * k + 4.0
 		var wdt := 3.2
-		draw_colored_polygon(PackedVector2Array([Vector2(x - wdt, -1), Vector2(x + wdt, -1), Vector2(x + sin(t * 9.0 + i) * 1.5, -1 - h)]),
+		ci.draw_colored_polygon(PackedVector2Array([Vector2(x - wdt, -1), Vector2(x + wdt, -1), Vector2(x + sin(t * 9.0 + i) * 1.5, -1 - h)]),
 				Color(1.0, 0.45 + 0.2 * sin(t * 13.0 + i), 0.1, 0.9))
-		draw_colored_polygon(PackedVector2Array([Vector2(x - wdt * 0.5, -1), Vector2(x + wdt * 0.5, -1), Vector2(x, -1 - h * 0.6)]),
+		ci.draw_colored_polygon(PackedVector2Array([Vector2(x - wdt * 0.5, -1), Vector2(x + wdt * 0.5, -1), Vector2(x, -1 - h * 0.6)]),
 				Color(1.0, 0.9, 0.4, 0.95))
 	for i in 5:
 		var rise := fmod(t * 9.0 + i * 7.0, 34.0)
-		draw_circle(Vector2(fall_dir * (6.0 + i * 4.0) + sin(t + i) * 2.0, -10.0 - rise), 2.5 + rise * 0.12,
+		ci.draw_circle(Vector2(fall_dir * (6.0 + i * 4.0) + sin(t + i) * 2.0, -10.0 - rise), 2.5 + rise * 0.12,
 				Color(0.35, 0.33, 0.3, 0.35 * (1.0 - rise / 34.0)))
 
 
 ## What the fire leaves: ash and a few embers still glowing.
-func _draw_ash() -> void:
-	draw_set_transform(Vector2(fall_dir * 12.0, -1 - (BuildingProp.GROUND_H if up else 0.0)), 0, Vector2(1, 0.35))
-	draw_circle(Vector2.ZERO, 15.0, Color(0.08, 0.07, 0.06, 0.8))
-	draw_circle(Vector2(fall_dir * -3, 1), 10.0, Color(0.2, 0.19, 0.18, 0.8))
-	draw_set_transform(Vector2(0, -BuildingProp.GROUND_H if up else 0.0))
+func _draw_ash(ci: MeshCanvas) -> void:
+	ci.draw_set_transform(Vector2(fall_dir * 12.0, -1 - (BuildingProp.GROUND_H if up else 0.0)), 0, Vector2(1, 0.35))
+	ci.draw_circle(Vector2.ZERO, 15.0, Color(0.08, 0.07, 0.06, 0.8))
+	ci.draw_circle(Vector2(fall_dir * -3, 1), 10.0, Color(0.2, 0.19, 0.18, 0.8))
+	ci.draw_set_transform(Vector2(0, -BuildingProp.GROUND_H if up else 0.0))
 	var embers := clampf(1.0 - (burn - BURN_TIME) / 20.0, 0.0, 1.0)
 	for i in 4:
-		draw_circle(Vector2(fall_dir * (4.0 + i * 5.0), -1.0 + (i % 2)), 0.9, Color(1.0, 0.45, 0.1, embers))
+		ci.draw_circle(Vector2(fall_dir * (4.0 + i * 5.0), -1.0 + (i % 2)), 0.9, Color(1.0, 0.45, 0.1, embers))
 
 
 ## Long rotted: bones lying in a dark stain.
-func _draw_bones() -> void:
+func _draw_bones(ci: MeshCanvas) -> void:
 	var bone := Color("d8d0bc")
 	var f := fall_dir
-	draw_set_transform(Vector2(f * 12.0, -1 - (BuildingProp.GROUND_H if up else 0.0)), 0, Vector2(1, 0.35))
-	draw_circle(Vector2.ZERO, 16.0, Color(0.12, 0.08, 0.06, 0.55))
-	draw_set_transform(Vector2(0, -BuildingProp.GROUND_H if up else 0.0))
-	draw_line(Vector2(f * 4, -2), Vector2(f * 17, -2), bone, 1.2)  # spine
+	ci.draw_set_transform(Vector2(f * 12.0, -1 - (BuildingProp.GROUND_H if up else 0.0)), 0, Vector2(1, 0.35))
+	ci.draw_circle(Vector2.ZERO, 16.0, Color(0.12, 0.08, 0.06, 0.55))
+	ci.draw_set_transform(Vector2(0, -BuildingProp.GROUND_H if up else 0.0))
+	ci.draw_line(Vector2(f * 4, -2), Vector2(f * 17, -2), bone, 1.2)  # spine
 	for i in 4:
 		var x := f * (9.0 + i * 2.2)
-		draw_line(Vector2(x, -4), Vector2(x, 0), bone, 0.8)  # ribs
-	draw_rect(Rect2(f * 2 - 2, -3.5, 4, 3), bone)  # pelvis
-	draw_line(Vector2(f * 2, -1), Vector2(f * -8, -1), bone, 1.0)  # legs
-	draw_line(Vector2(f * 2, -2), Vector2(f * -8, -3), bone, 1.0)
+		ci.draw_line(Vector2(x, -4), Vector2(x, 0), bone, 0.8)  # ribs
+	ci.draw_rect(Rect2(f * 2 - 2, -3.5, 4, 3), bone)  # pelvis
+	ci.draw_line(Vector2(f * 2, -1), Vector2(f * -8, -1), bone, 1.0)  # legs
+	ci.draw_line(Vector2(f * 2, -2), Vector2(f * -8, -3), bone, 1.0)
 	if not lk.get("missing", 0) & Look.LOST_HEAD:
-		draw_circle(Vector2(f * 21, -2.5), 3.0, bone)  # skull
-		draw_circle(Vector2(f * 21.8, -2.8), 0.7, Color(0.1, 0.08, 0.06))
+		ci.draw_circle(Vector2(f * 21, -2.5), 3.0, bone)  # skull
+		ci.draw_circle(Vector2(f * 21.8, -2.8), 0.7, Color(0.1, 0.08, 0.06))
