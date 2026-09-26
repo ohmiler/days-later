@@ -506,13 +506,17 @@ static func _edge(r: Rect2, d: Vector2i, thick: float) -> Rect2:
 			Vector2(thick if d.x != 0 else TILE, thick if d.y != 0 else TILE))
 
 
-func _draw_chunk(ci: Node2D, area: Rect2i) -> void:
+## A chunk of ground, drawn as one batch of triangles (see MeshCanvas): the
+## ground doesn't move, and drawn shape by shape it was most of every frame.
+func _draw_chunk(node: Node2D, area: Rect2i) -> void:
+	var mc := MeshCanvas.new()
 	for y in range(area.position.y, mini(area.end.y, H)):
 		for x in range(area.position.x, mini(area.end.x, W)):
-			_draw_tile(ci, x, y)
+			_draw_tile(mc, x, y)
+	mc.commit(node)
 
 
-func _draw_tile(ci: Node2D, x: int, y: int) -> void:
+func _draw_tile(ci: MeshCanvas, x: int, y: int) -> void:
 	var c := Vector2i(x, y)
 	var t := tiles[y * W + x]
 	var r := Rect2(x * TILE, y * TILE, TILE, TILE)
@@ -620,20 +624,20 @@ func _draw_tile(ci: Node2D, x: int, y: int) -> void:
 
 
 ## A small clump of weeds.
-func _tuft(ci: Node2D, p: Vector2, k: int, size := 1.0) -> void:
+func _tuft(ci: MeshCanvas, p: Vector2, k: int, size := 1.0) -> void:
 	var col := Color("5a6a38").lightened((hash01(k, 3, 40) - 0.5) * 0.2)
 	for i in 3:
 		var tip := p + Vector2((i - 1) * 1.3, -2.2 - (i % 2) * 0.8) * size
 		ci.draw_line(p, tip, col if i != 1 else col.lightened(0.1), 0.6)
 
 
-func _crack(ci: Node2D, r: Rect2, x: int, y: int, col: Color) -> void:
+func _crack(ci: MeshCanvas, r: Rect2, x: int, y: int, col: Color) -> void:
 	var p := r.position + Vector2(hash01(x, y, 9), hash01(x, y, 10)) * TILE
 	var q := p + Vector2(hash01(x, y, 41) * 8 - 4, hash01(x, y, 42) * 6)
 	ci.draw_polyline(PackedVector2Array([p, p.lerp(q, 0.5) + Vector2(1.2, -0.6), q, q + Vector2(2, 1.5)]), col, 0.5)
 
 
-func _stain(ci: Node2D, r: Rect2, x: int, y: int, col: Color) -> void:
+func _stain(ci: MeshCanvas, r: Rect2, x: int, y: int, col: Color) -> void:
 	var p := r.position + Vector2(hash01(x, y, 43), hash01(x, y, 44)) * TILE
 	ci.draw_set_transform(p, 0, Vector2(1.4, 0.8))
 	ci.draw_circle(Vector2.ZERO, 3.0 + hash01(x, y, 45) * 3.0, col)
@@ -641,7 +645,7 @@ func _stain(ci: Node2D, r: Rect2, x: int, y: int, col: Color) -> void:
 
 
 ## Rainwater lying in a dip, with the sky in it.
-func _puddle(ci: Node2D, r: Rect2, x: int, y: int) -> void:
+func _puddle(ci: MeshCanvas, r: Rect2, x: int, y: int) -> void:
 	var p := r.position + Vector2(4, 5) + Vector2(hash01(x, y, 46), hash01(x, y, 47)) * 6
 	ci.draw_set_transform(p, 0, Vector2(1.6, 0.7))
 	ci.draw_circle(Vector2.ZERO, 3.6, Color("4a5256"))
@@ -650,7 +654,8 @@ func _puddle(ci: Node2D, r: Rect2, x: int, y: int) -> void:
 	ci.draw_line(p + Vector2(-2, -1), p + Vector2(1, -1), Color(1, 1, 1, 0.25), 0.5)
 
 
-func _draw_markings(ci: Node2D) -> void:
+func _draw_markings(node: Node2D) -> void:
+	var ci := MeshCanvas.new()  # (one batch for the whole city's paint)
 	var white := Color(0.85, 0.83, 0.78, 0.8)
 	var yellow := Color(0.85, 0.68, 0.2, 0.85)
 	for rd in roads:
@@ -697,3 +702,4 @@ func _draw_markings(ci: Node2D) -> void:
 				ci.draw_rect(Rect2(o.x + sz + 4, o.y + s, 22, 5), white)
 	if bts_row >= 0:
 		ci.draw_rect(Rect2(0, (bts_row - 1) * TILE, W * TILE, 4 * TILE), Color(0, 0, 0, 0.2))  # skytrain shadow
+	ci.commit(node)
