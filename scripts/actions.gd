@@ -64,10 +64,17 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 		return
 	match verb:
 		"up", "down":
-			p.on_roof = verb == "up"
+			# Ground floor -> upstairs (where there is one) -> roof, and back down.
+			var has_up: bool = main.world.upper.has(t.id)
+			var lvl := (2 if p.on_roof else (1 if p.up else 0)) + (1 if verb == "up" else -1)
+			if lvl == 1 and not has_up:
+				lvl = 2 if verb == "up" else 0
+			lvl = clampi(lvl, 0, 2)
+			p.on_roof = lvl == 2
+			p.up = lvl == 1
 			p.position = main.world.to_pos(t.id)
 			main.fx_sound.rpc("door", p.position)
-			main._toast(p, "ขึ้นมาบนดาดฟ้า · ซอมบี้ตามขึ้นมาไม่ได้" if p.on_roof else "ลงมาข้างล่าง")
+			main._toast(p, ["ลงมาข้างล่าง", "ขึ้นมาชั้น 2 · ซอมบี้ขึ้นบันไดตามมาได้", "ขึ้นมาบนดาดฟ้า · ซอมบี้ตามขึ้นมาไม่ได้"][lvl])
 		"jump":
 			var drop := Interact.jump_spot(main.world, p.position)
 			if drop == Vector2.INF:

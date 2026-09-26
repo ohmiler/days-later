@@ -13,6 +13,7 @@ var d := 0.0  # footprint depth in px
 var h := 0.0  # facade height in px
 var glow: Node2D  # unshaded layer for lit windows and signs at night
 var interior: Array = []  # nodes only shown while the roof is lifted off (hanging bulb)
+var upstairs: Array = []  # the floor upstairs and what's on it: shown only to someone up there (see Main._update_inside)
 var rng := RandomNumberGenerator.new()
 var extra := RandomNumberGenerator.new()  # details added later; separate so the old ones stay put
 ## Signs that look like their trade: a gold shop's red and gold, a pharmacy's green.
@@ -65,7 +66,19 @@ func visual_rect() -> Rect2:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_VISIBILITY_CHANGED:
 		for n in interior:
-			n.visible = not visible
+			n.visible = not visible and not showing_upstairs
+
+
+var showing_upstairs := false
+
+
+## Show the floor upstairs (someone local is up there) or not.
+func show_upstairs(on: bool) -> void:
+	showing_upstairs = on
+	for n in upstairs:
+		n.visible = on
+	for n in interior:
+		n.visible = not visible and not on
 
 
 var c: MeshCanvas  # (drawn through, in one batch: see MeshCanvas)

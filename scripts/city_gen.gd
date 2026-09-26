@@ -33,7 +33,7 @@ const SIGN_LOOT := {
 ## Which city generator this is. Saves remember it: a city saved by an older
 ## generator cannot be rebuilt from its seed any more (see SaveGame).
 ## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
-const GEN := 4  # 4: shops laid out for what they sell, shared party walls, rolling shutters
+const GEN := 5  # 5: a floor upstairs (bedrooms), shops with stock behind instead of beds
 const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
 const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
 const MAX_DEPTH := 15
@@ -105,6 +105,11 @@ static func prefab_problems() -> Array:
 			out.append("%s: the bottom row needs one front door D or a shutter UU.." % name)
 		if not p.upper.is_empty() and (p.upper.size() != p.rows.size() or p.upper_stretch != p.stretch):
 			out.append("%s: floor 2 must have the same rows (and ~ rows) as the ground floor" % name)
+		elif not p.upper.is_empty():
+			for y in p.rows.size():
+				for x in p.width:
+					if (p.rows[y][x] == "S") != (p.upper[y][x] == "S"):
+						out.append("%s: the stairs must be in the same place on both floors (row %d)" % [name, y + 1])
 		if p.widen >= p.width:
 			out.append("%s: widen column %d is outside the plan" % [name, p.widen])
 		for row in p.rows + p.upper:
@@ -207,13 +212,10 @@ static func _widened(rows: Array, plan: Dictionary, width: int) -> Array:
 	return out
 
 
-## Build the inside of a shop or home from its plan (see data/prefabs/README.txt).
-static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: RandomNumberGenerator) -> void:
-	var r: Rect2i = rec.rect
-	rec.table = "store" if rec.kind == "store" else SIGN_LOOT.get(rec.sign, "home")
-	var ground: Array = _widened(plan.rows, plan, r.size.x)
-	# Stretch the ~ rows to fill the plot's depth.
-	var extra: int = r.size.y - plan.rows.size()
+## A plan's rows made the plot's size: widened, and the ~ rows repeated to fill its depth.
+static func _fit(plan_rows: Array, plan: Dictionary, r: Rect2i) -> Array:
+	var ground: Array = _widened(plan_rows, plan, r.size.x)
+	var extra: int = r.size.y - plan_rows.size()
 	var n_stretch: int = plan.stretch.count(true)
 	var rows := []
 	var k := 0
@@ -223,6 +225,44 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 			for j in extra / n_stretch + (1 if k < extra % n_stretch else 0):
 				rows.append(ground[i])
 			k += 1
+	return rows
+
+
+## The floor upstairs (World.upper): its walls and floor, the beds and
+## cupboards up there (containers with `up`), what's on the floor. Doorways
+## upstairs are open; the stairs are the same cell as below.
+static func _build_upper(w: World, rec: Dictionary, plan: Dictionary, rng: RandomNumberGenerator) -> void:
+	var r: Rect2i = rec.rect
+	var rows := _fit(plan.upper, plan, r)
+	rec.upper = true
+	for y in rows.size():
+		for x in r.size.x:
+			var ch: String = rows[y][x]
+			var c := r.position + Vector2i(x, y)
+			if ch in "WwUDB":
+				w.upper[c] = World.IWALL
+				continue
+			w.upper[c] = World.FLOOR
+			if ch == "b" and y > 0 and rows[y - 1][x] == "b":
+				continue  # the foot of the bed above
+			if PLAN_FURNITURE.has(ch) or ch == "b":
+				var data := {id = w.containers.size(), kind = PLAN_FURNITURE.get(ch, "bed"), cell = c, table = "home", sign = rec.sign, up = true}
+				if ch == "b" and y + 1 < rows.size() and rows[y + 1][x] == "b":
+					data.long = 2
+					w.upper_blocked[c + Vector2i.DOWN] = true
+				w.upper_blocked[c] = true
+				w.containers.append(data)
+			elif PLAN_DECOR.has(ch) and ch != "S":
+				w.decor.append({kind = PLAN_DECOR[ch], cell = c, seed = rng.randi(), building = rec, up = true})
+				if PLAN_DECOR[ch] in DECOR_BLOCKS:
+					w.upper_blocked[c] = true
+
+
+## Build the inside of a shop or home from its plan (see data/prefabs/README.txt).
+static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: RandomNumberGenerator) -> void:
+	var r: Rect2i = rec.rect
+	rec.table = "store" if rec.kind == "store" else SIGN_LOOT.get(rec.sign, "home")
+	var rows := _fit(plan.rows, plan, r)
 	w.fill(r, World.IWALL)
 	var furniture := []  # [cell, letter]
 	var decor := []
@@ -307,11 +347,14 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 			rooms.append(box)
 	rec.rooms = rooms
 	rec.keep_clear = []
-	# The shop's own room holds what it sells; rooms with a bed are the family's.
+	# The shop's own room holds what it sells; the rest is the family's, if
+	# they live here (a bed anywhere, down here or upstairs).
 	var shop_room: int = room_of.get(front, -1)
 	var home_rooms := {}
 	for c in beds:
 		home_rooms[room_of[c]] = true
+	if not plan.upper.is_empty() and "b" in "".join(plan.upper):
+		home_rooms[-2] = true  # (-2: the rooms upstairs)
 	var sells: Array = Items.FURNITURE[rec.table]
 	var next_sold := 0
 	for e in furniture:
@@ -345,6 +388,8 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 			w.stairs[e[0]] = true
 	for box in rooms:
 		w.decor.append({kind = "bulb", cell = Vector2i(box.get_center()), seed = 0, building = rec})
+	if not plan.upper.is_empty() and rec.kind == "shop":
+		_build_upper(w, rec, plan, rng)
 
 
 ## A door or window in a wall. Windows start intact (glass), some already smashed.
@@ -794,7 +839,7 @@ static func _size_beds(w: World) -> void:
 		if not rec.has("keep_clear"):
 			continue
 		for f in w.containers:
-			if f.kind != "bed" or f.has("long") or not rec.rect.has_point(f.cell):
+			if f.kind != "bed" or f.has("long") or f.get("up", false) or not rec.rect.has_point(f.cell):
 				continue
 			for side in [2, 1, -1]:
 				var step := Vector2i.DOWN if side == 2 else Vector2i(side, 0)

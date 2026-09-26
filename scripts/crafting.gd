@@ -302,4 +302,4 @@ func _take(p: Player, need: String, n: int) -> void:
 
 func _give_or_drop(p: Player, id: String) -> void:
 	if not main.inventory._give(p, id):
-		main._spawn_pickup(p.position + Vector2(randf_range(-6, 6), 6), {id = id, n = 1, hp = Items.def(id).get("hp", 0)})
+		main._spawn_pickup(p.position + Vector2(randf_range(-6, 6), 6), {id = id, n = 1, hp = Items.def(id).get("hp", 0)}, p.up)

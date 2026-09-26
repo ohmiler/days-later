@@ -112,6 +112,7 @@ func start_sleep(p: Player, bed: int) -> void:
 	p.sleeping = true
 	if bed >= 0:
 		var f: FurnitureProp = main.world.container_nodes[bed]
+		p.up = f.data.get("up", false)
 		p.position = f.position + (Vector2(0, 0.1) if f.data.get("long", 0) == 2 else Vector2(f.bed_left() + 8.0, 0))  # head on the pillow
 	p.sleep_check = 0.0
 	p.sleep_bed = bed

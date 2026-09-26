@@ -15,3 +15,17 @@ Wz..sW
 ~Wz..sW
 Wg...W
 WUUUUW
+floor 2:
+WWWWWW
+Wb..cW
+Wb...W
+Wn..tW
+WWdWWW
+W....W
+W..S.W
+W....W
+WWdWWW
+Wb..cW
+~Wb...W
+W...IW
+WWWWWW

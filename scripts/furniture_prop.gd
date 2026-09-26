@@ -44,9 +44,10 @@ func set_highlight(v: bool) -> void:
 func _draw() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = data.id * 7919
-	draw_set_transform(Vector2(0, -1), 0, Vector2(1, 0.35))
+	_xf(Vector2.ZERO)
+	_xf(Vector2(0, -1), 0, Vector2(1, 0.35))
 	draw_circle(Vector2.ZERO, 8, Color(0, 0, 0, 0.3))
-	draw_set_transform(Vector2.ZERO, 0, Vector2(1, TALL.get(data.kind, 1.0)))
+	_xf(Vector2.ZERO, 0, Vector2(1, TALL.get(data.kind, 1.0)))
 	match data.kind:
 		"shelf":
 			_box(Rect2(-7, -20, 14, 20), Color("8a8e92") if data.table != "clothes" else Color("8a6a48"))
@@ -180,7 +181,7 @@ func _draw() -> void:
 				draw_rect(Rect2(-5, -28, 10, 5), Color("f0ece4"))  # pillow
 				draw_rect(Rect2(-7, -19, 14, 16), Color.from_hsv(rng.randf(), 0.35, 0.6))  # blanket
 				draw_rect(Rect2(-7, -19, 14, 1.5), Color(0, 0, 0, 0.15))
-				draw_set_transform(Vector2.ZERO)
+				_xf(Vector2.ZERO)
 				if stripped:
 					draw_rect(Rect2(-7, -31, 14, 31), Color(0.1, 0.08, 0.06, 0.55))
 				if highlight and not searched:
@@ -195,7 +196,7 @@ func _draw() -> void:
 			if long != 0:
 				draw_rect(Rect2(x0 + 12, -13, w - 12, 10), Color.from_hsv(rng.randf(), 0.35, 0.6))  # blanket
 				draw_rect(Rect2(x0 + 12, -13, 1.5, 10), Color(0, 0, 0, 0.15))
-	draw_set_transform(Vector2.ZERO)
+	_xf(Vector2.ZERO)
 	if stripped:  # pulled apart: dark, with the boards gone
 		var h2: float = 18.0 * TALL.get(data.kind, 1.0)
 		draw_rect(Rect2(-8, -h2, 16, h2), Color(0.1, 0.08, 0.06, 0.55))
@@ -241,9 +242,9 @@ func _draw_stall(rng: RandomNumberGenerator) -> void:
 		"ข้าวมันไก่":
 			if full:
 				for i in 3:
-					draw_set_transform(Vector2(-5 + i * 3.5, -14.5), 0, Vector2(0.8, 1.2))
+					_xf(Vector2(-5 + i * 3.5, -14.5), 0, Vector2(0.8, 1.2))
 					draw_circle(Vector2.ZERO, 1.5, Color("e8b85a"))
-					draw_set_transform(Vector2.ZERO, 0, Vector2(1, TALL.get(data.kind, 1.0)))
+					_xf(Vector2.ZERO, 0, Vector2(1, TALL.get(data.kind, 1.0)))
 					draw_line(Vector2(-5 + i * 3.5, -18), Vector2(-5 + i * 3.5, -16.5), Color("6a6a6a"), 0.4)
 			draw_rect(Rect2(4.5, -14, 3.5, 4), Color("c8ccd0"))  # the rice pot
 		"ก๋วยเตี๋ยวเรือ", "โจ๊ก ข้าวต้ม":
@@ -288,3 +289,10 @@ func _box(r: Rect2, col: Color) -> void:
 	draw_rect(Rect2(r.end.x - 2, r.position.y, 2, r.size.y), col.darkened(0.2))
 	if searched:
 		draw_rect(r, Color(0, 0, 0, 0.12))
+
+
+## Upstairs (data.up) it is all drawn a storey up, where the floor up there is
+## drawn (see World._draw_upper); the node stays at floor level so it sorts
+## with the people up there by their feet.
+func _xf(pos: Vector2, rot := 0.0, scl := Vector2.ONE) -> void:
+	draw_set_transform(pos + Vector2(0, -BuildingProp.GROUND_H if data.get("up", false) else 0.0), rot, scl)

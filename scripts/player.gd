@@ -48,6 +48,7 @@ var exhausted := false  # ran dry: no sprinting until stamina recovers
 var sprint := false
 var sneak := false  # Ctrl / C: slow, quiet, harder to spot
 var on_roof := false  # up on the shophouse roofs: zombies can't follow
+var up := false  # upstairs in a shophouse (World.upper): zombies can follow, by the stairs
 var lift := 0.0  # current drawn height above the street (eases between roofs)
 var _pose := {}  # what the body last showed, for easing between poses (Rig.build_eased)
 var step_t := 0.0  # server: time to the next footstep noise
@@ -209,6 +210,8 @@ func server_tick(delta: float) -> void:
 			refresh_wear()  # the clothes stayed on the body; the new survivor starts in their own
 			inv.resize(bag_size())
 			position = home_spawn()
+			up = bed >= 0 and bed < world.container_nodes.size() and world.container_nodes[bed].data.get("up", false)
+			on_roof = false
 		return
 	if sleeping:
 		if move.length() > 0.1 or punching or kicking:
@@ -217,7 +220,7 @@ func server_tick(delta: float) -> void:
 			return
 	if riding >= 0:
 		return  # the bike moves them (Vehicles.server_tick)
-	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof)
+	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof, false, up)
 
 
 ## Sprinting is faster; a bad infection drags your feet.
@@ -470,6 +473,12 @@ var last_pos_ride := Vector2.ZERO
 
 
 ## Where this survivor comes back: beside their bed if they have one, else anywhere.
+## Is `other` (a player or zombie) on the same floor as you: both upstairs or
+## both down (the roof is its own place again: see on_roof)?
+func same_floor(other) -> bool:
+	return other.up == up
+
+
 func home_spawn() -> Vector2:
 	if bed >= 0 and bed < world.container_nodes.size():
 		return world.container_nodes[bed].position
@@ -597,7 +606,7 @@ func _process(delta: float) -> void:
 	phase = phase + step * 0.3 if moving else 0.0  # longer strides
 	if moving and floor(phase / PI) != floor(before / PI) and alive() and get_parent().get("in_game"):
 		_footstep()
-	lift = lerpf(lift, world.roof_height(position) if on_roof else 0.0, minf(1.0, 12.0 * delta))
+	lift = lerpf(lift, world.roof_height(position) if on_roof else (BuildingProp.GROUND_H if up else 0.0), minf(1.0, 12.0 * delta))
 	night_eyes.position = Look.CHEST + Vector2(0, -lift)
 	z_index = 2 if on_roof or lift > 1.0 else 1  # above the buildings while up there
 	view = Look.pick_view(aim.angle(), view)

@@ -54,7 +54,9 @@ var containers: Array = []  # {id, kind, cell, table}, filled by CityGen
 var container_nodes: Array = []  # FurnitureProp, indexed by container id
 var doors: Array = []  # {id, cell, closed, hp, boards, broken}, filled by CityGen
 var decor: Array = []  # {kind, cell, seed, building}, filled by CityGen
-var stairs := {}  # cell -> true: stairwells up to the roof
+var stairs := {}  # cell -> true: stairwells up to the roof (by way of the floor upstairs, if there is one)
+var upper := {}  # cell -> FLOOR or IWALL: the floor upstairs in shophouses that have one (see CityGen._build_upper)
+var upper_blocked := {}  # cells upstairs taken by beds and cupboards
 var door_at := {}  # cell -> door id
 var door_nodes: Array = []
 var overhead: Overhead
@@ -150,6 +152,8 @@ func _spawn_props() -> void:
 		if rec.get("outside", false):
 			dp.position.y = to_pos(rec.cell).y  # (out on the pavement: stands a little further back, by the wall)
 		dp.z_index = 0 if flat else (3 if rec.kind == "bulb" else 1)
+		if rec.get("up", false):
+			_upstairs(dp, bnode.get(rec.building))
 		prop_parent.add_child(dp)
 		var b: BuildingProp = bnode.get(rec.building)
 		if rec.kind == "bulb":
@@ -175,8 +179,17 @@ func _spawn_props() -> void:
 		if rec.get("long", 0) == 2:
 			f.position.y += TILE  # a bed down the room: sorts by its foot end
 		f.z_index = 1
+		if rec.get("up", false):
+			_upstairs(f, building_at.get(rec.cell))
 		prop_parent.add_child(f)
 		container_nodes.append(f)
+	for b: BuildingProp in building_nodes:
+		if b.data.get("upper", false):
+			var n := Node2D.new()
+			n.draw.connect(_draw_upper.bind(n, b.data))
+			_upstairs(n, b)
+			n.z_index = 2
+			prop_parent.add_child(n)
 	for th in things:
 		var tp := ThingProp.new()
 		tp.thing = th
@@ -200,6 +213,54 @@ func _spawn_props() -> void:
 	overhead.world = self
 	overhead.z_index = 4
 	prop_parent.add_child(overhead)
+
+
+## Something that belongs upstairs: hidden until someone local goes up there,
+## and drawn above the ground floor's things when they do.
+func _upstairs(n: Node2D, b: BuildingProp) -> void:
+	n.visible = false
+	n.z_index = 2  # (with the people up there, sorted by their feet)
+	if b:
+		b.upstairs.append(n)
+
+
+## The floor upstairs of one building, a storey up: where you stand when you're
+## up there (the node sits at the top of the map so it sorts behind everyone).
+## Its front is the ground floor's front wall, seen from above.
+func _draw_upper(node: Node2D, rec: Dictionary) -> void:
+	var mc := MeshCanvas.new()
+	var r: Rect2i = rec.rect
+	var lift := BuildingProp.GROUND_H
+	var col: Color = rec.color
+	mc.draw_rect(Rect2(r.position.x * TILE, r.end.y * TILE - lift, r.size.x * TILE, lift), col.darkened(0.2))
+	mc.draw_rect(Rect2(r.position.x * TILE, r.end.y * TILE - lift, r.size.x * TILE, 2), col.lightened(0.1))
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			var c := Vector2i(x, y)
+			var t: int = upper.get(c, IWALL)
+			var cr := Rect2(x * TILE, y * TILE - lift, TILE, TILE)
+			if t == FLOOR:
+				# Floorboards up here, not terrazzo.
+				var wood := Color("9a7a58").lightened((hash01(x, y, 50) - 0.5) * 0.08)
+				mc.draw_rect(cr, wood)
+				for i in 3:
+					mc.draw_line(cr.position + Vector2(0, 4 + i * 5), cr.position + Vector2(TILE, 4 + i * 5), wood.darkened(0.15), 0.4)
+			else:
+				mc.draw_rect(cr, COLORS[IWALL])
+				for d in DIRS:
+					if upper.get(c + d, IWALL) == FLOOR:
+						mc.draw_rect(_edge(cr, d, 3), Color("6e665c"))
+				# Windows in the front and back walls (not at the corners: the party walls).
+				if (y == r.position.y or y == r.end.y - 1) and x > r.position.x and x < r.end.x - 1 and (x - r.position.x) % 2 == 1:
+					mc.draw_rect(Rect2(cr.position + Vector2(2, 5), Vector2(TILE - 4, 6)), Color("8ab0c0"))
+					mc.draw_line(cr.position + Vector2(TILE / 2.0, 5), cr.position + Vector2(TILE / 2.0, 11), Color("4a4640"), 0.8)
+			if stairs.has(c):
+				# The stairwell: steps coming up from below, and on up to the roof hatch.
+				for i in 5:
+					var sy := cr.position.y + 2 + i * 2.6
+					mc.draw_rect(Rect2(cr.position.x + 2, sy, TILE - 4, 2), Color("8a8078").darkened(0.08 * (4 - i)))
+				mc.draw_rect(Rect2(cr.position.x + 1, cr.position.y + 1, TILE - 2, TILE - 2), Color("4a4038"), false, 0.8)
+	mc.commit(node)
 
 
 const LAMP_LIGHT := 64.0  # how far a street lamp lights the ground around it (pixels)
@@ -251,6 +312,36 @@ func set_tile(c: Vector2i, t: int) -> void:
 	tiles[c.y * W + c.x] = t
 	astar.set_point_solid(c, is_solid(c))
 	chunks[c / CHUNK].queue_redraw()
+
+
+## Upstairs, only the floor up there is somewhere to stand.
+func is_solid_up(c: Vector2i) -> bool:
+	return upper.get(c, WALL) != FLOOR or upper_blocked.has(c)
+
+
+## Path upstairs from a to b (cells, not counting where you are): the rooms
+## up there are small, so a plain breadth-first search.
+func path_up(a: Vector2, b: Vector2) -> Array:
+	var from := to_cell(a)
+	var to := to_cell(b)
+	if is_solid_up(to) or from == to:
+		return []
+	var came := {from: from}
+	var queue := [from]
+	while not queue.is_empty():
+		var c: Vector2i = queue.pop_front()
+		if c == to:
+			var out := []
+			while c != from:
+				out.push_front(c)
+				c = came[c]
+			return out
+		for d in DIRS:
+			var n: Vector2i = c + d
+			if not came.has(n) and not is_solid_up(n):
+				came[n] = c
+				queue.append(n)
+	return []
 
 
 func is_solid(c: Vector2i) -> bool:
@@ -394,8 +485,8 @@ func to_pos(c: Vector2i) -> Vector2:
 
 ## Move a body by `v`, sliding along walls one axis at a time.
 ## `road`: for a bike, which can't go indoors (floors and doorways are walls to it).
-func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false) -> Vector2:
-	var stuck := _solid_corner_cells(pos, r, roof, road)
+func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, up := false) -> Vector2:
+	var stuck := _solid_corner_cells(pos, r, roof, road, up)
 	if not stuck.is_empty():
 		# Already overlapping something solid (a door shut on us): only allow
 		# moves heading away from it, never deeper in or along it.
@@ -404,32 +495,33 @@ func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false) -> 
 			centre += to_pos(c) / stuck.size()
 		var away := pos - centre
 		for step in [v, Vector2(v.x, 0), Vector2(0, v.y)]:
-			if step.dot(away) > 0.0 and _solid_corner_cells(pos + step, r, roof, road).size() <= stuck.size():
+			if step.dot(away) > 0.0 and _solid_corner_cells(pos + step, r, roof, road, up).size() <= stuck.size():
 				return pos + step
 		return pos
 	var nx := pos + Vector2(v.x, 0)
-	if can_stand(nx, r, roof, road):
+	if can_stand(nx, r, roof, road, up):
 		pos = nx
 	var ny := pos + Vector2(0, v.y)
-	if can_stand(ny, r, roof, road):
+	if can_stand(ny, r, roof, road, up):
 		pos = ny
 	return pos
 
 
-func _solid_corner_cells(p: Vector2, r: float, roof: bool, road := false) -> Array:
+func _solid_corner_cells(p: Vector2, r: float, roof: bool, road := false, up := false) -> Array:
 	var out := []
 	for o in [Vector2(-r, -r), Vector2(r, -r), Vector2(-r, r), Vector2(r, r)]:
 		var c := to_cell(p + o)
-		if (not is_roof(c)) if roof else (is_solid(c) or road and get_tile(c) in [FLOOR, DOOR]):
+		if (not is_roof(c)) if roof else (is_solid_up(c) if up else (is_solid(c) or road and get_tile(c) in [FLOOR, DOOR])):
 			out.append(c)
 	return out
 
 
-## On the ground, stand anywhere not solid; on the roof, only on shophouse roofs.
-func can_stand(p: Vector2, r: float, roof := false, road := false) -> bool:
+## On the ground, stand anywhere not solid; on the roof, only on shophouse
+## roofs; upstairs, only on the floor up there.
+func can_stand(p: Vector2, r: float, roof := false, road := false, up := false) -> bool:
 	for o in [Vector2(-r, -r), Vector2(r, -r), Vector2(-r, r), Vector2(r, r)]:
 		var c := to_cell(p + o)
-		if (not is_roof(c)) if roof else is_solid(c):
+		if (not is_roof(c)) if roof else (is_solid_up(c) if up else is_solid(c)):
 			return false
 		if road and get_tile(c) in [FLOOR, DOOR]:
 			return false

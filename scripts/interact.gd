@@ -40,6 +40,19 @@ static func _candidates(main: Node, p: Player) -> Array:
 	var st := stairs_near(w, p.position)
 	if st != NONE:
 		out.append({kind = "stairs", id = st, pos = w.to_pos(st), title = "บันได"})
+	if p.up:
+		# Upstairs: the stairs, and what's up here with you.
+		for pid in main.pickups:
+			var pos: Vector2 = main.pickups[pid].pos
+			if main.pickups[pid].get("up", false) and p.position.distance_to(pos) < PICKUP_REACH:
+				out.append({kind = "pickup", id = pid, pos = pos, title = Items.display_name(main.pickups[pid].item.id)})
+		for z: Zombie in main.zombies.values():
+			if z.up and z.flags & 2 and p.position.distance_to(z.position) < STOMP_REACH:
+				out.append({kind = "zombie", id = z.zid, pos = z.position, title = "ซอมบี้ล้มอยู่"})
+		for f: FurnitureProp in w.container_nodes:
+			if f.data.get("up", false) and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == w.building_at.get(w.to_cell(p.position)):
+				out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
+		return out
 	if p.on_roof:
 		# Up top only the stairs and the roof edge are in reach.
 		if Interact.jump_spot(w, p.position) != Vector2.INF:
@@ -47,11 +60,11 @@ static func _candidates(main: Node, p: Player) -> Array:
 		return out
 	for pid in main.pickups:
 		var pos: Vector2 = main.pickups[pid].pos
-		if p.position.distance_to(pos) < PICKUP_REACH:
+		if p.position.distance_to(pos) < PICKUP_REACH and not main.pickups[pid].get("up", false):
 			out.append({kind = "pickup", id = pid, pos = pos, title = Items.display_name(main.pickups[pid].item.id)})
 	# A zombie knocked flat right at your feet: finish it.
 	for z: Zombie in main.zombies.values():
-		if z.flags & 2 and p.position.distance_to(z.position) < STOMP_REACH:
+		if z.flags & 2 and not z.up and p.position.distance_to(z.position) < STOMP_REACH:
 			out.append({kind = "zombie", id = z.zid, pos = z.position, title = "ซอมบี้ล้มอยู่"})
 	var trap := trap_near(w, p.position)
 	if trap >= 0:
@@ -76,7 +89,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 			out.append({kind = "thing", id = th.id, pos = at, title = Things.title_of(th)})
 	for f: FurnitureProp in w.container_nodes:
 		# Furniture in the same building as you: no reaching through walls.
-		if p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here:
+		if p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here and not f.data.get("up", false):
 			out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
 	return out
 
@@ -95,7 +108,15 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 	var out := []
 	match t.get("kind", ""):
 		"stairs":
-			out.append(_act("down", "ลงบันได") if p.on_roof else _act("up", "ขึ้นดาดฟ้า"))
+			# Stairs go up to the floor above (if there is one), and on up to the roof.
+			var has_up: bool = w.upper.has(t.id)
+			if p.on_roof:
+				out.append(_act("down", "ลงชั้น 2" if has_up else "ลงบันได"))
+			elif p.up:
+				out.append(_act("up", "ขึ้นดาดฟ้า"))
+				out.append(_act("down", "ลงชั้นล่าง"))
+			else:
+				out.append(_act("up", "ขึ้นชั้น 2" if has_up else "ขึ้นดาดฟ้า"))
 		"edge":
 			out.append(_act("jump", "กระโดดลง (เจ็บ · เสียงดัง)"))
 		"pickup":

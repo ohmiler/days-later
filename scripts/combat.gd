@@ -68,7 +68,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	var hits: Array = []
 	for z: Zombie in main.zombies.values():
 		var v := z.position - p.position
-		if v.length() > reach:
+		if v.length() > reach or z.up != p.up:
 			continue
 		if Rect2(z.position + Vector2(-8, -31), Vector2(16, 35)).has_point(cursor):
 			if picked == null or v.length() < (picked.position - p.position).length():
@@ -98,7 +98,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	for z: Zombie in hits:
 		z.hp -= stats[1]
 		z.stun = stats[3]
-		z.position = main.world.slide(z.position, dir * stats[4], Zombie.RADIUS)
+		z.position = main.world.slide(z.position, dir * stats[4], Zombie.RADIUS, false, false, z.up)
 		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), stats[1])
 		main._make_noise(z.position, main.NOISE_HIT)
 		if z.hp <= 0:
@@ -146,7 +146,7 @@ func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
 		var full: int = Items.def(id).get("hp", 1)
 		if not z.outfit.is_empty() or randf() < 0.35:
 			var hp := full if not z.outfit.is_empty() else maxi(1, int(full * randf_range(0.3, 0.8)))
-			main._spawn_pickup(z.position + Vector2.from_angle(i * 1.3) * 7, {id = id, n = 1, hp = hp})
+			main._spawn_pickup(z.position + Vector2.from_angle(i * 1.3) * 7, {id = id, n = 1, hp = hp}, z.up)
 		i += 1
 	main.zombies.erase(z.zid)
 	z.queue_free()
@@ -247,8 +247,10 @@ func fire(p: Player, hand: String) -> void:
 		var length: float = d.range if p.on_roof else main.world.ray_length(from, dir, d.range)  # (from a roof you shoot over the street)
 		var hit: Zombie = null
 		for z: Zombie in main.zombies.values():
-			if p.on_roof and main.world.building_at.has(main.world.to_cell(z.position)):
+			if p.on_roof and (z.up or main.world.building_at.has(main.world.to_cell(z.position))):
 				continue  # indoors, under the roof: out of sight
+			if not p.on_roof and z.up != p.up:
+				continue  # (a floor between you)
 			var t := body_hit(from, dir, z.position)
 			if t > 0 and t < length:
 				length = t
@@ -259,7 +261,7 @@ func fire(p: Player, hand: String) -> void:
 			var dmg: float = d.dmg * (1.0 if length < d.range * 0.5 else 0.6)  # (pellets lose their bite far out)
 			hit.hp -= dmg
 			hit.stun = maxf(hit.stun, 0.25)
-			hit.position = main.world.slide(hit.position, dir * 3.0, Zombie.RADIUS)
+			hit.position = main.world.slide(hit.position, dir * 3.0, Zombie.RADIUS, false, false, hit.up)
 			fx_hit.rpc(hit.zid, hit.position, dir, true, p.peer_id, "", dmg)
 			if hit.hp <= 0 and main.zombies.has(hit.zid):
 				_kill_zombie(hit, 1.0 if dir.x >= 0 else -1.0, "gun")
@@ -297,6 +299,8 @@ func _fire(p: Player) -> void:
 	var length := main.world.ray_length(from, dir, GUN_RANGE)
 	var hit: Zombie = null
 	for z: Zombie in main.zombies.values():
+		if z.up != p.up:
+			continue
 		var t := (z.position - from).dot(dir)
 		if t > 0 and t < length and (from + dir * t).distance_to(z.position) < Zombie.RADIUS + 2:
 			length = t
