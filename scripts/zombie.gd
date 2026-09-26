@@ -245,7 +245,8 @@ func _nearest_player() -> Player:
 		if not p.alive() or p.on_roof:
 			continue
 		var d := position.distance_to(p.position)
-		var reach := SIGHT_DAY if world.is_lit(p.position) else SIGHT_DARK
+		var lit := world.is_lit(p.position) or (p.riding >= 0 and p.riding < world.vehicles.size() and Vehicles.headlight_on(world.vehicles[p.riding], world))  # (a headlight shows you up)
+		var reach := SIGHT_DAY if lit else SIGHT_DARK
 		if p.sneak:
 			reach *= 0.5
 		if d > reach or d > best_d:

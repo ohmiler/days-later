@@ -69,6 +69,9 @@ var sparks: Array = []  # [pos, ttl, strong]
 var _muffled := false  # the local player's helmet dulls the sound
 var dust: Array = []  # [pos, age]: kicked up by bikes turning hard
 var shake := 0.0
+var cam_lead := Vector2.ZERO  # how far ahead the camera looks, riding
+const CAM_LEAD := 0.3  # seconds of travel
+const CAM_LEAD_MAX := 48.0
 const INTERACT_RANGE := 20.0
 var pickups := {}  # id -> {pos, item: {id, n, hp}} items lying on the ground
 var next_pickup := 1
@@ -659,10 +662,18 @@ func _process(delta: float) -> void:
 			me.set_attack_input(punch, kick)
 			combat.predict(me, delta)
 			if me.riding >= 0 and me.seat == 0 and me.alive():
-				Vehicles.step(me, world.vehicles[me.riding], move, delta, world)
+				if Vehicles.step(me, world.vehicles[me.riding], move, delta, world) > Vehicles.BUMP:
+					shake = maxf(shake, 2.5)  # (felt at once; the server says how bad)
 			elif me.alive() and not me.sleeping:
 				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof)
-		camera.position = me.position + Look.CHEST + Vector2(0, -me.lift)
+		# On a bike the camera looks ahead of where you're going, to see what's coming.
+		var lead := Vector2.ZERO
+		if me.riding >= 0 and me.riding < world.vehicles.size() and me.alive():
+			var d: Player = players.get(world.vehicles[me.riding].rider)
+			if d:
+				lead = d.ride_seen * CAM_LEAD
+		cam_lead = cam_lead.lerp(lead.limit_length(CAM_LEAD_MAX), minf(1.0, 2.5 * delta))
+		camera.position = me.position + Look.CHEST + Vector2(0, -me.lift) + cam_lead
 		camera.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake
 		shake = move_toward(shake, 0.0, delta * 14.0)
 		if not me.on_roof:
