@@ -43,6 +43,8 @@ static var _cur_xf := Transform2D.IDENTITY  # the transform last set by _xf
 static var muzzle = null  # where the last gun drawn points out (in the canvas item's space), or null
 ## Menu option: no flying parts, wounds or spurting blood (fights still play the same).
 static var low_gore := false
+static var _UV3 := PackedVector2Array([Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0.5, 0.5)])  # (the texture's solid middle)
+static var _UV4 := PackedVector2Array([Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0.5, 0.5)])
 
 
 ## Thai font for text drawn in the world (shop signs), rendered as MSDF so it stays sharp when zoomed.
@@ -339,7 +341,8 @@ static func _dot(ci, c: Vector2, r: float, col: Color, just_load := false) -> vo
 ## A filled rectangle, drawn from the same texture as everything else so the
 ## renderer can batch a whole character into a few calls.
 static func _rect(ci, r: Rect2, col: Color) -> void:
-	_dot(ci, Vector2.ZERO, 0.0, col, true)
+	if _dot_tex == null:
+		dot_tex()
 	ci.draw_texture_rect_region(_dot_tex, r, Rect2(30, 30, 4, 4), col)
 
 
@@ -361,14 +364,18 @@ static func _poly(ci, pts: PackedVector2Array, col: Variant) -> void:
 	var n := pts.size()
 	if n < 3:
 		return
+	if _dot_tex == null:
+		dot_tex()
 	var per_point: bool = col is PackedColorArray
+	if n <= 4:
+		# (Most are: limbs, strokes, rects. One primitive, as it comes.)
+		ci.draw_primitive(pts, col if per_point else PackedColorArray([col]), _UV4 if n == 4 else _UV3, _dot_tex)
+		return
 	var flat := PackedColorArray([col]) if not per_point else PackedColorArray()
-	_dot(ci, Vector2.ZERO, 0.0, Color.WHITE, true)
-	var uv3 := PackedVector2Array([Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0.5, 0.5)])
-	var uv4 := PackedVector2Array([Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0.5, 0.5)])
 	var i := 1
 	while i < n - 1:
-		# Fan from the first point, two triangles at a time.
+		# Fan from the first point, two triangles at a time (the shapes were
+		# drawn to look right that way: hair, a vest's neckline).
 		var last := mini(i + 2, n - 1)
 		var q := PackedVector2Array([pts[0], pts[i], pts[i + 1]])
 		if last > i + 1:
@@ -377,9 +384,9 @@ static func _poly(ci, pts: PackedVector2Array, col: Variant) -> void:
 			var cs := PackedColorArray([col[0], col[i], col[i + 1]])
 			if last > i + 1:
 				cs.append(col[last])
-			ci.draw_primitive(q, cs, uv4 if q.size() == 4 else uv3, _dot_tex)
+			ci.draw_primitive(q, cs, _UV4 if q.size() == 4 else _UV3, _dot_tex)
 		else:
-			ci.draw_primitive(q, flat, uv4 if q.size() == 4 else uv3, _dot_tex)
+			ci.draw_primitive(q, flat, _UV4 if q.size() == 4 else _UV3, _dot_tex)
 		i += 2
 
 

@@ -86,7 +86,7 @@ static func supine(head_up: bool, breath := 0.0, closed := true) -> Dictionary:
 
 ## Paint `r` with look `lk` (as Look takes it: colours, build, wear) at `lift`
 ## off the ground, `squash` as wide (turning over from side-on).
-static func draw(ci: CanvasItem, r: Dictionary, lk: Dictionary, lift := 0.0, squash := 1.0) -> void:
+static func draw(ci, r: Dictionary, lk: Dictionary, lift := 0.0, squash := 1.0) -> void:
 	var dl := Look._dress(lk, false)
 	var flip: bool = r.mode == "supine" and not r.head_up
 	ci.draw_set_transform(Vector2(0, -lift), 0, Vector2(lk.get("build", 1.0) * squash, -1.0 if flip else 1.0))
@@ -115,13 +115,13 @@ static func draw(ci: CanvasItem, r: Dictionary, lk: Dictionary, lift := 0.0, squ
 	ci.draw_set_transform(Vector2.ZERO)
 
 
-static func _limb(ci: CanvasItem, p: Vector2, q: Vector2, w: float, col: Color) -> void:
+static func _limb(ci, p: Vector2, q: Vector2, w: float, col: Color) -> void:
 	Look._limb(ci, p, q, w, w, col)
 
 
 ## The legs the way Look draws them standing (the same widths and colours, the
 ## far ones darker, bare shins in shorts), then the seat and the belt.
-static func _legs(ci: CanvasItem, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
+static func _legs(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 	var near_feet: bool = r.mode == "prone" and not r.toward  # (the soles turned to you)
 	var far: bool = r.mode == "prone" and r.toward  # (the legs away up the screen)
 	var pants: Color = (dl.pants as Color).darkened(0.18) if far else dl.pants
@@ -152,7 +152,7 @@ static func _legs(ci: CanvasItem, r: Dictionary, dl: Dictionary, lk: Dictionary)
 
 ## The back (on the front) or the chest (on the back), shaded as Look shades a
 ## shirt: lighter at the shoulders, darker at the waist, a shadow down one side.
-static func _back(ci: CanvasItem, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
+static func _back(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 	var shirt: Color = dl.shirt
 	var top := shirt.lightened(0.08)
 	var bot := shirt.darkened(0.25)
@@ -177,7 +177,7 @@ static func _back(ci: CanvasItem, r: Dictionary, dl: Dictionary, lk: Dictionary)
 
 ## The arms exactly as Look draws them (outlined, the sleeve and the bare
 ## forearm, the hand), and on them what's worn there, the same as standing.
-static func _arms(ci: CanvasItem, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
+static func _arms(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 	var wear: Dictionary = lk.get("wear", {})
 	for i in 2:
 		Look._arm(ci, r.sh[i], r.el[i], r.hand[i], (dl.shirt as Color).darkened(0.05), dl.skin, false, dl.get("long_sleeves", false))
@@ -187,7 +187,7 @@ static func _arms(ci: CanvasItem, r: Dictionary, dl: Dictionary, lk: Dictionary)
 			Clothes.glove(ci, r.hand[i], false, wear.hands)
 
 
-static func _head(ci: CanvasItem, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
+static func _head(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 	# The very same head as standing up (Look._head: the hair style, the face,
 	# the hat and whatever's on the face), from behind crawling away, from the
 	# front crawling toward you or lying face up.
