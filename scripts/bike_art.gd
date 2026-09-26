@@ -87,7 +87,7 @@ static func rider_anchors(model: String, view := "side") -> Dictionary:
 
 ## Draw a bike. `v`: {seed, model?}; view "side" (dir +1 faces right),
 ## "front" (coming toward the camera) or "back" (going away).
-static func draw(ci: CanvasItem, seed_val: int, view: String, dir: float, part: String, xf := Transform2D.IDENTITY) -> void:
+static func draw(ci, seed_val: int, view: String, dir: float, part: String, xf := Transform2D.IDENTITY) -> void:
 	var model := bike_model(seed_val)
 	var col := color_of(seed_val)
 	var extra := extra_of(seed_val)
@@ -129,7 +129,7 @@ static func draw(ci: CanvasItem, seed_val: int, view: String, dir: float, part: 
 	ci.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
-static func _extras_side(ci: CanvasItem, model: String, extra: int) -> void:
+static func _extras_side(ci, model: String, extra: int) -> void:
 	if extra < 2 and model in ["wave", "click", "pcx"]:  # a delivery rider's box
 		var bc := Color("2e9a4a") if extra == 0 else Color("e0782a")
 		ci.draw_rect(Rect2(-15, -25, 9, 8.5), bc)
@@ -150,7 +150,7 @@ static func _extras_side(ci: CanvasItem, model: String, extra: int) -> void:
 # up the screen as usual, and `z(l)` shifts a point `l` pixels along the bike
 # (+ toward its front) by how much nearer or further that puts it.
 
-static func _tyre(ci: CanvasItem, y: float, r: float) -> void:
+static func _tyre(ci, y: float, r: float) -> void:
 	ci.draw_rect(Rect2(-1.3, y - 2.0 * r, 2.6, 2.0 * r), Color("141414"))
 	ci.draw_rect(Rect2(-0.5, y - 1.4 * r, 1.0, 0.8 * r), Color("5a5e62"))
 
@@ -169,7 +169,7 @@ static func _bar_y(model: String) -> float:
 
 ## Coming toward the camera. Far: the back wheel, the seat and anything on
 ## the back. Near: the front wheel, leg shield, lamp and bars.
-static func _front_far(ci: CanvasItem, model: String, col: Color, extra: int) -> void:
+static func _front_far(ci, model: String, col: Color, extra: int) -> void:
 	var e: Dictionary = ENDS[model]
 	var back := -10.0 * DEPTH
 	_tyre(ci, back, _radius(model))
@@ -182,7 +182,7 @@ static func _front_far(ci: CanvasItem, model: String, col: Color, extra: int) ->
 		ci.draw_rect(Rect2(-4.5, sy - 10.5, 9, 1.5), bc.lightened(0.2))
 
 
-static func _front_near(ci: CanvasItem, model: String, col: Color, extra: int) -> void:
+static func _front_near(ci, model: String, col: Color, extra: int) -> void:
 	var e: Dictionary = ENDS[model]
 	var front := 11.0 * DEPTH
 	var r := _radius(model)
@@ -221,7 +221,7 @@ static func _front_near(ci: CanvasItem, model: String, col: Color, extra: int) -
 	_bars(ci, by, e.bars)
 
 
-static func _bars(ci: CanvasItem, by: float, half: float) -> void:
+static func _bars(ci, by: float, half: float) -> void:
 	ci.draw_line(Vector2(-half, by), Vector2(half, by), Color("1a1a1a"), 1.1)
 	for side in [-1.0, 1.0]:
 		ci.draw_line(Vector2(half * 0.75 * side, by), Vector2((half * 0.75 + 0.4) * side, by - 3.2), Color("3a3a3a"), 0.5)
@@ -230,7 +230,7 @@ static func _bars(ci: CanvasItem, by: float, half: float) -> void:
 
 ## Going away from the camera. Far: the front wheel and the bars. Near: the
 ## seat end, tail light, plate, the back wheel and anything on the back.
-static func _back_far(ci: CanvasItem, model: String, col: Color, extra: int) -> void:
+static func _back_far(ci, model: String, col: Color, extra: int) -> void:
 	var e: Dictionary = ENDS[model]
 	var front := -11.0 * DEPTH
 	_tyre(ci, front, _radius(model))
@@ -242,7 +242,7 @@ static func _back_far(ci: CanvasItem, model: String, col: Color, extra: int) -> 
 	ci.draw_rect(Rect2(-2.6, sy - 1.0, 5.2, 2.6), Color("1c1c1e"))
 
 
-static func _back_near(ci: CanvasItem, model: String, col: Color, extra: int) -> void:
+static func _back_near(ci, model: String, col: Color, extra: int) -> void:
 	var e: Dictionary = ENDS[model]
 	var back := 10.0 * DEPTH
 	var r := _radius(model)
@@ -266,7 +266,7 @@ static func _back_near(ci: CanvasItem, model: String, col: Color, extra: int) ->
 
 # --- Side-on, one function a model ------------------------------------------------
 
-static func _wheel(ci: CanvasItem, x: float, r: float, spokes := false) -> void:
+static func _wheel(ci, x: float, r: float, spokes := false) -> void:
 	ci.draw_circle(Vector2(x, -r), r, Color("141414"))
 	ci.draw_circle(Vector2(x, -r), r * 0.45, Color("8a8e92"))
 	if spokes:
@@ -277,22 +277,22 @@ static func _wheel(ci: CanvasItem, x: float, r: float, spokes := false) -> void:
 	ci.draw_circle(Vector2(x, -r), r * 0.18, Color("2a2a2a"))
 
 
-static func _poly(ci: CanvasItem, pts: Array, col: Color) -> void:
+static func _poly(ci, pts: Array, col: Color) -> void:
 	ci.draw_colored_polygon(PackedVector2Array(pts), col)
 
 
-static func _tail(ci: CanvasItem, x: float, y: float) -> void:
+static func _tail(ci, x: float, y: float) -> void:
 	ci.draw_rect(Rect2(x, y, 1.4, 2), Color("d8302a"))
 	ci.draw_rect(Rect2(x - 0.4, y + 2.6, 2.2, 1.8), Color("ecebe4"))  # plate
 
 
-static func _mirror(ci: CanvasItem, x: float, y: float) -> void:
+static func _mirror(ci, x: float, y: float) -> void:
 	ci.draw_line(Vector2(x, y), Vector2(x - 1, y - 3), Color("3a3a3a"), 0.6)
 	ci.draw_circle(Vector2(x - 1, y - 3.2), 0.9, Color("5a6068"))
 
 
 ## Honda Wave: the underbone everyone's family rides. Open floor between the wheels.
-static func _bike_wave(ci: CanvasItem, col: Color) -> void:
+static func _bike_wave(ci, col: Color) -> void:
 	_wheel(ci, -10, 4.5)
 	_wheel(ci, 11, 4.5)
 	ci.draw_rect(Rect2(-14, -6.5, 8, 1.6), Color("6a6e72"))  # exhaust
@@ -314,7 +314,7 @@ static func _bike_wave(ci: CanvasItem, col: Color) -> void:
 ## Honda Click and the electric scooters: an automatic whose body covers
 ## everything, a flat floor, a slim LED face. The electric one has no exhaust
 ## and a fat hub motor in the back wheel.
-static func _bike_click(ci: CanvasItem, col: Color, petrol: bool) -> void:
+static func _bike_click(ci, col: Color, petrol: bool) -> void:
 	_wheel(ci, -10, 4.3)
 	_wheel(ci, 11, 4.3)
 	if petrol:
@@ -339,7 +339,7 @@ static func _bike_click(ci: CanvasItem, col: Color, petrol: bool) -> void:
 
 
 ## Honda Scoopy: round and retro, pastel with a cream panel and a round lamp.
-static func _bike_scoopy(ci: CanvasItem, col: Color) -> void:
+static func _bike_scoopy(ci, col: Color) -> void:
 	_wheel(ci, -10, 4.3)
 	_wheel(ci, 11, 4.3)
 	ci.draw_rect(Rect2(-14.5, -6.8, 7, 1.8), Color("8a8e92"))
@@ -369,7 +369,7 @@ static func _bike_scoopy(ci: CanvasItem, col: Color) -> void:
 
 ## Honda PCX / Yamaha NMAX: the big scooter. Longer, a stepped seat, a
 ## tunnel down the middle of the floor, a tall front with a small screen.
-static func _bike_pcx(ci: CanvasItem, col: Color) -> void:
+static func _bike_pcx(ci, col: Color) -> void:
 	_wheel(ci, -12, 4.8)
 	_wheel(ci, 12, 4.8)
 	ci.draw_rect(Rect2(-17, -7.5, 9, 2.2), Color("4a4e52"))
@@ -391,7 +391,7 @@ static func _bike_pcx(ci: CanvasItem, col: Color) -> void:
 
 ## A sports bike (Honda CBR): sharp fairing, tank, a high pointed tail,
 ## low bars. Rare, and loud.
-static func _bike_sport(ci: CanvasItem, col: Color) -> void:
+static func _bike_sport(ci, col: Color) -> void:
 	_wheel(ci, -11, 5, true)
 	_wheel(ci, 12, 5, true)
 	ci.draw_line(Vector2(-11, -5), Vector2(-1, -9), Color("3a3c40"), 1.4)  # swingarm
@@ -410,7 +410,7 @@ static func _bike_sport(ci: CanvasItem, col: Color) -> void:
 
 ## A trail bike (Honda CRF): big thin wheels, a long travel fork, a high
 ## front fender and a flat seat. Rare.
-static func _bike_trail(ci: CanvasItem, col: Color) -> void:
+static func _bike_trail(ci, col: Color) -> void:
 	_wheel(ci, -11, 5.8, true)
 	_wheel(ci, 12, 6.2, true)
 	ci.draw_line(Vector2(-11, -5.8), Vector2(-2, -11), Color("3a3c40"), 1.3)

@@ -41,6 +41,18 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | `test_identity` | A name belongs to whoever made it (by their copy's secret), others get a variation, old saves are claimed by the first, an out-of-date copy is turned away |
 | `test_net` | A second process joins over the network: names, looks, chat, snapshots, opening a cupboard |
 
+## Speed
+
+`tests/perf.gd` measures how fast the game draws. It needs a real window, so
+it isn't part of `run_all` (no `--headless`):
+
+```
+"C:\Users\Miler\Downloads\Godot_v4.7.2-stable_win64.exe\Godot_v4.7.2-stable_win64_console.exe" --path . --resolution 1280x720 -s res://tests/perf.gd
+```
+
+It prints draw calls and milliseconds a frame at the normal zoom and zoomed
+out, and fails if either goes over its budget. Run it after visual work.
+
 ## Writing a new one
 
 A new `class_name` file is only known to Godot after an import: run the game
