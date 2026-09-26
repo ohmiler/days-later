@@ -222,6 +222,9 @@ func speed_mult() -> float:
 		m *= 0.85
 	if Body.sprained(wounds):
 		m *= 0.8  # limping
+	m *= Body.leg_speed(wounds)  # a bitten leg
+	if Body.fevered(wounds):
+		m *= 0.92  # feverish
 	if aiming:
 		m = minf(m, 0.55)  # steady, careful steps
 	for slot in wear_ids:

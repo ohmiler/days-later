@@ -24,7 +24,7 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | `test_actions` | What E does through the real path: doors, searching and reopening furniture, stomping, picking up, nothing out of reach |
 | `test_beds` | Sleeping heals (faster shut in), the night speeds up when everyone sleeps, moving or a zombie wakes you, a claimed bed is where you wake after dying |
 | `test_admin` | The developer panel (F2): conjuring items, healing, zombies of a kind, clearing them, the time; only for the host |
-| `test_body` | Bites leave wounds where they land (bruises under armour), bleeding until bandaged, one bandage per wound, open bites festering, healing (faster asleep), sprains stop running, wounds saved |
+| `test_body` | Bites leave wounds where they land (bruises under armour), bleeding until bandaged or it stops on its own, open bites festering into a fever (not the zombie infection; antibiotics clear it), bitten arms swing slower and legs walk slower, mending slowly when fed, healing (faster asleep), sprains stop running, wounds saved |
 | `test_city` | The building plans (data/prefabs) are drawn correctly, the city from a seed is exactly the same as before (saved cities depend on it), every door and cupboard can be walked to |
 | `test_combat` | Punch/kick/weapon hits, a weapon in each hand swinging in turn, two-handed weapons taking both hands, clicking the body, knock-downs, cut-off arms, weapon wear, death styles, a click while busy still lands, the 1-2 restarts after a pause, hitstop, your own swing shows on the click |
 | `test_sight` | What your character sees: the way you face, not behind you (except right up close), not through walls; the grid line of sight; up on the roofs you see everyone |

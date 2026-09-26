@@ -28,15 +28,18 @@ static func next_swing(p: Player) -> Dictionary:
 	if Items.two_handed(p.hand_weapon("r")):
 		hand = "r"
 	var wid := p.hand_weapon(hand)
+	var slow := Body.arm_slow(p.wounds)  # (a bitten arm swings slower)
 	if wid == "":
-		return {hand = hand, kind = Look.PUNCH_R if hand == "r" else Look.PUNCH_L, stats = PUNCH, windup = PUNCH_WINDUP}
+		var punch := PUNCH.duplicate()
+		punch[2] *= slow
+		return {hand = hand, kind = Look.PUNCH_R if hand == "r" else Look.PUNCH_L, stats = punch, windup = PUNCH_WINDUP}
 	var w := Items.def(wid)
 	if Items.is_gun(wid):  # not aiming: a blow with it
 		w = {range = 17.0, dmg = w.bash, cd = 0.55, stun = 0.35, knock = 6.0, dur = 0.3}
 	var dual: bool = p.hand_weapon("r") != "" and p.hand_weapon("l") != ""
 	var dmg: float = w.dmg * (Items.OFF_HAND if hand == "l" else 1.0)
 	return {hand = hand, kind = Look.SWING if hand == "r" else Look.SWING_L,
-			stats = [w.range, dmg, w.cd * (Items.DUAL_SPEED if dual else 1.0), w.stun, w.knock], windup = w.dur * 0.45}
+			stats = [w.range, dmg, w.cd * (Items.DUAL_SPEED if dual else 1.0) * slow, w.stun, w.knock], windup = w.dur * 0.45}
 ## Punch hits the closest zombie in front; a kick hits everything in front.
 func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 	p.shoot_cd = stats[2]

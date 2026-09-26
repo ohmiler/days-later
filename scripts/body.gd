@@ -4,11 +4,14 @@ class_name Body
 ## A wound sits on a part of the body until it heals: a bite (bleeds, can go
 ## bad), a scratch (from smashed glass), a sprained ankle (from a jump: no
 ## running), a bruise (a bite your clothes stopped). Bandages go on one wound
-## at a time; an open bite or scratch can still get infected long after the
-## bite itself. Everything heals with time, faster asleep.
+## at a time; a bleeding bite left alone stops on its own after a while. An
+## open bite or scratch can fester (a fever: weak and slow, losing health
+## slowly) until antibiotics clear it; that is not the zombie infection, which
+## only a bite brings (Player.infection). A bite on an arm slows your swings,
+## on a leg your walk. Everything heals with time, faster asleep.
 ##
-## Player.wounds: [{kind, part, side, bleeding, bandaged, t}] (server; the
-## owner gets a copy through body_sync).
+## Player.wounds: [{kind, part, side, bleeding, bandaged, t, festering?}]
+## (server; the owner gets a copy through body_sync).
 
 const KINDS := {
 	bite = {name = "รอยกัด", heal = 360.0, bare = 0.0, risk = 0.06},  # an open bite doesn't close by itself
@@ -20,10 +23,12 @@ const KINDS := {
 ## heals `heal`, bare skin `bare` (0: not at all). Asleep, three times as fast.
 const SLEEP_HEAL := 3.0
 const RISK_EVERY := 20.0  # seconds between an open wound's chances (`risk`) of going bad
+const CLOT := 90.0  # a bleeding bite left alone stops bleeding after this long
+const FEVER_DAMAGE := 0.08  # health a second while a wound festers
 const SIDED := ["arms", "hands", "legs"]
 
 ## Infection stages: [from %, name, what it does].
-const STAGES := [[0.0, "แผลอักเสบ", "ยังไม่มีอาการ"], [25.0, "มีไข้", "เริ่มอ่อนแรง"],
+const STAGES := [[0.0, "เชื้อเริ่มลาม", "ยังไม่มีอาการ"], [25.0, "มีไข้", "เริ่มอ่อนแรง"],
 		[60.0, "ไข้สูง", "เดินช้าลง ตัวร้อน"], [85.0, "ใกล้กลายร่าง", "อีกไม่นานจะกลายเป็นซอมบี้"]]
 
 
@@ -35,7 +40,42 @@ static func where(w: Dictionary) -> String:
 
 
 static func title(w: Dictionary) -> String:
-	return "%s · %s" % [KINDS[w.kind].name, where(w)]
+	return "%s%s · %s" % [KINDS[w.kind].name, "อักเสบ" if w.get("festering", false) else "", where(w)]
+
+
+## Any wound festering (a fever)?
+static func fevered(wounds: Array) -> bool:
+	return wounds.any(func(w): return w.get("festering", false))
+
+
+## Antibiotics: every festering wound clears. Returns whether any did.
+static func clear_fever(p: Player) -> bool:
+	var any := false
+	for w in p.wounds:
+		if w.get("festering", false):
+			w.festering = false
+			any = true
+	if any:
+		p.body_dirty = true
+	return any
+
+
+## How much slower your swings are for bites on your arms and hands (1 = not at all).
+static func arm_slow(wounds: Array) -> float:
+	var m := 1.0
+	for w in wounds:
+		if w.kind == "bite" and w.part in ["arms", "hands"]:
+			m *= 1.1 if w.bandaged else 1.2
+	return minf(m, 1.45)
+
+
+## How much of your walking speed is left with bites on your legs.
+static func leg_speed(wounds: Array) -> float:
+	var m := 1.0
+	for w in wounds:
+		if w.kind == "bite" and w.part == "legs":
+			m *= 0.95 if w.bandaged else 0.88
+	return maxf(m, 0.75)
 
 
 static func infection_stage(inf: float) -> int:
@@ -98,14 +138,22 @@ static func tick(p: Player, delta: float) -> String:
 				if w.kind in ["bite", "sprain"]:
 					msg = "%s หายแล้ว" % title(w)
 				continue
-		# An open wound can go bad while it stays open.
-		if not w.bandaged and k.risk > 0.0 and p.infection <= 0.0:
+		# A bleeding bite left alone stops in the end (having cost a lot of blood).
+		if w.bleeding and not w.bandaged:
+			w["bleed_t"] = w.get("bleed_t", 0.0) + delta
+			if w.bleed_t >= CLOT:
+				w.bleeding = false
+				p.body_dirty = true
+				msg = "เลือดที่%sหยุดไหลเองแล้ว · แต่แผลยังเปิดอยู่" % where(w)
+		# An open wound can go bad while it stays open: a fever, not the zombie infection.
+		if not w.bandaged and k.risk > 0.0 and not w.get("festering", false):
 			w["risk_t"] = w.get("risk_t", 0.0) + delta
 			if w.risk_t >= RISK_EVERY:
 				w.risk_t = 0.0
 				if randf() < k.risk:
-					p.infection = 12.0
-					msg = "%sอักเสบ ติดเชื้อแล้ว · หายาปฏิชีวนะ" % where(w)
+					w.festering = true
+					p.body_dirty = true
+					msg = "แผลที่%sอักเสบ มีไข้ · หายาปฏิชีวนะ" % where(w)
 	p.bleeding = p.wounds.any(func(w): return w.bleeding and not w.bandaged)
 	return msg
 
@@ -144,7 +192,7 @@ static func statuses(p: Player) -> Array:
 			continue
 		match w.kind:
 			"bite":
-				out.append({icon = "bite", level = 2, text = "%s · ยังไม่พันแผล · เสี่ยงติดเชื้อ" % title(w)})
+				out.append({icon = "bite", level = 2, text = "%s · ยังไม่พันแผล · เสี่ยงอักเสบ%s" % [title(w), _slows(w)]})
 			"scratch":
 				out.append({icon = "scratch", level = 1, text = "%s · ยังไม่พันแผล" % title(w)})
 			"sprain":
@@ -162,10 +210,12 @@ static func statuses(p: Player) -> Array:
 	out = grouped
 	if p.bleeding:
 		out.append({icon = "bleed", level = 2, text = "เลือดออก · พันแผลด่วน"})
+	if fevered(p.wounds):
+		out.append({icon = "fever", level = 1, text = "แผลอักเสบ มีไข้ · อ่อนแรง เลือดลดช้า ๆ · รักษาด้วยยาปฏิชีวนะ"})
 	if p.infection > 0.0:
 		var s: Array = STAGES[infection_stage(p.infection)]
 		out.append({icon = "fever", level = 2 if p.infection >= 60.0 else 1,
-				text = "ติดเชื้อ · %s · %s · รักษาด้วยยาปฏิชีวนะ (ร้านขายยา)" % [s[1], s[2]]})
+				text = "ติดเชื้อซอมบี้ · %s · %s · รักษาด้วยยาปฏิชีวนะ (ร้านขายยา)" % [s[1], s[2]]})
 	if p.thirst < 25.0:
 		out.append({icon = "thirst", level = 2 if p.thirst <= 0.0 else 1, text = "ขาดน้ำ" if p.thirst <= 0.0 else "กระหายน้ำ"})
 	if p.hunger < 25.0:
@@ -192,6 +242,15 @@ static func statuses(p: Player) -> Array:
 		elif main.world.building_at.has(main.world.to_cell(p.position)) and main.survival.spot_safe(p.position):
 			out.append({icon = "safe", level = 0, text = "ตึกนี้ปิดครบ ไม่มีซอมบี้ข้างใน · นอนตรงนี้ได้สนิท"})
 	return out
+
+
+## What a bite there slows down, for its line in the status icons.
+static func _slows(w: Dictionary) -> String:
+	if w.part in ["arms", "hands"]:
+		return " · ต่อย/เหวี่ยงช้าลง"
+	if w.part == "legs":
+		return " · เดินช้าลง"
+	return ""
 
 
 const CHASE_NEAR := 220.0  # a zombie that sees someone this close is taken to be after you
