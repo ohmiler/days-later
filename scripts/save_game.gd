@@ -4,8 +4,8 @@ class_name SaveGame
 ## keyed by name, so player data can later move to a central database
 ## without touching the world format.
 ##
-##   user://saves/<world>/world.save            (+ .bak: the save before it)
-##   user://saves/<world>/players/<name>.save   (+ .bak)
+##   user://saves/<world>/zones/<zone>/world.save   (+ .bak: the save before it)
+##   user://saves/<world>/players/<name>.save       (+ .bak; one per survivor, whatever zone)
 ##
 ## Saves carry a format VERSION. When the format changes, bump VERSION and add
 ## a step to MIGRATIONS that turns version N into N+1; old saves are upgraded
@@ -47,8 +47,25 @@ static func dir() -> String:
 	return "user://saves/%s" % slot
 
 
+## The zone whose world is saved and loaded (Main sets it; see Zones).
+static var zone := ""
+
+
+## The zone the group was last in (a game with friends resumes there).
+static func last_zone() -> String:
+	var f := FileAccess.open(dir() + "/zone.txt", FileAccess.READ)
+	return f.get_as_text().strip_edges() if f else ""
+
+
+static func world_dir() -> String:
+	return dir() + "/zones/" + (zone if zone != "" else Zones.first())
+
+
 static func has_world() -> bool:
-	return FileAccess.file_exists(dir() + "/world.save") or FileAccess.file_exists(dir() + "/world.save.bak")
+	for p in [world_dir() + "/world.save", world_dir() + "/world.save.bak", dir() + "/world.save"]:
+		if FileAccess.file_exists(p):
+			return true
+	return false
 
 
 ## For the title menu: {day} for a save that can be continued, {problem} for
@@ -90,7 +107,11 @@ static func save_world(main: Node) -> void:
 		zs.append([z.zid, z.position, z.hp, z.outfit, z.missing])
 	# (No need to check the file first: a world save we cannot use stops the
 	# game from starting at all, so we only get here with one we loaded.)
-	_write(dir() + "/world.save", {
+	var zf := FileAccess.open(dir() + "/zone.txt", FileAccess.WRITE)
+	if zf:
+		zf.store_string(zone)
+		zf.close()
+	_write(world_dir() + "/world.save", {
 		version = VERSION, game = GAME_VERSION, saved_at = int(Time.get_unix_time_from_system()),
 		seed = main.world_seed, gen = CityGen.GEN, day = main.day, time = main.time,
 		next_zid = main.next_zid, next_pickup = main.next_pickup,
@@ -104,7 +125,11 @@ static func save_world(main: Node) -> void:
 ## "oldcity" (made by an older city generator: its seed no longer builds the
 ## same city, so it cannot be carried on; see move_to_new_city).
 static func load_world() -> Dictionary:
-	var r := _load(dir() + "/world.save", "world")
+	var r := _load(world_dir() + "/world.save", "world")
+	if r.state == "none" and FileAccess.file_exists(dir() + "/world.save"):
+		r = _load(dir() + "/world.save", "world")  # (from before zones: one city for the whole slot)
+		if r.state == "ok":
+			r.state = "oldcity"
 	if r.state == "ok" and r.data.get("gen", 1) != CityGen.GEN:
 		r.state = "oldcity"
 	return r
@@ -116,10 +141,11 @@ static func load_world() -> Dictionary:
 static func move_to_new_city() -> void:
 	var r := load_world()
 	var gen: int = r.data.get("gen", 1)
-	for ext in ["", ".bak"]:
-		var from: String = dir() + "/world.save" + ext
-		if FileAccess.file_exists(from):
-			DirAccess.rename_absolute(from, dir() + "/world.gen%d.save%s" % [gen, ext])
+	for base in [dir(), world_dir()]:
+		for ext in ["", ".bak"]:
+			var from: String = base + "/world.save" + ext
+			if FileAccess.file_exists(from):
+				DirAccess.rename_absolute(from, base + "/world.gen%d.save%s" % [gen, ext])
 
 
 ## Load the saved world into a freshly generated one (server only).
@@ -176,7 +202,8 @@ static func save_player(p: Player) -> void:
 		pos = p.position, on_roof = p.on_roof, up = p.up, hp = p.hp, kills = p.kills,
 		hunger = p.hunger, thirst = p.thirst, infection = p.infection, bleeding = p.bleeding, stamina = p.stamina,
 		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash, bed = p.bed, wounds = p.wounds,
-		city = p.world.city_seed if p.world else 0,
+		city = p.world.city_seed if p.world else 0, zone = p.world.zone if p.world else "",
+		travel_to = p.travel_to, travel_exit = p.travel_exit,
 	})
 
 
@@ -192,15 +219,21 @@ static func load_player_into(p: Player, name: String) -> bool:
 	if r.state != "ok":
 		return false
 	var d: Dictionary = r.data
-	var same_city: bool = p.world != null and d.city == p.world.city_seed
+	var same_city: bool = p.world != null and d.city == p.world.city_seed and d.get("zone", p.world.zone) == p.world.zone
 	p.bed = d.bed if same_city else -1  # kept even after dying: the next survivor wakes there
 	if not d.get("alive", false):
 		return false  # they were dead when they left: a new survivor
-	# Moved to a new city: they keep what they carry, and start at the spawn corner.
+	# Came in from another zone: at the way in they took. Moved to a new
+	# city: they keep what they carry, and start at the spawn corner.
 	p.position = d.pos if same_city else p.world.spawn_point()
+	if d.get("travel_to", "") == p.world.zone and d.get("travel_exit", "") != "":
+		p.position = p.world.to_pos(Zones.arrival(d.travel_exit, Vector2i(World.W, World.H)))
+		same_city = false
+	p.travel_to = ""
+	p.travel_exit = ""
 	p.net_pos = d.pos
-	p.on_roof = d.on_roof
-	p.up = d.get("up", false) and p.world.upper.has(p.world.to_cell(p.position))
+	p.on_roof = d.on_roof and same_city
+	p.up = d.get("up", false) and same_city and p.world.upper.has(p.world.to_cell(p.position))
 	p.hp = d.hp
 	p.kills = d.kills
 	p.hunger = d.hunger

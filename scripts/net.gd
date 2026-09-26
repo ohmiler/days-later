@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 14  # 14: standing on a car (in the snapshot)
+const PROTOCOL := 15  # 15: zones (which one, with the world)
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -96,7 +96,15 @@ func _claim_name(p: Player, wanted: String, secret: String) -> void:
 
 ## Send a newly accepted player the city as it is now and give them a body.
 func _welcome(id: int) -> void:
-	init_world.rpc_id(id, main.world_seed)
+	send_world(id)
+	main._add_player(id)
+	print("Player %d joined (%d online)" % [id, main.players.size()])
+
+
+## The zone as it is now, to a player: its seed (they build it themselves)
+## and everything that has changed since.
+func send_world(id: int) -> void:
+	init_world.rpc_id(id, main.world_seed, main.zone)
 	var searched := []
 	var stripped := []
 	for f: FurnitureProp in main.world.container_nodes:
@@ -113,15 +121,14 @@ func _welcome(id: int) -> void:
 	sync_state.rpc_id(id, searched, items, doors, stripped)
 	main.things.send_all(id)
 	main.vehicles.send_all(id)
-	main._add_player(id)
-	print("Player %d joined (%d online)" % [id, main.players.size()])
 
 
 func _on_peer_disconnected(id: int) -> void:
 	pending.erase(id)
 	if main.players.has(id):
 		main.vehicles.dismount(main.players[id])
-		SaveGame.save_player(main.players[id])
+		if main.players[id].travel_to == "":  # (on their way to another zone's server: saved already)
+			SaveGame.save_player(main.players[id])
 		main.players[id].queue_free()
 		main.players.erase(id)
 	print("Player %d left (%d online)" % [id, main.players.size()])
@@ -142,12 +149,23 @@ func sync_state(searched: Array, items: Array, doors: Array, stripped: Array) ->
 
 
 @rpc("authority", "call_remote", "reliable")
-func init_world(seed_val: int) -> void:
+func init_world(seed_val: int, zone_id := "") -> void:
 	main._clear_backdrop()
+	main._drop_world()  # (arriving in a new zone with the group)
+	main.zone = zone_id if zone_id != "" else Zones.first()
 	main._make_world(seed_val)
+	for p: Player in main.players.values():
+		p.world = main.world
 	main.in_game = true
 	main.ui.show_menu(false)
-	print("Joined world, seed %d" % seed_val)
+	main.ui.announce(Zones.name_of(main.zone))
+	print("Joined %s, seed %d" % [main.zone, seed_val])
+
+
+## Zones run as separate servers: this one hands you over to the next.
+@rpc("authority", "call_remote", "reliable")
+func go_zone(zone_id: String, port_: int) -> void:
+	main.travel_to_server(zone_id, port_)
 
 
 # --- Server simulation ------------------------------------------------------

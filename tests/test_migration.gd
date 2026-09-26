@@ -4,7 +4,7 @@ extends "res://tests/test_base.gd"
 
 
 func _path() -> String:
-	return SaveGame.dir() + "/world.save"
+	return SaveGame.world_dir() + "/world.save"  # (the first zone's)
 
 
 func _raw(path: String) -> Dictionary:
@@ -101,7 +101,7 @@ func run() -> void:
 	# --- A new city moves the old one aside instead of deleting it. ---
 	SaveGame.wipe()
 	var prev := ProjectSettings.globalize_path(SaveGame.dir()) + "-previous"
-	check(FileAccess.file_exists(prev + "/world.save"), "'new city' keeps the old one in <slot>-previous")
+	check(FileAccess.file_exists(prev + "/zones/" + Zones.first() + "/world.save"), "'new city' keeps the old one in <slot>-previous")
 	check(not SaveGame.has_world(), "and the slot is empty for the new city")
 
 	# A new player's save, written while a newer one exists, does not overwrite it.
@@ -127,6 +127,23 @@ func run() -> void:
 	check(main.in_game and main.world_seed != old_seed, "carrying on starts a new city")
 	check(count(me, "axe") == 1, "the survivor keeps what they carried")
 	check(me.bed == -1 and main.world.can_stand(me.position, 5), "and starts somewhere they can stand, with no bed yet")
-	check(FileAccess.file_exists(SaveGame.dir() + "/world.gen%d.save" % (CityGen.GEN - 1)), "the old city is kept aside, not deleted")
+	check(FileAccess.file_exists(SaveGame.world_dir() + "/world.gen%d.save" % (CityGen.GEN - 1)), "the old city is kept aside, not deleted")
+	await close_game()
+	SaveGame.wipe()
+
+	# --- A city from before zones (one world.save for the whole slot): a new city too. ---
+	await host(9328)
+	main.inventory._give(me, "axe")
+	main._save_all()
+	await close_game()
+	var before := _raw(_path())
+	before.gen = CityGen.GEN - 1
+	_store(SaveGame.dir() + "/world.save", before)
+	DirAccess.remove_absolute(_path())
+	DirAccess.remove_absolute(_path() + ".bak")
+	check(SaveGame.world_info().get("oldcity", false), "a city from before zones is seen as an old city")
+	await host(9329, true, false)
+	check(main.in_game and count(me, "axe") == 1, "carrying on starts the first zone, keeping what you carried")
+	check(FileAccess.file_exists(SaveGame.dir() + "/world.gen%d.save" % (CityGen.GEN - 1)), "the old city is kept aside")
 	await close_game()
 	SaveGame.wipe()

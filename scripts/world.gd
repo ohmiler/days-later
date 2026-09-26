@@ -5,8 +5,12 @@ extends Node2D
 ## so characters can walk behind them.
 
 const TILE := 16
-const W := 480  # cells (about a metre each): a 3 x 3 of the old 160 x 120 town
-const H := 360
+## The map's size in cells (about a metre each): the zone's (see Zones). One
+## zone is loaded at a time, so this belongs to the class.
+static var W := 320
+static var H := 240
+var zone := ""  # which zone this is (see Zones)
+var exits: Array = []  # ways out to other zones: [{id, to, to_exit, rect}]
 const CHUNK := 16
 const BTS_H := 64.0  # how high the skytrain deck floats above the road
 const DOOR_HP := 60.0
@@ -79,7 +83,17 @@ var spawn_cell := Vector2i(W / 2, H / 2)
 var chunks := {}
 
 
-func generate(seed_val: int) -> void:
+## Build zone `zone_id` (see Zones) from its seed. "backdrop": a small town
+## for behind the title menu.
+func generate(seed_val: int, zone_id := "") -> void:
+	zone = Zones.first() if zone_id == "" else zone_id
+	var size: Vector2i = CityGen.SECTION if zone == "backdrop" else Zones.def(zone).size
+	W = size.x
+	H = size.y
+	exits = []
+	if zone != "backdrop":
+		for e in Zones.def(zone).exits:
+			exits.append({id = e.id, to = e.to, to_exit = e.to_exit, rect = Zones.exit_rect(e.id, size)})
 	city_seed = seed_val
 	tint.seed = seed_val + 1
 	tint.frequency = 0.04
@@ -211,7 +225,7 @@ func _spawn_props() -> void:
 		if rec.kind in StreetProp.VEHICLES:
 			p.scale = Vector2.ONE * StreetProp.VEHICLE_SCALE  # vehicles the size of vehicles
 		if rec.has("vehicle"):
-			prop_parent.add_child(p)  # (bikes get ridden about: always in the scene)
+			_own(p)  # (bikes get ridden about: always in the scene)
 		else:
 			_stream(p, p.position)
 		if rec.has("vehicle"):
@@ -219,7 +233,7 @@ func _spawn_props() -> void:
 	overhead = Overhead.new()
 	overhead.world = self
 	overhead.z_index = 4
-	prop_parent.add_child(overhead)
+	_own(overhead)
 
 
 ## Something that belongs upstairs: hidden until someone local goes up there,
@@ -306,13 +320,39 @@ func _stream(n: Node2D, pos: Vector2) -> void:
 		_attach(n)
 
 
-## Out-of-scene props aren't freed with the scene: free them with the world.
+var owned: Array = []  # what this world put straight into the scene (bikes, the skytrain)
+
+
+## Freed without dispose() (the game closing): still free what it made.
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
 		for list in stream.values():
 			for n in list:
 				if is_instance_valid(n) and n.get_parent() == null:
 					n.free()
+
+
+func _own(n: Node) -> void:
+	prop_parent.add_child(n)
+	owned.append(n)
+
+
+## Take everything this world made out of the scene and free it: props sit
+## in the scene beside the players (so they sort with them), not under the
+## world, so freeing the world alone would leave them behind.
+func dispose() -> void:
+	for list in stream.values():
+		for n in list:
+			if is_instance_valid(n):
+				if n.get_parent():
+					n.get_parent().remove_child(n)
+				n.free()
+	stream.clear()
+	stream_on.clear()
+	for n in owned:
+		if is_instance_valid(n):
+			n.queue_free()
+	owned.clear()
 
 
 func _attach(n: Node2D) -> void:

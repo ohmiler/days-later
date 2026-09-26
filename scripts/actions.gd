@@ -223,6 +223,10 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			main.survival.start_sleep(p, t.id)
 		"climb":
 			main.crafting._start(p, {kind = "climb", id = t.id}, CLIMB_TIME)
+		"travel":
+			var ex: Array = main.world.exits.filter(func(e): return e.id == t.id)
+			if not ex.is_empty():
+				main.travel(p, ex[0])
 		"jumpdown":
 			jump_off_car(p, p.aim)
 		"sit":

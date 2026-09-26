@@ -11,15 +11,15 @@ const SECTION := Vector2i(160, 120)
 const XS := [2, 42, 82, 122]  # left edge of each north-south avenue
 const YS := [2, 44, 92]  # top edge of each east-west avenue
 const CANAL_Y := 68  # canal rows 68..70, towpaths either side
-## ...and across the whole map:
-static var ALL_XS: Array = _repeat(XS, SECTION.x, World.W)
-static var ALL_YS: Array = _repeat(YS, SECTION.y, World.H)
-static var CANALS: Array = _repeat([CANAL_Y], SECTION.y, World.H)
+## ...and across the whole map (a zone's size: see Zones), worked out per build:
+static var ALL_XS: Array = []
+static var ALL_YS: Array = []
+static var CANALS: Array = []
 ## Scattered things (clutter, parked bikes) are placed per this much map.
-static var AREA: float = float(World.W * World.H) / (SECTION.x * SECTION.y)
+static var AREA := 1.0
 
 
-static func _repeat(at: Array, step: int, size: int) -> Array:
+static func repeat(at: Array, step: int, size: int) -> Array:
 	var out := []
 	for o in range(0, size, step):
 		for v in at:
@@ -50,7 +50,7 @@ const SIGN_LOOT := {
 ## Which city generator this is. Saves remember it: a city saved by an older
 ## generator cannot be rebuilt from its seed any more (see SaveGame).
 ## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
-const GEN := 6  # 6: a map 3 x 3 the size
+const GEN := 7  # 7: zones (a map per zone, ways out at the edges)
 const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
 const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
 const MAX_DEPTH := 15
@@ -139,6 +139,10 @@ static func prefab_problems() -> Array:
 
 
 static func build(w: World, rng: RandomNumberGenerator) -> void:
+	ALL_XS = repeat(XS, SECTION.x, World.W)
+	ALL_YS = repeat(YS, SECTION.y, World.H)
+	CANALS = repeat([CANAL_Y], SECTION.y, World.H)
+	AREA = float(World.W * World.H) / (SECTION.x * SECTION.y)
 	w.fill(Rect2i(0, 0, World.W, World.H), World.GRASS)
 	for x in ALL_XS:
 		w.fill(Rect2i(x - 2, 0, ROAD_W + 4, World.H), World.SIDEWALK)
@@ -185,6 +189,7 @@ static func build(w: World, rng: RandomNumberGenerator) -> void:
 	_size_vehicles(w)
 	_size_beds(w)
 	_shop_fronts(w)
+	_zone_exits(w)
 
 
 static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGenerator) -> void:
@@ -846,6 +851,22 @@ static func _shop_fronts(w: World) -> void:
 			if w.get_tile(c) not in [World.SIDEWALK, World.SOI] or w.blocked.has(c) or w.door_at.has(c):
 				continue
 			w.decor.append({kind = e[0], cell = c, seed = rng.randi(), building = rec, outside = true})
+
+
+## The ways out of the zone: the avenue's end kept clear, a barrier across
+## it with a sign saying where it goes. Last, so the rest of the city comes
+## out the same with or without them.
+static func _zone_exits(w: World) -> void:
+	for e in w.exits:
+		var r: Rect2i = e.rect
+		for y in range(r.position.y - 1, r.end.y + 1):
+			for x in range(r.position.x - 1, r.end.x + 1):
+				w.blocked.erase(Vector2i(x, y))
+		var keep := r.grow(2)
+		w.street_props = w.street_props.filter(func(p): return not keep.has_point(w.to_cell(p.pos)) or p.kind == "pole")
+		var to := Zones.name_of(e.to)
+		var label: String = {east = "ไป%s →", west = "← ไป%s", north = "↑ ไป%s", south = "↓ ไป%s"}.get(e.id, "ไป%s") % to
+		w.street_props.append({kind = "zonesign", pos = w.to_pos(r.position + r.size / 2) + Vector2(0, 6), seed = 0, label = label})
 
 
 static func _size_beds(w: World) -> void:

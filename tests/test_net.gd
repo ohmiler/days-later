@@ -74,3 +74,21 @@ func run() -> void:
 	check(seen.get("host_name") == "Tester", "the client knows the host's name")
 	check(seen.get("host_said") == "hello from the host", "the host's chat reached the client")
 	check(seen.get("box") == str(f.data.id), "opening a cupboard for the client opened its bag screen")
+	check(seen.get("zone") == Zones.first(), "the client is in the host's zone")
+
+	# The host goes on to the next zone: the client comes too.
+	var zpath := ProjectSettings.globalize_path("user://net_client_zone.txt")
+	DirAccess.remove_absolute(zpath)
+	var ex: Dictionary = main.world.exits[0]
+	main.travel(me, ex)
+	for i in 200:
+		if FileAccess.file_exists(zpath):
+			break
+		await wait(0.1)
+	var after := {}
+	for l in FileAccess.get_file_as_string(zpath).split("\n"):
+		var parts := l.split(" ", true, 1)
+		if parts.size() == 2:
+			after[parts[0]] = parts[1]
+	check(after.get("zone") == ex.to, "the client followed the group to %s (%s)" % [ex.to, after.get("zone", "nothing")])
+	check(after.get("stand") == "true" and after.get("players") == "2", "standing there with the host (%s)" % [after])

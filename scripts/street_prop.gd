@@ -101,6 +101,8 @@ func _paint() -> void:
 			_pillar()
 		"wreck":
 			_wreck()
+		"zonesign":
+			_zonesign()
 		"glass":
 			_glass()
 		"papers":
@@ -449,6 +451,21 @@ func _barrier() -> void:
 
 
 ## An army truck left at the checkpoint.
+## Where the zone ends: a road barrier across the avenue and a green road sign
+## saying where the way on leads.
+func _zonesign() -> void:
+	for x in [-30.0, 30.0]:
+		c.draw_rect(Rect2(x - 0.8, -30, 1.6, 30), Color("8a8e92"))
+	var board := Rect2(-34, -40, 68, 13)
+	c.draw_rect(board, Color("1e6a3a"))
+	c.draw_rect(board, Color("e8e8e0"), false, 0.8)
+	c.draw_string(Look.thai_font(), Vector2(board.position.x, board.position.y + 9.5), data.label, HORIZONTAL_ALIGNMENT_CENTER, board.size.x, 8, Color("f4f4ec"))
+	for i in 6:  # a striped barrier (with a gap to walk through in the middle)
+		if i in [2, 3]:
+			continue
+		c.draw_rect(Rect2(-36 + i * 12, -8, 12, 3), Color("c8302a") if i % 2 == 0 else Color("f0ece4"))
+
+
 func _army() -> void:
 	var green := Color("4a5a3a")
 	_shadow(Vector2(25, 3.5), Vector2(24, -1))
