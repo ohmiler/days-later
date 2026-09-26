@@ -64,6 +64,22 @@ const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", 
 static var DEFS: Dictionary = _load_defs()
 ## place -> [[item, weight]], built from each item's places and rarity.
 static var LOOT: Dictionary = _build_loot()
+## Every id in data/items.cfg order: a snapshot names an item by its place here
+## (both ends read the same file: the PROTOCOL check makes sure).
+static var ID_LIST: Array = DEFS.keys()
+static var _index := {}
+
+
+## 1 + an item's place in ID_LIST (0: no item).
+static func index_of(id: String) -> int:
+	if _index.is_empty():
+		for i in ID_LIST.size():
+			_index[ID_LIST[i]] = i + 1
+	return _index.get(id, 0)
+
+
+static func id_at(i: int) -> String:
+	return ID_LIST[i - 1] if i > 0 and i <= ID_LIST.size() else ""
 
 
 static func _load_defs() -> Dictionary:

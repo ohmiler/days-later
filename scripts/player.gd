@@ -75,6 +75,7 @@ var local_cd := 0.0  # client, local player: its own guess at shoot_cd, to swing
 var predicted := 0  # client, local player: swings shown early, still to be confirmed by the server
 var respawn := 0.0
 var net_pos := Vector2.ZERO
+var samples: Array = []  # client, someone else: [[server time, pos], ...] played back smoothly
 var skin: Color
 var shirt: Color
 var hair: Color
@@ -292,6 +293,11 @@ func face() -> Vector2:
 			if to.length() > 0.5:
 				return to
 	return aim
+
+
+## Client: where someone else was at server time `t` (from a snapshot).
+func push_sample(t: float, pos: Vector2) -> void:
+	NetCodec.push(samples, t, pos)
 
 
 ## Under a bus, a songthaew, a truck (World.is_under), even partly: hidden,
@@ -726,7 +732,10 @@ func _process(delta: float) -> void:
 			else:
 				position = position.lerp(net_pos, minf(1.0, 2.0 * delta))
 		else:
-			position = position.lerp(net_pos, minf(1.0, 15.0 * delta))
+			# Someone else: a moment behind the server, between its snapshots;
+			# riding, the bike carries them (it moves with the snapshots).
+			var at := NetCodec.sample_at(samples, get_parent().net.clock - NetCodec.INTERP) if riding < 0 and get_parent() is Main else Vector2.INF
+			position = position.lerp(net_pos, minf(1.0, 15.0 * delta)) if at == Vector2.INF else at
 	var step := position.distance_to(last_pos)
 	last_pos = position
 	moving = step > 0.05
