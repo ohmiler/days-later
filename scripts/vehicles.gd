@@ -18,9 +18,21 @@ const FUEL_CAN := 3.0  # litres in a jerrycan
 const HIT_SPEED := 60.0  # faster than this, a zombie in the way is knocked flat
 const SLOW_GROUND := 0.5  # grass and dirt, for bikes not built for it
 const KEY_CHANCE := 0.35  # bikes left with the key still in
+## Steering: a moving bike swings round toward where you steer at so many
+## radians a second (tight at a crawl, wide at full speed); below CRAWL it
+## points anywhere, and steering right back the way you came brakes first.
+const TURN_SLOW := 6.0
+const TURN_FAST := 3.2
+const CRAWL := 20.0
+const U_TURN := 2.3  # radians: steering further round than this is braking
+## Running into a wall: faster than BUMP it jolts and dents the bike, faster
+## than CRASH it bruises whoever is on it too.
+const BUMP := 80.0
+const CRASH := 125.0
 
 ## model -> {name, speed, accel, fuel, use, noise, hp, offroad, electric}
 static var MODELS: Dictionary = _load()
+static var _beam: Texture2D
 
 var main: Main
 var _noise_t := {}  # peer -> time to the next engine noise
@@ -64,10 +76,11 @@ static func title_of(v: Dictionary) -> String:
 	return "%s · %s %d%%" % [m.name, "แบต" if m.electric else "น้ำมัน", roundi(v.fuel / m.fuel * 100.0)]
 
 
-## One step of riding, for the rider: speed up toward where they steer, slow
-## on rough ground, stop against walls. Shared by the server and the rider's
-## own machine so what they see matches what happens.
-static func step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World) -> void:
+## One step of riding, for the rider: speed up toward where they steer and
+## swing round to it, slow on rough ground, stop against walls. Shared by the
+## server and the rider's own machine so what they see matches what happens.
+## Returns how fast it was going if it just ran into something (else 0).
+static func step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World) -> float:
 	var m: Dictionary = MODELS[v.model]
 	var top: float = m.speed
 	if not m.offroad and w.get_tile(w.to_cell(p.position)) in [World.GRASS, World.DIRT]:
@@ -78,15 +91,56 @@ static func step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World
 	if two:
 		top *= 0.94
 	var want := move.limit_length(1.0) * top
-	var rate: float = m.accel * (0.85 if two else 1.0) if want.length() > p.ride_vel.length() else m.accel * 1.6  # brakes bite harder
-	p.ride_vel = p.ride_vel.move_toward(want, rate * delta)
+	var go: float = m.accel * (0.85 if two else 1.0)
+	var brake: float = m.accel * 1.6  # brakes bite harder
+	var spd := p.ride_vel.length()
+	if want.length() < 0.01 or spd < CRAWL:
+		# Letting go (it pulls up), or at a crawl (it points anywhere).
+		p.ride_vel = p.ride_vel.move_toward(want, (go if want.length() > spd else brake) * delta)
+	else:
+		var head := p.ride_vel / spd
+		var ang := head.angle_to(want)
+		if absf(ang) > U_TURN:
+			spd = move_toward(spd, 0.0, brake * delta)  # right back the way you came: stop first
+		else:
+			var turn := lerpf(TURN_SLOW, TURN_FAST, clampf(spd / m.speed, 0.0, 1.0)) * delta
+			head = head.rotated(clampf(ang, -turn, turn))
+			spd = move_toward(spd, want.length(), (go if want.length() > spd else brake) * delta)
+		p.ride_vel = head * spd
 	var before := p.position
+	var hit := 0.0
 	p.position = w.slide(p.position, p.ride_vel * delta, RADIUS, false, true)
 	if (p.position - before).length() < (p.ride_vel * delta).length() * 0.5:
+		hit = p.ride_vel.length()
 		p.ride_vel *= 0.3  # ran into something
 	turn_to(v, p.ride_vel)
 	v.pos = p.position
 	_place(v)
+	return hit
+
+
+## Whether a bike's headlight is on: at night, with someone riding it and
+## something in the tank. It lights the road, and shows the rider up to zombies.
+static func headlight_on(v: Dictionary, w: World) -> bool:
+	return w.is_night and v.rider != 0 and v.fuel > 0.0 and v.hp > 0
+
+
+## A headlight's beam, pointing right from the middle (a PointLight2D turns it):
+## a cone fading with distance, and a little pool of light around the bike.
+static func beam_texture() -> Texture2D:
+	if _beam == null:
+		var n := 256
+		var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+		var c := Vector2(n, n) * 0.5
+		for y in n:
+			for x in n:
+				var d := Vector2(x + 0.5, y + 0.5) - c
+				var r := d.length() / (n * 0.5)
+				var cone := 1.0 - smoothstep(0.32, 0.5, absf(d.angle())) if d.x > 0.0 else 0.0
+				var a := maxf(cone * pow(maxf(0.0, 1.0 - r), 1.2), 0.6 * maxf(0.0, 1.0 - r / 0.16))
+				img.set_pixel(x, y, Color(1, 1, 1, a))
+		_beam = ImageTexture.create_from_image(img)
+	return _beam
 
 
 ## Face a bike the way it is going (only once it is really moving).
@@ -129,8 +183,14 @@ func server_tick(p: Player, delta: float) -> void:
 			p.position = d.position
 		return
 	var m: Dictionary = MODELS[v.model]
-	step(p, v, p.move, delta, main.world)
+	var hit := step(p, v, p.move, delta, main.world)
 	var q: Player = main.players.get(v.pillion) if v.pillion != 0 else null
+	if hit > BUMP:
+		_crash(p, q, v, hit)
+		if v.hp <= 0:
+			main._toast(p, "รถพังแล้ว!")
+			dismount(p)
+			return
 	if q:
 		q.position = p.position
 	var speed := p.ride_vel.length()
@@ -159,10 +219,34 @@ func server_tick(p: Player, delta: float) -> void:
 				p.kills += 1
 			v.hp -= 3
 			p.ride_vel *= 0.6
+			main._notify(p.peer_id, &"jolt", [2.0])
 			if v.hp <= 0:
 				main._toast(p, "รถพังแล้ว!")
 				dismount(p)
 				return
+
+
+## Into a wall: a jolt and a dent, and hard enough, bruises all round.
+func _crash(p: Player, q: Player, v: Dictionary, speed: float) -> void:
+	var hard := speed > CRASH
+	v.hp -= 6 if hard else 2
+	main.fx_sound.rpc("crash", p.position)
+	main._make_noise(p.position, 160.0)
+	for who in [p, q]:
+		if who == null:
+			continue
+		main._notify(who.peer_id, &"jolt", [5.0 if hard else 2.5])
+		if hard:
+			who.take_damage(4.0)
+			Body.add(who, "bruise", ["legs", "arms"].pick_random())
+			main._toast(who, "ชนแรง! ฟกช้ำ")
+	_send(v)
+
+
+## The one riding feels it: the screen shakes.
+@rpc("authority", "call_remote", "reliable")
+func jolt(amount: float) -> void:
+	main.shake = maxf(main.shake, amount)
 
 
 func mount(p: Player, id: int) -> void:

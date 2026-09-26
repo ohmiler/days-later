@@ -101,6 +101,9 @@ var turn_t := 0.0
 var lean := 0.0
 var last_heading := 0.0
 var dust_t := 0.0
+var ride_seen := Vector2.ZERO  # the bike's velocity as drawn (every peer, smoothed): the camera looks ahead by it
+var engine: AudioStreamPlayer2D  # the running engine, while riding (not on a headless server)
+var headlight: PointLight2D  # the beam ahead, riding at night
 var ride_spd := 0.0  # how fast the bike is going, as drawn (every peer), and its change
 var ride_acc := 0.0
 var wheel_turn := 0.0  # how far round the wheels have rolled
@@ -368,11 +371,53 @@ func _draw_pillion(q: Player, v: Dictionary, view: String, rv: int, dir: float) 
 
 
 ## Every machine, each frame: notice the bike turning, lean into bends, kick up dust.
+## Every machine: the engine's note rising with speed, and at night the
+## headlight's beam swinging round to where the bike points.
+func _engine_and_lamp(delta: float) -> void:
+	var v = null
+	if riding >= 0 and riding < world.vehicles.size() and seat == 0 and alive():
+		v = world.vehicles[riding]
+	var lamp: bool = v != null and Vehicles.headlight_on(v, world)
+	headlight.energy = move_toward(headlight.energy, 1.1 if lamp else 0.0, delta * 4.0)
+	headlight.visible = headlight.energy > 0.01
+	if v != null:
+		var to := 0.0 if v.dir > 0.0 else PI
+		if v.view != "side":
+			to = PI * 0.5 if v.view == "front" else -PI * 0.5
+		headlight.rotation = lerp_angle(headlight.rotation, to, minf(1.0, 10.0 * delta))
+		headlight.position = Vector2.from_angle(headlight.rotation) * 8.0 + Vector2(0, -3)
+	if DisplayServer.get_name() == "headless":
+		return
+	var run: bool = v != null and v.fuel > 0.0 and v.hp > 0
+	if not run:
+		if engine:
+			engine.queue_free()
+			engine = null
+		return
+	var m: Dictionary = Vehicles.MODELS[v.model]
+	if engine == null:
+		engine = AudioStreamPlayer2D.new()
+		engine.stream = Sfx.loop("motor" if m.electric else "engine")
+		engine.bus = "SFX"
+		engine.max_distance = 700
+		engine.attenuation = 1.5
+		add_child(engine)
+		engine.play()
+	var k := clampf(ride_spd / m.speed, 0.0, 1.0)
+	if m.electric:
+		engine.pitch_scale = lerpf(0.6, 1.7, k)
+		engine.volume_db = lerpf(-24.0, -15.0, k)
+	else:
+		engine.pitch_scale = lerpf(0.8, 2.3, k) * (1.0 + 0.1 * clampf(ride_acc / 150.0, 0.0, 1.0))  # it revs as it pulls away
+		engine.volume_db = lerpf(-15.0, -7.0, k)
+
+
 func _ride_look(delta: float) -> void:
 	if turn_t > 0.0:
 		turn_t = maxf(0.0, turn_t - delta)
 	if riding < 0 or riding >= world.vehicles.size() or seat == 1:  # (on the back, the rider's bike does the looking)
 		lean = 0.0
+		ride_seen = Vector2.ZERO
 		return
 	var v: Dictionary = world.vehicles[riding]
 	var now := [v.view, v.dir]
@@ -386,6 +431,8 @@ func _ride_look(delta: float) -> void:
 	last_pos_ride = position
 	# Speed and its change (smoothed: positions come in steps over the network).
 	var spd := vel.length() if vel.length() < 400.0 else ride_spd
+	if vel.length() < 400.0:
+		ride_seen = ride_seen.lerp(vel, minf(1.0, 8.0 * delta))
 	ride_acc = lerpf(ride_acc, (spd - ride_spd) / maxf(delta, 0.001), minf(1.0, 6.0 * delta))
 	ride_spd = lerpf(ride_spd, spd, minf(1.0, 10.0 * delta))
 	wheel_turn += ride_spd * delta / 4.4
@@ -517,6 +564,12 @@ func _ready() -> void:
 	night_eyes.position = Look.CHEST
 	night_eyes.energy = 0.0
 	add_child(night_eyes)
+	headlight = PointLight2D.new()
+	headlight.texture = Vehicles.beam_texture()
+	headlight.color = Color("fff0c8")
+	headlight.energy = 0.0
+	headlight.visible = false
+	add_child(headlight)
 
 
 func _process(delta: float) -> void:
@@ -527,6 +580,7 @@ func _process(delta: float) -> void:
 			position = d.position
 			net_pos = d.position
 	_ride_look(delta)
+	_engine_and_lamp(delta)
 	if not multiplayer.is_server():
 		if is_local:
 			# Trust local prediction, but drift toward the server and snap on big errors.

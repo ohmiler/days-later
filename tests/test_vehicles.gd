@@ -148,6 +148,81 @@ func run() -> void:
 	for id in [77, 78]:
 		main.players[id].queue_free()
 		main.players.erase(id)
+
+	# Steering: at speed it swings round, it doesn't turn on the spot.
+	v.pos = _road_spot()
+	Vehicles._place(v)
+	me.position = v.pos
+	main.vehicles.mount(me, v.id)
+	me.move = Vector2.RIGHT
+	simulate(1.2)
+	me.move = Vector2(0, 1)
+	simulate(0.1)
+	check(me.ride_vel.x > me.ride_vel.length() * 0.6, "at speed a bike swings round, not on the spot (%s)" % me.ride_vel)
+	simulate(0.5)
+	check(me.ride_vel.y > me.ride_vel.length() * 0.9, "and comes round in a moment (%s)" % me.ride_vel)
+	# Steering back the way you came brakes first.
+	me.position = v.pos
+	me.ride_vel = Vector2(140, 0)
+	me.move = Vector2.RIGHT
+	simulate(0.05)
+	me.move = Vector2.LEFT
+	simulate(0.2)
+	check(me.ride_vel.x > 0.0 and me.ride_vel.length() < 140.0, "steering right back brakes first (%s)" % me.ride_vel)
+	me.move = Vector2.ZERO
+	simulate(1.5)
+
+	# At night the headlight lights the road, and shows you up to zombies.
+	me.position = _road_spot()
+	v.pos = me.position
+	w.is_night = true
+	var lights: Array = w.light_spots
+	w.light_spots = []
+	check(Vehicles.headlight_on(v, w), "at night the headlight is on")
+	var zl := zombie_at(me.position + Vector2(90, 0))
+	zl.facing = PI
+	zl.target = null
+	check(zl._nearest_player() == me, "and a zombie sees the rider from far off in the dark")
+	var fuel_was: float = v.fuel
+	v.fuel = 0.0
+	check(not Vehicles.headlight_on(v, w) and zl._nearest_player() == null, "no fuel, no light: the dark hides you again")
+	v.fuel = fuel_was
+	w.light_spots = lights
+	w.is_night = false
+	zl.queue_free()
+	main.zombies.erase(zl.zid)
+	main.vehicles.dismount(me)
+
+	# Into a wall: a dent, and hard enough, a bruise.
+	var wall_cell := Vector2i(-1, -1)
+	for y in range(4, World.H - 4):
+		for x in range(4, World.W - 4):
+			var c := Vector2i(x, y)
+			if w.get_tile(c) == World.SIDEWALK and w.get_tile(c + Vector2i.UP) in [World.BUILDING, World.IWALL, World.WALL] \
+					and w.get_tile(c + Vector2i.DOWN) in [World.SIDEWALK, World.ROAD] and w.get_tile(c + Vector2i(0, 2)) in [World.SIDEWALK, World.ROAD] \
+					and not w.blocked.has(c) and not w.blocked.has(c + Vector2i.DOWN) and not w.door_at.has(c + Vector2i.UP):
+				wall_cell = c
+				break
+		if wall_cell.x >= 0:
+			break
+	check(wall_cell.x >= 0, "found a wall to ride into")
+	v.pos = w.to_pos(wall_cell + Vector2i(0, 2))
+	Vehicles._place(v)
+	me.position = v.pos
+	main.vehicles.mount(me, v.id)
+	var hp_was: int = v.hp
+	var wounds_was: int = me.wounds.size()
+	me.ride_vel = Vector2(0, -170)
+	me.move = Vector2.UP
+	simulate(0.4)
+	check(v.hp < hp_was, "a bike into a wall gets dented (%d -> %d)" % [hp_was, v.hp])
+	check(me.wounds.size() > wounds_was and me.wounds[-1].kind == "bruise", "and a hard crash bruises the rider")
+	check(me.riding == v.id, "but you stay on (it's not that hard a game)")
+	me.move = Vector2.ZERO
+	main.vehicles.dismount(me)
+	v.hp = hp_was
+	me.wounds.clear()
+
 	v.pos = left_at  # (back where the first ride left it, for the reload check below)
 	Vehicles._place(v)
 

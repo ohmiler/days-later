@@ -81,6 +81,57 @@ static func stream(name: String) -> AudioStream:
 	return _cache[name].pick_random()
 
 
+## A sound that goes round and round (an engine), made in code; play it with
+## pitch_scale for how fast it's running.
+static func loop(name: String) -> AudioStreamWAV:
+	var key := "loop:" + name
+	if not _cache.has(key):
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash(name)
+		var samples := _engine(rng, 30.0) if name == "engine" else _motor(rng, 180.0)
+		var w := _to_wav(samples)
+		w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		w.loop_begin = 0
+		w.loop_end = samples.size()
+		_cache[key] = [w]
+	return _cache[key][0]
+
+
+## One second of a small single-cylinder engine: a thud of noise and body
+## each time it fires (`f` times a second, a whole number so it loops cleanly).
+static func _engine(rng: RandomNumberGenerator, f: float) -> PackedFloat32Array:
+	var n := RATE
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var y := 0.0
+	var amp := 1.0
+	var last := -1
+	for i in n:
+		var t := float(i) / RATE * f
+		var cyc := int(t)
+		if cyc != last:
+			last = cyc
+			amp = rng.randf_range(0.8, 1.0)
+		var ph := t - cyc
+		y += (rng.randf_range(-1, 1) - y) * 0.25
+		var kick := exp(-ph * 7.0)
+		out[i] = (sin(TAU * ph * 2.0) * 0.55 + sin(TAU * ph * 5.0) * 0.15 + y * 0.6) * kick * amp * 0.55
+	return out
+
+
+## One second of an electric motor's whine (`f` a whole number, to loop).
+static func _motor(rng: RandomNumberGenerator, f: float) -> PackedFloat32Array:
+	var n := RATE
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var y := 0.0
+	for i in n:
+		var t := float(i) / RATE
+		y += (rng.randf_range(-1, 1) - y) * 0.05
+		out[i] = sin(TAU * f * t) * 0.3 + sin(TAU * f * 2.0 * t) * 0.12 + y * 0.2
+	return out
+
+
 static func _build(name: String) -> AudioStreamWAV:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(name)
@@ -116,6 +167,14 @@ static func _build(name: String) -> AudioStreamWAV:
 			samples = _sweep_tone(rng, 1.1, 700.0, 1300.0, 0.45)
 		"siren":  # horde warning drifting over the city
 			samples = _siren(2.6)
+		"crash":  # a bike into a wall: a heavy thud and bent metal ringing
+			samples = _thump(rng, 0.5, 90.0, 45.0, 0.9)
+			_mix(samples, _noise_sweep(rng, 0.35, 0.9, 0.2, 0.5))
+			for f in [410.0, 623.0, 947.0]:
+				var ring := _tone(0.5, f, 0.12)
+				for i in ring.size():
+					ring[i] *= exp(-float(i) / RATE * 7.0)
+				_mix(samples, ring)
 		"door":  # fist and shoulder against wood
 			samples = _thump(rng, 0.22, 120.0, 70.0, 0.8)
 		"break":
