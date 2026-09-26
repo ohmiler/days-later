@@ -84,7 +84,7 @@ static func save_world(main: Node) -> void:
 			boxes[f.data.id] = f.items
 	var items := []
 	for pid in main.pickups:
-		items.append([pid, main.pickups[pid].pos, main.pickups[pid].item])
+		items.append([pid, main.pickups[pid].pos, main.pickups[pid].item, main.pickups[pid].get("up", false)])
 	var zs := []
 	for z: Zombie in main.zombies.values():
 		zs.append([z.zid, z.position, z.hp, z.outfit, z.missing])
@@ -150,7 +150,7 @@ static func load_world_into(main: Node, w: Dictionary) -> bool:
 		if id < world.container_nodes.size():
 			world.container_nodes[id].set_stripped(true)
 	for e in w.pickups:
-		main.pickups[e[0]] = {pos = e[1], item = e[2]}
+		main.pickups[e[0]] = {pos = e[1], item = e[2], up = e[3] if e.size() > 3 else false}
 	for e in w.zombies:
 		if not e[3].is_empty():
 			main.outfits[e[0]] = e[3]
@@ -173,7 +173,7 @@ static func save_player(p: Player) -> void:
 		return
 	_write(path, {
 		version = VERSION, name = p.pname, alive = p.alive(),
-		pos = p.position, on_roof = p.on_roof, hp = p.hp, kills = p.kills,
+		pos = p.position, on_roof = p.on_roof, up = p.up, hp = p.hp, kills = p.kills,
 		hunger = p.hunger, thirst = p.thirst, infection = p.infection, bleeding = p.bleeding, stamina = p.stamina,
 		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash, bed = p.bed, wounds = p.wounds,
 		city = p.world.city_seed if p.world else 0,
@@ -200,6 +200,7 @@ static func load_player_into(p: Player, name: String) -> bool:
 	p.position = d.pos if same_city else p.world.spawn_point()
 	p.net_pos = d.pos
 	p.on_roof = d.on_roof
+	p.up = d.get("up", false) and p.world.upper.has(p.world.to_cell(p.position))
 	p.hp = d.hp
 	p.kills = d.kills
 	p.hunger = d.hunger

@@ -21,7 +21,7 @@ var on := 0.0  # off up on the roofs (you see over everything), asleep, or dead
 
 ## Every frame, on the local machine.
 func update(me: Player, delta: float, view_radius: float) -> void:
-	var want := me != null and me.alive() and not me.on_roof and not me.sleeping
+	var want := me != null and me.alive() and not me.on_roof and not me.up and not me.sleeping  # (upstairs, you look out of the windows)
 	on = move_toward(on, 1.0 if want else 0.0, delta * 3.0)
 	if me == null:
 		return

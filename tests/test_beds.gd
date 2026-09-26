@@ -14,10 +14,12 @@ func _bed() -> FurnitureProp:
 ## Stand beside the bed, inside, where E points at it.
 func _stand_by(f: FurnitureProp) -> void:
 	var w: World = main.world
+	var up: bool = f.data.get("up", false)  # (bedrooms are upstairs)
+	me.up = up
 	var cells := [f.data.cell, w.to_cell(f.position - Vector2(0, 4))]  # (a long bed covers two)
 	for i in 8:
 		var c: Vector2i = cells[i / 4] + [Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP][i % 4]
-		if not w.is_solid(c) and w.building_at.get(c) == w.building_at.get(f.data.cell):
+		if not (w.is_solid_up(c) if up else w.is_solid(c)) and w.building_at.get(c) == w.building_at.get(f.data.cell):
 			me.position = w.to_pos(c)
 			me.aim = f.position - me.position
 			var tt := Interact.target(main, me)

@@ -5,10 +5,10 @@ extends "res://tests/test_base.gd"
 ## purpose, update the fingerprints below (and think about old saves).
 
 const SEED := 777
-## (Generator 4: shops laid out by trade, shared walls, shutters. Changing these means old
+## (Generator 5: a floor upstairs with the bedrooms. Changing these means old
 ## cities can no longer be rebuilt: bump CityGen.GEN so their saves move to a
 ## new city instead of loading wrong.)
-const FINGERPRINT := {tiles = 1020271070, doors = 3570194031, containers = 1836549709, buildings = 265016187}
+const FINGERPRINT := {tiles = 2494851069, doors = 3412456735, containers = 4183094165, buildings = 1023313918}
 
 
 func _fingerprint(w: World) -> Dictionary:
@@ -63,7 +63,12 @@ func run() -> void:
 		if not ok:
 			unreachable.append(d.cell)
 	for f in a.containers:
-		if not World.DIRS.any(func(dir): return not a.is_solid(f.cell + dir) and not a.path_between(start, a.to_pos(f.cell + dir)).is_empty()):
+		if f.get("up", false):
+			# Upstairs: from the top of the stairs.
+			var st: Vector2i = a.building_at[f.cell].data.stairs
+			if not World.DIRS.any(func(dir): return not a.is_solid_up(f.cell + dir) and (f.cell + dir == st or not a.path_up(a.to_pos(st), a.to_pos(f.cell + dir)).is_empty())):
+				unreachable.append(f.cell)
+		elif not World.DIRS.any(func(dir): return not a.is_solid(f.cell + dir) and not a.path_between(start, a.to_pos(f.cell + dir)).is_empty()):
 			unreachable.append(f.cell)
 	check(unreachable.is_empty(), "every door and cupboard can be walked up to from spawn (%d cannot: %s)" % [unreachable.size(), unreachable.slice(0, 5)])
 	var kinds := {}

@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 11  # 11: riding pillion (a seat in the snapshot)
+const PROTOCOL := 12  # 12: upstairs (a floor in the snapshot, zombies' flags)
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -106,7 +106,7 @@ func _welcome(id: int) -> void:
 			stripped.append(f.data.id)
 	var items := []
 	for pid in main.pickups:
-		items.append([pid, main.pickups[pid].pos, main.pickups[pid].item])
+		items.append([pid, main.pickups[pid].pos, main.pickups[pid].item, main.pickups[pid].get("up", false)])
 	var doors := []
 	for d in main.world.doors:
 		doors.append([d.id, d.closed, d.hp, d.boards, d.broken, d.kind if main.world.is_built(d.id) else "", d.cell])
@@ -138,7 +138,7 @@ func sync_state(searched: Array, items: Array, doors: Array, stripped: Array) ->
 	for id in stripped:
 		main.world.container_nodes[id].set_stripped(true)
 	for e in items:
-		main.pickup_add(e[0], e[1], e[2])
+		main.pickup_add(e[0], e[1], e[2], e[3] if e.size() > 3 else false)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -230,6 +230,7 @@ func snapshot(ps: Array, zs: Array, t: float, d: int, rain := false) -> void:
 		if not p.is_local:
 			p.aiming = n[14]
 		var seat: int = n[15]
+		p.up = n[16]
 		if (n[12] != p.riding or seat != p.seat) and not (p.is_local and n[12] >= 0 and p.riding >= 0 and seat == p.seat):
 			if p.riding >= 0:  # got off: the bike is drawn where it stands again
 				var old: Dictionary = main.world.vehicles[p.riding]

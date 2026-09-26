@@ -22,7 +22,7 @@ func req_give(id: String, n: int) -> void:
 		if main.inventory._give(p, id):
 			given += 1
 		else:
-			main._spawn_pickup(p.position + Vector2(randf_range(-6, 6), 6), {id = id, n = 1, hp = Items.def(id).get("hp", 0)})
+			main._spawn_pickup(p.position + Vector2(randf_range(-6, 6), 6), {id = id, n = 1, hp = Items.def(id).get("hp", 0)}, p.up)
 			given += 1
 	main.inventory._send_inv(p)
 	main._toast(p, "เสก %s ×%d" % [Items.display_name(id), given])

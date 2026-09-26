@@ -32,7 +32,7 @@ func _ref_ok(p: Player, ref: Array) -> bool:
 		"worn":
 			return ref[1] in Items.SLOTS or ref[1] in Items.HANDS
 		"ground":
-			return ref[1] == -1 or (main.pickups.has(ref[1]) and p.position.distance_to(main.pickups[ref[1]].pos) < GROUND_REACH)
+			return ref[1] == -1 or (main.pickups.has(ref[1]) and p.position.distance_to(main.pickups[ref[1]].pos) < GROUND_REACH 					and main.pickups[ref[1]].get("up", false) == p.up)
 	return false
 
 
@@ -62,7 +62,7 @@ func _ref_set(p: Player, ref: Array, it: Variant) -> void:
 			if ref[1] >= 0:
 				main.pickup_del.rpc(ref[1])
 			if it != null:
-				main._spawn_pickup(p.position + Vector2(randf_range(-6, 6), randf_range(2, 7)), it)
+				main._spawn_pickup(p.position + Vector2(randf_range(-6, 6), randf_range(2, 7)), it, p.up)
 		"box":
 			main.world.container_nodes[ref[1]].items[ref[2]] = it
 
@@ -182,7 +182,7 @@ func req_move(a: Array, b: Array) -> void:
 			_ref_set(p, a, null)
 		elif a[0] == "ground":
 			main.pickup_del.rpc(a[1])  # the rest stays on the ground as a fresh pile
-			main._spawn_pickup(p.position + Vector2(randf_range(-6, 6), 4), x)
+			main._spawn_pickup(p.position + Vector2(randf_range(-6, 6), 4), x, p.up)
 	else:
 		_ref_set(p, a, y if a[0] != "ground" else null)
 		if a[0] == "ground" and y != null:
@@ -300,7 +300,7 @@ func _fit_bag(p: Player) -> void:
 				moved = true
 				break
 		if not moved:
-			main._spawn_pickup(p.position + Vector2(randf_range(-6, 6), 5), it)
+			main._spawn_pickup(p.position + Vector2(randf_range(-6, 6), 5), it, p.up)
 			main._toast(p, "%s ตกพื้น · กระเป๋าไม่พอ" % Items.display_name(it.id))
 	p.inv.resize(n)
 	p.sel = mini(p.sel, Items.INV_SIZE - 1)
@@ -327,12 +327,12 @@ func _drop_everything(p: Player, turned := false) -> void:
 	var k := 0
 	for slot in p.worn:
 		if not turned:
-			main._spawn_pickup(p.position + Vector2.from_angle(k * 1.7 + 0.5) * 9, p.worn[slot])
+			main._spawn_pickup(p.position + Vector2.from_angle(k * 1.7 + 0.5) * 9, p.worn[slot], p.up)
 		k += 1
 	p.worn.clear()  # still drawn on the body until respawn (see Player.refresh_wear)
 	for i in p.inv.size():
 		if p.inv[i] != null:
-			main._spawn_pickup(p.position + Vector2.from_angle(i * TAU / 8) * 6, p.inv[i])
+			main._spawn_pickup(p.position + Vector2.from_angle(i * TAU / 8) * 6, p.inv[i], p.up)
 			p.inv[i] = null
 	_send_inv(p)
 
@@ -482,7 +482,7 @@ func req_drop() -> void:
 	if p.on_roof:
 		main._toast(p, "วางของบนหลังคาไม่ได้")
 		return
-	main._spawn_pickup(p.position + p.aim.normalized() * 8, p.inv[p.sel])
+	main._spawn_pickup(p.position + p.aim.normalized() * 8, p.inv[p.sel], p.up)
 	p.inv[p.sel] = null
 	_send_inv(p)
 

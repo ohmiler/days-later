@@ -34,7 +34,7 @@ func damage_door(id: int, dmg: float) -> void:
 func door_state(id: int, closed: bool, hp: float, boards: int, broken: bool) -> void:
 	main.world.set_door(id, closed, hp, boards, broken)
 	var me: Player = main.players.get(multiplayer.get_unique_id())
-	if closed and me and not multiplayer.is_server() and main.world.door_overlap(id, me.position) > 0:
+	if closed and me and not me.up and not me.on_roof and not multiplayer.is_server() and main.world.door_overlap(id, me.position) > 0:
 		me.position = main.world.nudge_out_of_door(id, me.position)
 
 
@@ -123,19 +123,19 @@ func _toggle_door(p: Player, id: int) -> void:
 func _clear_doorway(p: Player, ids: Array) -> bool:
 	for id in ids:
 		for q: Player in main.players.values():
-			if q.alive() and not q.on_roof and main.world.door_overlap(id, q.position) == 2:
+			if q.alive() and not q.on_roof and not q.up and main.world.door_overlap(id, q.position) == 2:
 				main._toast(p, "ออกจากช่องประตูก่อนปิด" if q == p else "มีคนยืนขวางประตูอยู่")
 				return false
 		for z: Zombie in main.zombies.values():
-			if main.world.door_overlap(id, z.position) == 2:
+			if not z.up and main.world.door_overlap(id, z.position) == 2:
 				main._toast(p, "มีซอมบี้ขวางประตูอยู่!")
 				return false
 	for id in ids:
 		for q: Player in main.players.values():
-			if q.alive() and not q.on_roof and main.world.door_overlap(id, q.position) == 1:
+			if q.alive() and not q.on_roof and not q.up and main.world.door_overlap(id, q.position) == 1:
 				q.position = main.world.nudge_out_of_door(id, q.position)
 		for z: Zombie in main.zombies.values():
-			if main.world.door_overlap(id, z.position) == 1:
+			if not z.up and main.world.door_overlap(id, z.position) == 1:
 				z.position = main.world.nudge_out_of_door(id, z.position)
 	return true
 

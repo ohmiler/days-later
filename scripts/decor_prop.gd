@@ -10,6 +10,7 @@ var data: Dictionary  # {kind, cell, seed}
 func _draw() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = data.seed
+	_xf(Vector2.ZERO)
 	match data.kind:
 		"chairs":
 			_shadow(8)
@@ -31,10 +32,10 @@ func _draw() -> void:
 			_shadow(7)
 			for i in 3:
 				var y := -2.0 - i * 2.6
-				draw_set_transform(Vector2(0, y), 0, Vector2(1, 0.45))
+				_xf(Vector2(0, y), 0, Vector2(1, 0.45))
 				draw_circle(Vector2.ZERO, 6, Color("1e1e1e"))
 				draw_circle(Vector2.ZERO, 3, Color("3a3a3a"))
-			draw_set_transform(Vector2.ZERO)
+			_xf(Vector2.ZERO)
 		"bike":
 			_shadow(8)
 			draw_circle(Vector2(-5, -2.5), 2.5, Color("1a1a1a"))
@@ -42,9 +43,9 @@ func _draw() -> void:
 			draw_rect(Rect2(-3, -9, 6, 1.5), Color("1e1e1e"))
 			draw_rect(Rect2(3, -3, 4, 3), Color("7a7a7a"))  # engine block
 		"oil":
-			draw_set_transform(Vector2(0, -3), 0, Vector2(1.4, 0.5))
+			_xf(Vector2(0, -3), 0, Vector2(1.4, 0.5))
 			draw_circle(Vector2.ZERO, 5, Color(0.05, 0.05, 0.08, 0.5))
-			draw_set_transform(Vector2.ZERO)
+			_xf(Vector2.ZERO)
 		"boxes":
 			_shadow(7)
 			draw_rect(Rect2(-6, -6, 7, 6), Color("b89a6a"))
@@ -123,9 +124,9 @@ func _draw() -> void:
 		"jar":
 			# A glazed dragon jar of water with a plastic dipper on the lid.
 			_shadow(6)
-			draw_set_transform(Vector2(0, -6), 0, Vector2(1, 1.05))
+			_xf(Vector2(0, -6), 0, Vector2(1, 1.05))
 			draw_circle(Vector2.ZERO, 6, Color("6a3a22"))
-			draw_set_transform(Vector2.ZERO)
+			_xf(Vector2.ZERO)
 			draw_rect(Rect2(-4.5, -13, 9, 2), Color("4a2816"))
 			draw_arc(Vector2(0, -6), 4.0, 2.4, 4.4, 6, Color("d8b040"), 0.8)  # the dragon
 			draw_arc(Vector2(1, -5), 3.0, -0.6, 1.2, 6, Color("d8b040"), 0.8)
@@ -134,10 +135,10 @@ func _draw() -> void:
 		"toilet":
 			# A squat toilet in a tiled floor, a bucket and dipper beside it.
 			draw_rect(Rect2(-6, -8, 12, 8), Color("a8c0c8"))
-			draw_set_transform(Vector2(-1, -4), 0, Vector2(1, 0.6))
+			_xf(Vector2(-1, -4), 0, Vector2(1, 0.6))
 			draw_circle(Vector2.ZERO, 3.5, Color("f0f0ec"))
 			draw_circle(Vector2(0, -0.5), 2.0, Color("c8d8dc"))
-			draw_set_transform(Vector2.ZERO)
+			_xf(Vector2.ZERO)
 			draw_rect(Rect2(3, -5, 3, 4), Color("3a7ac8"))
 		"sofa":
 			# A carved wooden living-room bench with cushions.
@@ -239,9 +240,9 @@ func _draw() -> void:
 					draw_rect(Rect2(-1.5, -11.5, 3, 5.5), Color("2a2c30"))
 					draw_rect(Rect2(-1, -11, 2, 4), Color("5a8ab8"))
 				"นวดแผนไทย":  # a foot
-					draw_set_transform(Vector2(0, -9), 0.3, Vector2(0.7, 1.2))
+					_xf(Vector2(0, -9), 0.3, Vector2(0.7, 1.2))
 					draw_circle(Vector2.ZERO, 2.0, col)
-					draw_set_transform(Vector2.ZERO)
+					_xf(Vector2.ZERO)
 				_:  # scissors
 					draw_line(Vector2(-2, -11), Vector2(2, -7), col, 0.6)
 					draw_line(Vector2(2, -11), Vector2(-2, -7), col, 0.6)
@@ -302,6 +303,13 @@ func _draw() -> void:
 
 
 func _shadow(r: float) -> void:
-	draw_set_transform(Vector2(0, -0.5), 0, Vector2(1, 0.35))
+	_xf(Vector2(0, -0.5), 0, Vector2(1, 0.35))
 	draw_circle(Vector2.ZERO, r, Color(0, 0, 0, 0.25))
-	draw_set_transform(Vector2.ZERO)
+	_xf(Vector2.ZERO)
+
+
+## Upstairs (data.up) it is all drawn a storey up, where the floor up there is
+## drawn (see World._draw_upper); the node stays at floor level so it sorts
+## with the people up there by their feet.
+func _xf(pos: Vector2, rot := 0.0, scl := Vector2.ONE) -> void:
+	draw_set_transform(pos + Vector2(0, -BuildingProp.GROUND_H if data.get("up", false) else 0.0), rot, scl)

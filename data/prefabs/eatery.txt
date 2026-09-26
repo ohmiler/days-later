@@ -8,10 +8,24 @@ WG.dqW
 WK.WWW
 Wf..FW
 WWdWWW
-Wb.S.W
-Wb..fW
+Wo.S.W
+Wo..fW
 Wr.r.W
 ~Wr.r.W
 W...RW
 WH..tW
 WUUUUW
+floor 2:
+WWWWWW
+Wb..cW
+Wb...W
+Wn..tW
+WWdWWW
+W....W
+W..S.W
+W....W
+WWdWWW
+~W....W
+Wb..cW
+Wb..IW
+WWWWWW
