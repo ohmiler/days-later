@@ -87,6 +87,10 @@ static func rider_anchors(model: String, view := "side") -> Dictionary:
 
 ## Draw a bike. `v`: {seed, model?}; view "side" (dir +1 faces right),
 ## "front" (coming toward the camera) or "back" (going away).
+static var wheel_turn := 0.0  # set for one draw: how far round the wheels have rolled (a ridden bike)
+static var braking := false  # set for one draw: the brake light is on
+
+
 static func draw(ci, seed_val: int, view: String, dir: float, part: String, xf := Transform2D.IDENTITY) -> void:
 	var model := bike_model(seed_val)
 	var col := color_of(seed_val)
@@ -253,7 +257,9 @@ static func _back_near(ci, model: String, col: Color, extra: int) -> void:
 		ci.draw_rect(Rect2(-e.shield * 0.5 - 1.0, -10.5 - 1.0, e.shield + 2.0, 2.0), Color("26282c"))  # floorboards
 	ci.draw_colored_polygon(PackedVector2Array([Vector2(-e.rear * 0.5, top), Vector2(e.rear * 0.5, top),
 			Vector2(e.rear * 0.35, back - 2.0 * r + 1.0), Vector2(-e.rear * 0.35, back - 2.0 * r + 1.0)]), col)
-	ci.draw_rect(Rect2(-1.2, top + 0.4, 2.4, 1.2), Color("d8302a"))  # tail light
+	ci.draw_rect(Rect2(-1.2, top + 0.4, 2.4, 1.2), Color("ff5040") if braking else Color("d8302a"))  # tail light
+	if braking:
+		ci.draw_circle(Vector2(0, top + 1.0), 3.0, Color(1, 0.25, 0.15, 0.35))
 	ci.draw_rect(Rect2(-1.6, back - 2.0 * r + 1.6, 3.2, 1.8), Color("ecebe4"))  # plate
 	if model != "ev":
 		ci.draw_rect(Rect2(e.rear * 0.5 - 0.4, back - r - 2.0, 1.8, 3.0), Color("6a6e72"))  # exhaust, on the right
@@ -275,6 +281,10 @@ static func _wheel(ci, x: float, r: float, spokes := false) -> void:
 			ci.draw_line(Vector2(x, -r) + Vector2.from_angle(a) * r * 0.75, Vector2(x, -r) - Vector2.from_angle(a) * r * 0.75,
 					Color("6a6e72"), 0.4)
 	ci.draw_circle(Vector2(x, -r), r * 0.18, Color("2a2a2a"))
+	# A scuff on the tyre that goes round as it rolls (only on a ridden bike).
+	if wheel_turn != 0.0:
+		ci.draw_circle(Vector2(x, -r) + Vector2.from_angle(wheel_turn) * r * 0.78, r * 0.13, Color("4a4a4a"))
+		ci.draw_circle(Vector2(x, -r) + Vector2.from_angle(wheel_turn + PI) * r * 0.78, r * 0.13, Color("4a4a4a"))
 
 
 static func _poly(ci, pts: Array, col: Color) -> void:
@@ -282,7 +292,9 @@ static func _poly(ci, pts: Array, col: Color) -> void:
 
 
 static func _tail(ci, x: float, y: float) -> void:
-	ci.draw_rect(Rect2(x, y, 1.4, 2), Color("d8302a"))
+	ci.draw_rect(Rect2(x, y, 1.4, 2), Color("ff5040") if braking else Color("d8302a"))
+	if braking:
+		ci.draw_circle(Vector2(x + 0.7, y + 1.0), 2.6, Color(1, 0.25, 0.15, 0.35))
 	ci.draw_rect(Rect2(x - 0.4, y + 2.6, 2.2, 1.8), Color("ecebe4"))  # plate
 
 

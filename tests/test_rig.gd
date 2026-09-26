@@ -123,6 +123,25 @@ func run() -> void:
 			"getting up starts lying flat and ends standing")
 	check(is_zero_approx((sit.base as Transform2D).get_rotation() + (sit.torso as float)), "half way, it sits upright")
 
+	# On a bike the rider leans into the throttle, the hands staying on the bars.
+	var an := BikeArt.rider_anchors("click", "side")
+	var lean_r := Rig.build({view = [Look.SIDE, false], anchors = an, lean = 0.1}, {})
+	var pivot: Vector2 = lean_r.upper + Vector2(0, Rig.HIP_Y)
+	var off := 0.0
+	for arm in lean_r.arms_back + lean_r.arms_front:
+		var body: Vector2 = pivot + ((lean_r.upper as Vector2) + (arm.hand as Vector2) - pivot).rotated(lean_r.torso)
+		off = maxf(off, body.distance_to(an.hands[arm.idx]))
+	var calm := Rig.build({view = [Look.SIDE, false], anchors = an}, {})
+	check(lean_r.torso > calm.torso + 0.05 and off < 0.3, "a rider leans forward with the hands still on the bars (%.2f off)" % off)
+	for model in Vehicles.MODELS.keys():
+		var a2 := BikeArt.rider_anchors(model, "side")
+		var rr := Rig.build({view = [Look.SIDE, false], anchors = a2}, {})
+		var pv: Vector2 = rr.upper + Vector2(0, Rig.HIP_Y)
+		var worst := 0.0
+		for arm in rr.arms_back + rr.arms_front:
+			worst = maxf(worst, (pv + ((rr.upper as Vector2) + (arm.hand as Vector2) - pv).rotated(rr.get("torso", 0.0))).distance_to(a2.hands[arm.idx]))
+		check(worst < 0.3, "%s: the rider's hands reach the bars (%.2f off)" % [model, worst])
+
 	# Easing: raising the fists eases in over BLEND_TIME instead of jumping.
 	var mem := {}
 	var idle_st := {view = [Look.SIDE, false]}

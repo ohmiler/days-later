@@ -165,7 +165,6 @@ func mount(p: Player, id: int) -> void:
 	v.touched = true
 	_place(v)
 	main.fx_sound.rpc("door", v.pos)
-	main._toast(p, "ขึ้นขี่%s · [E] ลงจากรถ" % MODELS[v.model].name)
 
 
 func dismount(p: Player) -> void:

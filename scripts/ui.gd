@@ -33,6 +33,7 @@ var tut: TutorialCard
 var feed: VBoxContainer
 var hotbar: InventoryBar
 var prompt_tag: PromptTag  # "E  open" over whatever is in reach
+var dash: BikeDash  # the bike's dashboard while riding
 var help: Control
 var gear: BagScreen
 var fs_button: Button
@@ -446,6 +447,17 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	vitals.offset_top = vitals.offset_bottom - (150 if vitals.hint != "" else 126)
 	vitals.queue_redraw()
 	statuses.items = Body.statuses(me) if me.alive() else []
+	# Riding: the dashboard comes up, and the hotbar and weapons (no use on a bike) fade back.
+	var v: Dictionary = {}
+	var w: World = me.world
+	if me.alive() and me.riding >= 0 and me.riding < w.vehicles.size():
+		v = w.vehicles[me.riding]
+	dash.update(me, v, delta)
+	hotbar.modulate.a = lerpf(1.0, 0.18, dash.k)
+	if hotbar.quiet != (dash.k > 0.0):
+		hotbar.quiet = dash.k > 0.0
+		hotbar.queue_redraw()
+	weapons.modulate.a = lerpf(1.0, 0.0, dash.k)
 	weapons.me = me
 	weapons.t = vitals.t
 	weapons.queue_redraw()
@@ -539,6 +551,8 @@ func _build_hud() -> void:
 	add_child(hud)
 	prompt_tag = PromptTag.new()
 	hud.add_child(prompt_tag)
+	dash = BikeDash.new()
+	hud.add_child(dash)
 
 	vitals = Vitals.new()
 	vitals.anchor_top = 1.0

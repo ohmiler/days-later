@@ -70,7 +70,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var r := {view = view, sx = sx, girth = girth, base = base, tip = tip, fall_dir = fall_dir,
 			zombie = zombie, closed = fall >= 1.0, hips = Vector2.ZERO, shadow = st.get("shadow", true)}
 	if st.has("anchors") and fall <= 0.0:
-		return _anchored(r, st.anchors, view)
+		return _anchored(r, st.anchors, view, st.get("lean", 0.0))
 	if st.get("rise", -1.0) >= 0.0 and fall <= 0.0:
 		r.view = Look.SIDE
 		r.sx = -1.0 if fall_dir > 0 else 1.0  # (seen side-on, the way it fell)
@@ -269,7 +269,9 @@ static func _rising(r: Dictionary, u: float, girth: float, zombie: bool) -> Dict
 # --- Anchored poses ------------------------------------------------------------------
 
 ## Sat on something with hands and feet on its holds (see build's `anchors`).
-static func _anchored(r: Dictionary, an: Dictionary, view: int) -> Dictionary:
+## `lean` bends the body forward at the hips (radians; side-on), the hands
+## staying where they hold.
+static func _anchored(r: Dictionary, an: Dictionary, view: int, lean := 0.0) -> Dictionary:
 	var seat: Vector2 = an.get("seat", Vector2(0, HIP_Y))
 	var up := seat - Vector2(0, HIP_Y)
 	r.upper = Vector2(up.x * r.sx, up.y)  # (the body is placed unmirrored; its parts are drawn mirrored)
@@ -277,6 +279,43 @@ static func _anchored(r: Dictionary, an: Dictionary, view: int) -> Dictionary:
 	var feet: Array = an.get("feet", [])
 	var hands: Array = an.get("hands", [])
 	var side := view == Look.SIDE
+	# Arms: from the shoulders (which ride with the upper body) to each hold.
+	var arms := []
+	var shs := shoulders(view, r.girth)
+	var pivot := Vector2(0, HIP_Y)  # (the upper body turns about the hips: see Look.draw_rig)
+	var holds := []
+	for i in 2:
+		holds.append((hands[i] if i < hands.size() else up + shs[i] + Vector2(0, 8)) - up)
+	if side:
+		# Lean forward as far as it takes for the hands to reach the bars (a real
+		# rider does), and if that's not enough sit further forward on the seat;
+		# then lean as much more as asked.
+		var need := 0.0
+		var slide := 0.0
+		while not _reaches(shs, holds, pivot, need, slide):
+			if need < 0.3:
+				need += 0.02
+			elif slide < 5.0:
+				slide += 0.25
+			else:
+				break
+		lean += need
+		if slide > 0.0:
+			up.x += slide
+			r.upper = Vector2(up.x * r.sx, up.y)
+			r.hips = up
+			for i in 2:
+				holds[i] -= Vector2(slide, 0)
+		if lean != 0.0:
+			r.torso = lean * r.sx
+	for i in 2:
+		var sh: Vector2 = shs[i]
+		var hand: Vector2 = holds[i]
+		if side and lean != 0.0:
+			hand = pivot + (hand - pivot).rotated(-lean)  # (so after the lean they are still on the holds)
+		# (Elbows down side-on; out to the sides from the front or back.)
+		var pref := Vector2(0, 1) if side else Vector2(-1.0 if i == 0 else 1.0, 0)
+		arms.append(_reach_arm(sh, hand, pref, side and i == 0, {dim = 0.25 if side and i == 0 else 0.0, fist = true, idx = i}))
 	# Legs: from each hip down to its foothold, knees forward (side-on) or out.
 	r.legs = []
 	for i in 2:
@@ -284,20 +323,20 @@ static func _anchored(r: Dictionary, an: Dictionary, view: int) -> Dictionary:
 		var foot: Vector2 = feet[i] if i < feet.size() else hip + Vector2(0, -HIP_Y)
 		var pref := Vector2.RIGHT if side else Vector2(-1.0 if i == 0 else 1.0, 0)
 		r.legs.append(_leg(hip, foot, side and i == 0, pref, {type = "limb", shoe = "rect", e = 0.0}))
-	# Arms: from the shoulders (which ride with the upper body) to each hold.
-	var arms := []
-	var shs := shoulders(view, r.girth)
-	for i in 2:
-		var sh: Vector2 = shs[i]
-		var hand: Vector2 = (hands[i] if i < hands.size() else up + sh + Vector2(0, 8)) - up
-		# (Elbows down side-on; out to the sides from the front or back.)
-		var pref := Vector2(0, 1) if side else Vector2(-1.0 if i == 0 else 1.0, 0)
-		arms.append(_reach_arm(sh, hand, pref, side and i == 0, {dim = 0.25 if side and i == 0 else 0.0, fist = true, idx = i}))
 	r.arms_back = arms.filter(func(a): return a.behind)
 	r.arms_front = arms.filter(func(a): return not a.behind)
 	r.head = Look.HEAD
 	r.front_kick = {}
 	return r
+
+
+## Would both hands reach their holds, leaning `lean` and sat `slide` further forward?
+static func _reaches(shs: Array, holds: Array, pivot: Vector2, lean: float, slide: float) -> bool:
+	for i in 2:
+		var h: Vector2 = holds[i] - Vector2(slide, 0)
+		if (shs[i] as Vector2).distance_to(pivot + (h - pivot).rotated(-lean)) > ARM - 0.2:
+			return false
+	return true
 
 
 ## Aim direction in the character's (possibly mirrored) local space.
