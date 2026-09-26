@@ -10,7 +10,8 @@ class_name Rig
 ## `st` keys (all optional except view): view [view, flip], angle, phase,
 ## moving, zombie, attack, ext, guard, weapon (draw dict), fall, fall_dir,
 ## girth, recoil, crouch, anchors, breath (a clock: standing still, the chest
-## rises and falls with it), run (0 walking .. 1 running: see RUN below).
+## rises and falls with it), run (0 walking .. 1 running: see RUN below),
+## pant (0..1 out of breath: with breath, the shoulders heave).
 ## `anchors` poses the body by where it touches something instead of by an
 ## action (with `free_arms`, only the seat and feet: the arms fight or hold a
 ## weapon as they would standing): {seat, hands: [far, near], feet: [far, near]}, in the same space
@@ -66,6 +67,8 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var sx := -1.0 if vf[1] else 1.0
 	var s := sin(phase) if moving else 0.0  # walk cycle, -1..1
 	var c := cos(phase) if moving else 0.0  # (where in the cycle: a foot on its way forward or back)
+	if zombie and breed == "runner":
+		run = 1.0  # (the legs run; the rest of it is hunched, see below)
 	if not moving:
 		run = 0.0
 	var bob := absf(s) * lerpf(1.0, RUN.bob, run)  # running: up off the ground between strides
@@ -106,8 +109,13 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	# so the body stays on its legs instead of sliding off them.
 	var tilt := 0.13 if zombie else 0.0
 	var roll := 0.0
-	tilt += RUN.lean * run  # running: leaning into it
-	crouch += RUN.sink * run
+	if not zombie:
+		tilt += RUN.lean * run  # running: leaning into it
+		crouch += RUN.sink * run
+	var pant: float = st.get("pant", 0.0)  # out of breath: the shoulders heave
+	if pant > 0.0 and fall <= 0.0:
+		bob += (sin(st.get("breath", 0.0) * 4.5) * 0.5 + 0.5) * 0.7 * pant
+		tilt += 0.07 * pant
 	# (Only a little for a punch: the shoulder turns into it instead, see _fist_arms.)
 	var lunge := Vector2.from_angle(angle) * Vector2(0.8, 0.5) * ext if attack in [Look.PUNCH_L, Look.PUNCH_R] else Vector2.ZERO
 	if attack == Look.KICK:
@@ -145,7 +153,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	# A falling body's arms go limp, even a zombie's.
 	var arms: Array
 	if zombie and fall <= 0.0 and breed == "runner" and moving and bite < 0.0:
-		arms = _idle_arms(view, s * 1.8, girth)  # sprinting, arms pumping, like it still remembers how to run
+		arms = _idle_arms(view, s, girth, 1.0, true)  # running, arms pumping and clawing ahead, like it still remembers how
 		for a in arms:
 			a.merge({sleeve_dark = 0.1, skin_dark = 0.1}, true)
 	elif zombie and fall <= 0.0:
@@ -470,16 +478,18 @@ static func _arm(sh: Vector2, elbow: Vector2, hand: Vector2, behind: bool, extra
 ## Relaxed arms, swinging opposite to the legs. Running (`run` toward 1) the
 ## elbows bend to a right angle and the fists pump, forward up to the chest
 ## and back past the hip.
-static func _idle_arms(view: int, s: float, girth := 1.0, run := 0.0) -> Array:
+static func _idle_arms(view: int, s: float, girth := 1.0, run := 0.0, claw := false) -> Array:
 	var shs := shoulders(view, girth)
 	var out := []
-	var fist := {fist = true} if run > 0.5 else {}
+	var fist := {fist = true} if run > 0.5 and not claw else {}
 	if view == Look.SIDE:
 		for i in 2:
 			var behind := i == 0
 			var sw := s if behind else -s
 			var hand: Vector2 = shs[i] + Vector2(sw * 4.2 + 0.6, 8.2)
 			hand = hand.lerp(shs[i] + Vector2(sw * RUN.pump + 0.5, 6.2 - maxf(0.0, sw) * 2.6), run)
+			if claw:
+				hand += Vector2(maxf(0.0, sw) * 2.4, -maxf(0.0, sw) * 0.8)  # the leading hand reaches for you
 			var pref := _elbow_pref(view, i).lerp(Vector2(-1.0, 0.5), run)  # (the elbow goes back, not out)
 			var extra := {dim = 0.25 if behind else 0.0}
 			extra.merge(fist)
@@ -727,7 +737,7 @@ const BLEND_TIME := 0.1  # seconds
 static func pose_kind(st: Dictionary) -> Array:
 	var fight: bool = st.get("attack", Look.NONE) != Look.NONE or st.get("guard", false) 			or not st.get("weapon", {}).is_empty() or not st.get("weapon_l", {}).is_empty()
 	return [fight, st.get("weapon", {}).get("kind", ""), st.get("weapon_l", {}).get("kind", ""),
-			st.get("moving", false), st.get("crouch", 0.0) > 0.0, st.get("aiming", false)]
+			st.get("moving", false), st.get("crouch", 0.0) > 0.0, st.get("aiming", false), st.has("anchors")]
 
 
 ## Build `st`'s rig, eased in from what this character last showed. `mem` is the
@@ -736,7 +746,7 @@ static func pose_kind(st: Dictionary) -> Array:
 ## change the whole drawing.
 static func build_eased(st: Dictionary, lk: Dictionary, mem: Dictionary, now: float) -> Dictionary:
 	var r := build(st, lk)
-	if st.get("fall", 0.0) > 0.0 or st.has("anchors"):
+	if st.get("fall", 0.0) > 0.0 or (st.has("anchors") and not st.has("ease")):
 		mem.clear()
 		return r
 	var kind := pose_kind(st)
@@ -746,10 +756,14 @@ static func build_eased(st: Dictionary, lk: Dictionary, mem: Dictionary, now: fl
 	elif mem.get("kind", []) != kind:
 		mem.from = mem.shown  # (mid-ease too: carry on from where it had got to)
 		mem.t0 = now
+		# How long: as `ease` asks going into a pose (bending over, winded), a
+		# little longer than usual coming back out of one.
+		mem.dur = st.get("ease", BLEND_TIME * 2.0 if mem.get("eased", false) else BLEND_TIME)
+	mem.eased = st.has("ease")
 	mem.kind = kind
 	mem.seen = seen
 	if mem.has("from"):
-		var k := (now - (mem.t0 as float)) / BLEND_TIME
+		var k := (now - (mem.t0 as float)) / (mem.get("dur", BLEND_TIME) as float)
 		if k >= 1.0:
 			mem.erase("from")
 		else:
@@ -766,6 +780,7 @@ static func blend(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
 	for key in ["upper", "head", "hips"]:
 		if a.has(key) and b.has(key):
 			out[key] = (a[key] as Vector2).lerp(b[key], k)
+	out.torso = lerpf(a.get("torso", 0.0), b.get("torso", 0.0), k)  # (bending over, or straightening up)
 	var was := {}
 	for arm in a.arms_back + a.arms_front:
 		was[arm.idx] = arm

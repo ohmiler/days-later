@@ -25,6 +25,7 @@ func run() -> void:
 	for f in 8:
 		poses.append({moving = true, phase = f / 8.0 * TAU, run = 1.0})
 		poses.append({moving = true, phase = f / 8.0 * TAU, run = 0.5})
+		poses.append({moving = true, phase = f / 8.0 * TAU, run = 1.0, pant = 1.0, breath = f * 0.7})
 	for u in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]:
 		poses.append({zombie = true, rise = u, fall_dir = 1.0})
 		poses.append({rise = u, fall_dir = -1.0})
@@ -187,6 +188,19 @@ func run() -> void:
 	check((kick.legs[1].foot as Vector2).y < -3.0, "the heel kicks up behind (foot at %.1f)" % (kick.legs[1].foot as Vector2).y)
 	var elbow := func(a): return (a.hand as Vector2).distance_to(a.sh)
 	check(elbow.call(_arm_by_idx(runs, 1)) < elbow.call(_arm_by_idx(walk, 1)) - 1.5, "the arms bend at the elbow")
+	var zr := Rig.build({view = [Look.SIDE, false], moving = true, phase = -PI / 4, zombie = true, breed = "runner"}, {})
+	check((zr.legs[1].foot as Vector2).y < -3.0 and zr.torso > 0.25, "a runner zombie runs the same way, hunched (foot %.1f, bend %.2f)" % [(zr.legs[1].foot as Vector2).y, zr.torso])
+
+	# Winded after a run: bending over to the knees takes a moment, not one frame.
+	var wmem := {}
+	var going := {view = [Look.SIDE, false], moving = true, phase = 1.2, run = 1.0}
+	var bent := {view = [Look.SIDE, false], anchors = {seat = Vector2(0, Rig.HIP_Y + 0.8), hands = [Vector2(2.4, -7.6), Vector2(3.2, -7.6)]},
+			lean = 0.12, ease = 0.4}
+	var r0 := Rig.build_eased(going, {}, wmem, 0.0)
+	var wmid := Rig.build_eased(bent, {}, wmem, 0.5)
+	wmid = Rig.build_eased(bent, {}, wmem, 0.7)
+	var wend := Rig.build_eased(bent, {}, wmem, 1.0)
+	check(wmid.torso > r0.torso + 0.01 and wmid.torso < wend.torso - 0.01, "bending over when winded eases in (%.2f -> %.2f -> %.2f)" % [r0.torso, wmid.torso, wend.torso])
 
 
 func _arm_by_idx(r: Dictionary, i: int) -> Dictionary:

@@ -834,8 +834,8 @@ func _draw() -> void:
 		var side: bool = view[0] == Look.SIDE
 		var pant := sin(Time.get_ticks_msec() * 0.012) * 0.5
 		var hands := [Vector2(2.4, -7.6), Vector2(3.2, -7.6)] if side else [Vector2(-2.8, -6.8), Vector2(2.8, -6.8)]
-		Look.draw(self, {view = view, anchors = {seat = Vector2(0, Rig.HIP_Y + 0.8 + pant), hands = hands},
-				lean = 0.12 + pant * 0.05}, look)
+		Look.draw_eased(self, {view = view, anchors = {seat = Vector2(0, Rig.HIP_Y + 0.8 + pant), hands = hands},
+				lean = 0.12 + pant * 0.05, ease = 0.4}, look, _pose)  # (bending over bit by bit, not in one frame)
 	else:
 		_draw_standing(ext, wdef, ldef)
 	Look.lift = Vector2.ZERO
@@ -846,6 +846,13 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO)
 
 
+## How out of breath it looks on the move (0..1): spent, or nearly.
+func _pant() -> float:
+	if not alive() or riding >= 0:
+		return 0.0
+	return 1.0 if exhausted else clampf((30.0 - stamina) / 20.0, 0.0, 1.0)
+
+
 ## Out of breath (nearly spent, or spent) and standing about.
 func _winded() -> bool:
 	return alive() and not moving and not aiming and riding < 0 and (exhausted or stamina < 22.0) 			and (anim == Look.NONE or anim_t > 1.2)
@@ -854,5 +861,5 @@ func _winded() -> bool:
 func _draw_standing(ext: float, wdef: Dictionary, ldef: Dictionary) -> void:
 	Look.draw_eased(self, {view = view, angle = aim.angle(), phase = phase * (0.6 if sneak else 1.0), moving = moving and ext == 0.0,
 			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = anim != Look.NONE and anim_t < 1.2,
-			crouch = 3.0 if sneak else 0.0, run = run_k, weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = aiming,
+			crouch = 3.0 if sneak else 0.0, run = run_k, pant = _pant(), weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = aiming,
 			breath = Time.get_ticks_msec() * 0.0016 + get_instance_id() % 7}, look, _pose)
