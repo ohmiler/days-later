@@ -4,6 +4,8 @@ extends Node2D
 ## player and interpolate everyone else toward the server snapshot.
 
 const SPEED := 55.0  # walking; zombies shamble at 25-38, runners at 64, so only sprinting outruns those
+const CRAWL_SPEED := 0.3  # on hands and knees, a fraction of walking
+const ROOF_SPEED := 0.5  # careful steps up on a car roof
 const RADIUS := 5.0
 const MAX_HP := 100.0
 const RESPAWN_TIME := 5.0
@@ -52,6 +54,8 @@ var on_roof := false  # up on the shophouse roofs: zombies can't follow
 var up := false  # upstairs in a shophouse (World.upper): zombies can follow, by the stairs
 var lift := 0.0  # current drawn height above the street (eases between roofs)
 var _pose := {}  # what the body last showed, for easing between poses (Rig.build_eased)
+var _ghost: Node2D  # your own outline over whatever hides you (under a bus), on your screen only
+var _ghost_on := false  # it was drawn last frame (so it's wiped the frame you come out)
 var step_t := 0.0  # server: time to the next footstep noise
 var bitten := false  # server: set by a zombie bite, handled by main
 var turned := false  # died of the infection and got back up as a zombie
@@ -91,6 +95,21 @@ var bite_where := ""  # server: where the last bite landed, and how much of it w
 var bite_guard := 0.0
 var phase := 0.0
 var pace := 0.0  # how fast the body is seen to go (px/s, smoothed): every peer, from movement
+var vault_from := Vector2.ZERO  # a running jump under way (every peer, from Actions.fx_vault)
+var vault_to := Vector2.ZERO
+var vault_t := 0.0
+var vault_dur := 0.0  # 0: not jumping
+var vault_h := 0.0  # how high the arc goes (over a car, higher)
+var vault_h0 := 0.0  # how high it starts (jumping down off a car roof)
+var climb_from := Vector2.ZERO  # climbing up onto a car roof (every peer, from Actions.fx_climb)
+var climb_to := Vector2.ZERO
+var climb_h := 0.0
+var climb_t := 0.0
+var climb_dur := 0.0  # 0: not climbing
+var prone := false  # down on hands and knees, crawling (V): slow, silent, hard to spot, fits under a bus
+var grabbed_by := -1  # a zombie (zid) has hold of you: no moving or fighting, only struggling (every peer: >= 0)
+var grab_t := 0.0  # server: time before it bites
+var struggle := 0.0  # 0..1 toward breaking free (every peer, for the bar)
 var run_k := 0.0  # 0 walking .. 1 running, from pace: the stride changes with it (Rig RUN)
 var sleeping := false  # lying on a bed: can't move, heals, the night goes faster
 var bed := -1  # the bed (container id) this survivor calls home: where they wake after dying
@@ -198,11 +217,11 @@ func set_attack_input(punch: bool, kick: bool) -> void:
 
 
 func wants_punch() -> bool:
-	return punching or punch_buf > 0.0
+	return (punching or punch_buf > 0.0) and not prone and grabbed_by < 0
 
 
 func wants_kick() -> bool:
-	return kicking or kick_buf > 0.0
+	return (kicking or kick_buf > 0.0) and not prone and grabbed_by < 0
 
 
 ## Server only.
@@ -220,6 +239,8 @@ func server_tick(delta: float) -> void:
 			infection = 0.0
 			bleeding = false
 			stamina = 100.0
+			grabbed_by = -1
+			struggle = 0.0
 			warned.clear()
 			wounds.clear()  # a new survivor, unhurt
 			body_dirty = true
@@ -234,23 +255,72 @@ func server_tick(delta: float) -> void:
 		if move.length() > 0.1 or punching or kicking:
 			stand_up()
 		return
+	if grabbed_by >= 0:
+		var zs = get_parent().get("zombies")
+		if zs == null or not zs.has(grabbed_by):
+			grabbed_by = -1  # (whatever had you is gone)
+		else:
+			return  # held fast (struggling: Actions.req_struggle)
+	if vaulting():
+		vault_t += delta
+		position = vault_to if not vaulting() else vault_from.lerp(vault_to, vault_t / vault_dur)
+		net_pos = position
+		return
 	if getup_t > 0.0:
 		getup_t -= delta  # getting to your feet first
 		return
 	if on_car >= 0:
+		# Up on a roof: walk about on it, never off the edge (Space jumps down).
 		car_t += delta
-		if move.length() > 0.1 and car_t > 0.4:
-			get_parent().actions.jump_off_car(self, move)  # a step off the roof is a jump
+		if move.length() > 0.1 and on_car < world.street_props.size():
+			position = StreetProp.roof_clamp(world.street_props[on_car], position + move.limit_length(1.0) * SPEED * ROOF_SPEED * delta)
 		return
 	if riding >= 0:
 		return  # the bike moves them (Vehicles.server_tick)
-	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof, false, up)
+	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof, false, up, prone)
+
+
+## The way the body faces: where you aim, or, held by a zombie, at it.
+func face() -> Vector2:
+	if grabbed_by >= 0:
+		var zs = get_parent().get("zombies")
+		if zs != null and zs.has(grabbed_by):
+			var to: Vector2 = zs[grabbed_by].position - position
+			if to.length() > 0.5:
+				return to
+	return aim
+
+
+## Under a bus, a songthaew, a truck (World.is_under), even partly: hidden,
+## and no room to stand up (standing, you'd be inside it).
+func under_vehicle() -> bool:
+	return prone and not up and not on_roof and world != null and not world.can_stand(position, RADIUS)
+
+
+## In the middle of a running jump (see Actions.req_jump).
+func vaulting() -> bool:
+	return vault_dur > 0.0 and vault_t < vault_dur
+
+
+## How high off the ground the jump has them now.
+func vault_lift() -> float:
+	if not vaulting():
+		return 0.0
+	var k := clampf(vault_t / vault_dur, 0.0, 1.0)
+	return sin(k * PI) * vault_h + vault_h0 * (1.0 - k * k)  # (off a roof: falling faster as it goes)
+
+
+## Climbing up onto a car roof (held at the top until the server has you up there).
+func climbing() -> bool:
+	return climb_dur > 0.0 and on_car < 0 and climb_t < climb_dur + 0.6
 
 
 ## Sprinting is faster; a bad infection drags your feet.
 func speed_mult() -> float:
 	var m := 1.0
-	if sneak:
+	if prone:
+		m = CRAWL_SPEED
+	elif sneak:
 		m = 0.5
 	elif sprint and not exhausted and stamina > 0.0 and not Body.sprained(wounds):
 		m = 1.75
@@ -599,6 +669,12 @@ func set_appearance(code: int) -> void:
 
 
 func _ready() -> void:
+	_ghost = Node2D.new()
+	_ghost.z_as_relative = false
+	_ghost.z_index = 6  # (over the vehicles)
+	_ghost.modulate = Color(0.85, 0.95, 1.0, 0.42)
+	_ghost.draw.connect(_draw_ghost)
+	add_child(_ghost)
 	if app_code < 0:
 		# Until the player's chosen look arrives, pick one from the peer id.
 		var rng := RandomNumberGenerator.new()
@@ -635,7 +711,11 @@ func _process(delta: float) -> void:
 	if down:
 		_rest_lying = sleeping
 	rest_k = move_toward(rest_k, 1.0 if down else 0.0, delta / (LIE_TIME if _rest_lying else SIT_TIME))
-	if not multiplayer.is_server():
+	if vaulting() and not multiplayer.is_server():
+		# In the air: along the jump, on every screen (the server says where it lands).
+		vault_t += delta
+		position = vault_from.lerp(vault_to, minf(1.0, vault_t / vault_dur))
+	elif not multiplayer.is_server():
 		if is_local:
 			# Trust local prediction, but drift toward the server and snap on big errors.
 			if position.distance_to(net_pos) > (120.0 if riding >= 0 else 40.0):  # a bike outruns the snapshots
@@ -654,13 +734,18 @@ func _process(delta: float) -> void:
 	phase = phase + step * lerpf(0.3, 0.19, run_k) if moving else 0.0  # longer strides (longer still running)
 	if moving and floor(phase / PI) != floor(before / PI) and alive() and get_parent().get("in_game"):
 		_footstep()
+	if climb_dur > 0.0:
+		climb_t += delta
+		if on_car >= 0:
+			lift = climb_h  # (up: carry on from where the climb left you, no drop)
+			climb_dur = 0.0
 	var want_lift: float = world.roof_height(position) if on_roof else (BuildingProp.GROUND_H if up else 0.0)
 	if on_car >= 0 and on_car < world.street_props.size():
 		want_lift = StreetProp.roof_spot(world.street_props[on_car])[1]
 	lift = lerpf(lift, want_lift, minf(1.0, 12.0 * delta))
 	night_eyes.position = Look.CHEST + Vector2(0, -lift)
-	z_index = 2 if on_roof or lift > 1.0 else 1  # above the buildings while up there
-	view = Look.pick_view(aim.angle(), view)
+	z_index = 2 if on_roof or lift > 1.0 or vaulting() or climbing() else 1  # above the buildings while up there (and over a car mid-jump)
+	view = Look.pick_view(face().angle(), view)
 	if hitstop > 0.0:
 		hitstop -= delta  # the blow landed: hold the pose a beat
 	else:
@@ -799,6 +884,10 @@ func _draw_sat(hip_y: float, k: float, face: int, floor_sit: bool) -> void:
 
 
 func _draw() -> void:
+	var ghost := is_local and alive() and under_vehicle()
+	if ghost or _ghost_on:
+		_ghost.queue_redraw()  # (every frame while under; once more after, to clear it)
+	_ghost_on = ghost
 	if not alive():
 		if turned:
 			return  # the body got up and walked off as a zombie
@@ -828,9 +917,17 @@ func _draw() -> void:
 		# Punches use a quick out-and-back curve; kicks and swings pass their raw timeline.
 		ext = sin(anim_t / dur * PI) if anim in [Look.PUNCH_L, Look.PUNCH_R] else anim_t / dur
 	# Sneaking: crouched low, a slow creep.
-	Look.lift = Vector2(0, -lift)
+	Look.lift = Vector2(0, -lift - vault_lift())  # (up in the air mid-jump)
+	if grabbed_by >= 0:
+		Look.lift.x = sin(Time.get_ticks_msec() * 0.045) * 0.7  # (twisting to get free)
 	Look.muzzle = null
-	if _winded() and ext == 0.0 and wdef.get("draw", {}).is_empty() and ldef.get("draw", {}).is_empty():
+	if climbing():
+		_draw_climb()
+	elif vaulting():
+		_draw_leap()
+	elif prone:
+		_draw_crawl()
+	elif _winded() and ext == 0.0 and wdef.get("draw", {}).is_empty() and ldef.get("draw", {}).is_empty():
 		# Out of breath and standing still: bent over, hands on the knees, panting.
 		var side: bool = view[0] == Look.SIDE
 		var pant := sin(Time.get_ticks_msec() * 0.012) * 0.5
@@ -844,6 +941,10 @@ func _draw() -> void:
 		muzzle = Look.muzzle  # (the flash of a shot comes from here)
 	draw_set_transform(Vector2(0, -lift))
 	Look.draw_hp(self, hp / MAX_HP)
+	if grabbed_by >= 0:
+		# Held: how close to breaking free (friends can see it too).
+		draw_rect(Rect2(-9, -39, 18, 3), Color(0.1, 0.05, 0.05, 0.85))
+		draw_rect(Rect2(-9, -39, 18 * clampf(struggle, 0.0, 1.0), 3), Color("e8c040"))
 	draw_set_transform(Vector2.ZERO)
 
 
@@ -854,13 +955,104 @@ func _pant() -> float:
 	return 1.0 if exhausted else clampf((30.0 - stamina) / 20.0, 0.0, 1.0)
 
 
+## On hands and knees: side-on the body leans right over, hands out ahead and
+## knees under the hips, each hand and knee reaching forward in turn as you
+## go; from the front or back, low down between the hands.
+func _draw_crawl() -> void:
+	# Always side-on (the game's figures are drawn from the side; a body flat
+	# on the ground seen head-on doesn't read), facing left or right.
+	var a := sin(phase * 1.3) if moving else 0.0
+	Look.draw_eased(self, {view = [Look.SIDE, face().x < 0.0], anchors = crawl_anchors(a), lean = CRAWL_LEAN, ease = 0.35}, look, _pose)
+
+
+## A low crawl side-on, `a` (-1..1) through the stride: flat to the ground,
+## head up, forearms out ahead (one reaching as the other pulls back) and the
+## knee on the other side drawn up to push.
+const CRAWL_LEAN := 1.26
+static func crawl_anchors(a: float) -> Dictionary:
+	return {seat = Vector2(-5.5, -3.6 + absf(a) * 0.25), head = Vector2(-3.5, 1.5),  # (head up, eyes ahead)
+			hands = [Vector2(12.0 + a * 2.4, -0.5), Vector2(12.0 - a * 2.4, -0.5)],
+			feet = [Vector2(-15.0 + maxf(0.0, -a) * 4.0, -0.4 - maxf(0.0, -a) * 1.4), Vector2(-15.0 + maxf(0.0, a) * 4.0, -0.4 - maxf(0.0, a) * 1.4)]}
+
+
+## Climbing up onto a car: hands up on the edge of the roof, a knee up onto
+## it, then the body pulls up and over onto the top (seen from the side if the
+## car is beside you, else from the front or back).
+func _draw_climb() -> void:
+	var k := clampf(climb_t / climb_dur, 0.0, 1.0)
+	var rise := smoothstep(0.3, 0.95, k)
+	var up := climb_h * rise
+	var off := (climb_to - climb_from) * smoothstep(0.45, 1.0, k)
+	var roof := -(climb_h - up)  # the roof's top, from the feet (y)
+	var grip := maxf(roof - 0.5, -26.0)  # (as high as the hands reach)
+	var to := climb_to - climb_from
+	var side := absf(to.x) > absf(to.y) * 0.7
+	var vf := [Look.SIDE, to.x < 0.0] if side else [Look.BACK if to.y < 0.0 else Look.FRONT, false]
+	var dip := sin(clampf(k / 0.3, 0.0, 1.0) * PI) * 1.4  # (a bend of the knees to spring from)
+	var step := maxf(roof, -7.0) if k > 0.3 else 0.0  # the knee up onto the side
+	var anchors := {}
+	if side:
+		anchors = {seat = Vector2(-0.5, Rig.HIP_Y + dip), hands = [Vector2(3.5, grip), Vector2(4.5, grip)],
+				feet = [Vector2(-1.0, 0.0), Vector2(3.0, step)]}
+	else:
+		anchors = {seat = Vector2(0, Rig.HIP_Y + dip), hands = [Vector2(-3.2, grip), Vector2(3.2, grip)],
+				feet = [Vector2(-1.8, 0.0), Vector2(1.8, step)]}
+	Look.lift = Vector2(off.x, off.y - up - lift)
+	Look.draw(self, {view = vf, anchors = anchors, lean = 0.25 * sin(k * PI)}, look)
+	Look.lift = Vector2.ZERO
+
+
+## A jump, start to finish in the time it already takes (nothing is added
+## before it: the spring is the first few frames of the arc): knees bent and
+## arms back to push off, knees tucked and arms reaching ahead in the air,
+## legs reaching down to land.
+func _draw_leap() -> void:
+	var k := clampf(vault_t / vault_dur, 0.0, 1.0)
+	var to := vault_to - vault_from
+	var side := absf(to.x) >= absf(to.y) * 0.7
+	var vf := [Look.SIDE, to.x < 0.0] if side else [Look.BACK if to.y < 0.0 else Look.FRONT, false]
+	var keys := leap_keys(side)
+	var a: Dictionary = keys[0] if k < 0.5 else keys[1]
+	var b: Dictionary = keys[1] if k < 0.5 else keys[2]
+	var u := smoothstep(0.0, 1.0, clampf(k / 0.2, 0.0, 1.0)) if k < 0.5 else smoothstep(0.0, 1.0, clampf((k - 0.75) / 0.25, 0.0, 1.0))
+	var pose := {seat = (a.seat as Vector2).lerp(b.seat, u), hands = [], feet = []}
+	for i in 2:
+		pose.hands.append((a.hands[i] as Vector2).lerp(b.hands[i], u))
+		pose.feet.append((a.feet[i] as Vector2).lerp(b.feet[i], u))
+	Look.draw(self, {view = vf, anchors = pose, lean = lerpf(a.lean, b.lean, u)}, look)
+
+
+## The jump's three moments (push off, in the air, landing) as anchor poses,
+## side-on (facing +x) or from the front/back.
+static func leap_keys(side: bool) -> Array:
+	if side:
+		return [{seat = Vector2(-0.5, Rig.HIP_Y + 1.4), hands = [Vector2(-4.0, -11.0), Vector2(-3.0, -10.5)], feet = [Vector2(-4.0, 0.0), Vector2(2.5, -1.5)], lean = 0.2},
+				{seat = Vector2(0.0, Rig.HIP_Y), hands = [Vector2(6.0, -17.0), Vector2(5.0, -16.0)], feet = [Vector2(-2.5, -4.0), Vector2(3.5, -5.5)], lean = 0.15},
+				{seat = Vector2(0.0, Rig.HIP_Y + 1.6), hands = [Vector2(5.0, -12.5), Vector2(4.0, -12.0)], feet = [Vector2(-1.5, 0.0), Vector2(2.5, 0.0)], lean = 0.12}]
+	return [{seat = Vector2(0, Rig.HIP_Y + 1.4), hands = [Vector2(-4.5, -10.0), Vector2(4.5, -10.0)], feet = [Vector2(-1.8, 0.0), Vector2(1.8, -1.0)], lean = 0.0},
+			{seat = Vector2(0, Rig.HIP_Y), hands = [Vector2(-5.0, -19.0), Vector2(5.0, -19.0)], feet = [Vector2(-2.2, -4.5), Vector2(2.2, -3.5)], lean = 0.0},
+			{seat = Vector2(0, Rig.HIP_Y + 1.6), hands = [Vector2(-5.0, -13.0), Vector2(5.0, -13.0)], feet = [Vector2(-2.0, 0.0), Vector2(2.0, 0.0)], lean = 0.0}]
+
+
+## Under a bus or a truck: your own body, see-through, drawn over it so you
+## can tell where you are and which way you face (no one else sees it).
+func _draw_ghost() -> void:
+	if not (is_local and under_vehicle()) or not _pose.has("shown"):
+		return  # (and a ghost drawn before is wiped: nothing drawn this time)
+	var r: Dictionary = _pose.shown.duplicate()
+	r.shadow = false
+	Look.lift = Vector2.ZERO
+	Look.draw_rig(_ghost, r, look)
+
+
 ## Out of breath (nearly spent, or spent) and standing about.
 func _winded() -> bool:
 	return alive() and not moving and not aiming and riding < 0 and (exhausted or stamina < 22.0) 			and (anim == Look.NONE or anim_t > 1.2)
 
 
 func _draw_standing(ext: float, wdef: Dictionary, ldef: Dictionary) -> void:
-	Look.draw_eased(self, {view = view, angle = aim.angle(), phase = phase * (0.6 if sneak else 1.0), moving = moving and ext == 0.0,
-			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = anim != Look.NONE and anim_t < 1.2,
-			crouch = 3.0 if sneak else 0.0, run = run_k, pant = _pant(), weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = aiming,
+	var leap := vaulting()
+	Look.draw_eased(self, {view = view, angle = face().angle(), phase = PI * 0.5 if leap else phase * (0.6 if sneak else 1.0), moving = (moving and ext == 0.0) or leap,
+			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = (anim != Look.NONE and anim_t < 1.2) or grabbed_by >= 0,
+			crouch = 3.0 if sneak else 0.0, run = 1.0 if leap else run_k, pant = _pant(), weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = aiming,
 			breath = Time.get_ticks_msec() * 0.0016 + get_instance_id() % 7}, look, _pose)

@@ -52,6 +52,7 @@ func frames(n := 1) -> void:
 ## A fresh game hosted on `port`, with its zombies cleared out of the way so
 ## each test places exactly the ones it wants.
 func host(port: int, resume := false, clear_zombies := true) -> void:
+	Zombie.grab_chance = 0.0  # (a lunge bites, every time: grabbing is test_grab's, which asks for it)
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
 	current_scene = main

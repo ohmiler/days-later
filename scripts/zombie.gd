@@ -13,6 +13,13 @@ const KINDS := {
 }
 
 const GROUND_BITE_CD := 1.6  # a zombie on the ground snaps at your legs this often
+## A lunge that lands can grab hold instead of biting at once: you can't move
+## or fight, only struggle (Actions.req_struggle) before it bites, harder.
+## Hit by anyone else, knocked down or killed, it lets go.
+static var grab_chance := 0.4  # (a var so tests about biting can turn grabbing off)
+const GRAB_TIME := 2.2
+const GRAB_BITE := 1.3  # the bite when it had hold of you
+var grab_peer := 0  # server: the player it has hold of (0: nobody)
 
 var world: World
 var players: Dictionary  # shared reference to main's peer_id -> Player
@@ -90,7 +97,9 @@ func server_tick(delta: float) -> void:
 	attack_cd -= delta
 	repath -= delta
 	investigate_t -= delta
-	flags = (1 if lunge_t > 0.0 else 0) | (2 if down_t > 0.0 else 0) | (4 if up else 0)
+	flags = (1 if lunge_t > 0.0 else 0) | (2 if down_t > 0.0 else 0) | (4 if up else 0) | (8 if grab_peer != 0 else 0)
+	if grab_peer != 0 and (down_t > 0.0 or stun > 0.0):
+		release()  # (knocked over or hit: it lets go)
 	if down_t > 0.0:
 		down_t -= delta
 		# Flat on the ground it still snaps at ankles that come too close.
@@ -105,10 +114,17 @@ func server_tick(delta: float) -> void:
 		stun -= delta
 		lunge_t = 0.0  # a hit knocks it out of its lunge
 		return
+	if grab_peer != 0:
+		_hold(delta)
+		return
 	if lunge_t > 0.0:
 		lunge_t -= delta
 		if lunge_t <= 0.0 and target and target.alive() and not target.on_roof and target.on_car < 0 and target.up == up and position.distance_to(target.position) < 16.0:
-			target.bite(bite_damage(), target.bite_part(position, false))
+			var arms := 2 - int(missing & Look.LOST_ARM_L != 0) - int(missing & Look.LOST_ARM_R != 0)
+			if arms > 0 and target.grabbed_by < 0 and not target.vaulting() and not target.under_vehicle() and randf() < grab_chance:
+				grab(target)
+			else:
+				target.bite(bite_damage(), target.bite_part(position, false))
 		return
 	if repath <= 0:
 		repath = randf_range(0.4, 0.7)  # spread out, so they do not all think on the same frame
@@ -206,6 +222,41 @@ func _clear_line(to: Vector2) -> bool:
 	return world.ray_length(position + Vector2(0, -4), d.normalized(), d.length()) >= d.length() - 4.0
 
 
+## Get hold of `p`: they can't move or fight until they struggle free.
+func grab(p: Player) -> void:
+	grab_peer = p.peer_id
+	p.grabbed_by = zid
+	p.grab_t = GRAB_TIME
+	p.struggle = 0.0
+	p.prone = false
+	p.stand_up()
+	if get_parent() is Main:
+		get_parent()._toast(p, "โดนจับ! กด Space หรือคลิกรัว ๆ ให้หลุด")
+
+
+## Holding someone: face them; if they haven't got free in time, bite.
+func _hold(delta: float) -> void:
+	var p: Player = players.get(grab_peer)
+	if p == null or not p.alive() or p.grabbed_by != zid:
+		release()
+		return
+	facing = (p.position - position).angle()
+	p.grab_t -= delta
+	if p.grab_t <= 0.0:
+		p.bite(bite_damage() * GRAB_BITE, p.bite_part(position, false))
+		release()
+		attack_cd = 1.5
+
+
+## Let go of whoever it has hold of.
+func release() -> void:
+	var p: Player = players.get(grab_peer)
+	if p and p.grabbed_by == zid:
+		p.grabbed_by = -1
+		p.struggle = 0.0
+	grab_peer = 0
+
+
 ## Fewer arms, less to grab you with.
 func bite_damage() -> float:
 	var arms := 2 - int(missing & Look.LOST_ARM_L != 0) - int(missing & Look.LOST_ARM_R != 0)
@@ -296,7 +347,11 @@ func _nearest_player() -> Player:
 		var d := position.distance_to(p.position)
 		var lit := world.is_lit(p.position) or (p.riding >= 0 and p.riding < world.vehicles.size() and Vehicles.headlight_on(world.vehicles[p.riding], world))  # (a headlight shows you up)
 		var reach := SIGHT_DAY if lit else SIGHT_DARK
-		if p.sneak:
+		if p.under_vehicle():
+			reach = SENSE  # (under a bus: only right up close does it know you're there)
+		elif p.prone:
+			reach *= 0.35  # flat on the ground
+		elif p.sneak:
 			reach *= 0.5
 		elif p.sitting != -1 or p.sleeping:
 			reach *= 0.65  # (low down, harder to spot)
@@ -464,7 +519,7 @@ func _maybe_redraw(delta: float) -> void:
 		_drawn_still = false
 	if not on:
 		return
-	var busy := moving or hit_t > 0.0 or atk_t >= 0.0 or down_el >= 0.0 or up_el >= 0.0 or scream_t > 0.0 or alert_t > 0.0
+	var busy := moving or flags & 8 != 0 or hit_t > 0.0 or atk_t >= 0.0 or down_el >= 0.0 or up_el >= 0.0 or scream_t > 0.0 or alert_t > 0.0
 	if not busy:
 		if not _drawn_still or hp != _drawn_hp:
 			_drawn_still = true
@@ -495,6 +550,8 @@ func _draw() -> void:
 			hit = Vector2(hit_dir.x * (-1.0 if view[1] else 1.0), hit_dir.y) * 1.8 * snap, scream = 1.0 - scream_t if scream_t > 0.0 else 0.0}
 	if atk_t >= 0.0:
 		st.bite = clampf(atk_t / (LUNGE + 0.2), 0.0, 1.0)
+	elif flags & 8:
+		st.bite = 0.5  # holding someone: arms out, leaning in
 	# Knocked down: falls like a body, lies there, then sits up and gets back on
 	# its feet (finishing quickly if the server lets it up before that's done).
 	if down_el >= 0.0:

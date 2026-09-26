@@ -28,6 +28,125 @@ const SEVER_CHANCE := 0.2  # a blade hit that does not kill takes an arm this of
 const COMBO_RESET := 0.9  # after this long without a blow, the next one starts the 1-2 again
 
 
+## Throwing (T): a bottle, a can, a lump of scrap, overarm toward the cursor.
+## It flies THROW_RANGE at most, stops at a wall, and lands with a noise that
+## draws zombies that haven't seen you to where it fell: glass shatters (loud,
+## and gone), anything else clatters and can be picked up again. One landing
+## on a zombie knocks it back a step.
+const THROW_RANGE := 170.0
+const THROW_COST := 3.0
+const THROW_CD := 0.6
+const THROW_NOISE := 150.0  # a can or scrap clattering down
+const SHATTER_NOISE := 200.0  # a bottle smashing: louder than a window
+var throws: Array = []  # server: [{at, t, id, item, up, from_roof}], still in the air
+
+
+## Which bag slot T throws from: the selected one if it can be thrown, else
+## the first thing in the bag that can. -1 if nothing can.
+static func throw_slot(p: Player) -> int:
+	var sel = p.inv[p.sel] if p.sel < p.inv.size() else null
+	if sel != null and Items.has_tag(sel.id, "throw"):
+		return p.sel
+	for i in p.inv.size():
+		if p.inv[i] != null and Items.has_tag(p.inv[i].id, "throw"):
+			return i
+	return -1
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_throw() -> void:
+	var p := main._sender()
+	if p == null or not p.alive() or p.shoot_cd > 0.0 or p.sleeping or p.sitting != -1 or (p.riding >= 0 and p.seat == 0) or p.grabbed_by >= 0:
+		return
+	var slot := throw_slot(p)
+	if slot < 0:
+		main._toast(p, "ไม่มีของให้ขว้าง (ขวด กระป๋อง เศษเหล็ก)")
+		return
+	var it: Dictionary = p.inv[slot]
+	var one := it.duplicate()
+	one.n = 1
+	it.n -= 1
+	if it.n <= 0:
+		p.inv[slot] = null
+	main.inventory._send_inv(p)
+	p.shoot_cd = THROW_CD
+	p.stamina = maxf(0.0, p.stamina - THROW_COST)
+	p.exert_t = EXERT_PAUSE
+	# Toward the cursor; right at a zombie if the cursor is on one.
+	var w: World = main.world
+	var want := p.aim
+	var cursor := p.position + Look.CHEST + p.aim
+	for z: Zombie in main.zombies.values():
+		if z.up == p.up and Rect2(z.position + Vector2(-8, -31), Vector2(16, 35)).has_point(cursor):
+			want = z.position - p.position
+	var dir := want.normalized() if want.length() > 0.5 else Vector2.RIGHT
+	var dist := minf(want.length(), THROW_RANGE)
+	if not p.on_roof:
+		var clear := w.ray_length(p.position, dir, dist)
+		if clear < dist:
+			dist = maxf(0.0, clear - 4.0)  # (a wall stops it, and it drops at its foot)
+	var at := p.position + dir * dist
+	var time := 0.25 + dist / 450.0
+	throws.append({at = at, t = time, id = one.id, item = one, up = p.up and not p.on_roof, from_roof = p.on_roof})
+	fx_throw.rpc(p.peer_id, p.position, at, time, one.id, p.on_roof, p.up)
+	main._make_noise(p.position, main.NOISE_WALK)
+
+
+## Server, every tick: things in the air come down.
+func tick_throws(delta: float) -> void:
+	for th in throws.duplicate():
+		th.t -= delta
+		if th.t > 0.0:
+			continue
+		throws.erase(th)
+		var at: Vector2 = th.at
+		var glass := Items.has_tag(th.id, "glass")
+		for z: Zombie in main.zombies.values():
+			if z.up == th.up and z.position.distance_to(at) < Zombie.RADIUS + 4.0:
+				var dir := (z.position - at).normalized() if z.position.distance_to(at) > 0.1 else Vector2.RIGHT
+				z.hp -= 4.0
+				z.stun = 0.4
+				fx_hit.rpc(z.zid, z.position, dir, false, 0, "", 4.0)
+				if z.hp <= 0:
+					_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0)
+				break
+		main._make_noise(at, SHATTER_NOISE if glass else THROW_NOISE)
+		fx_landed.rpc(at, glass, th.up)
+		var w: World = main.world
+		var on_roof: bool = th.from_roof and w.is_roof(w.to_cell(at))
+		if not glass and not on_roof:
+			main._spawn_pickup(at, th.item, th.up)
+
+
+@rpc("authority", "call_local", "reliable")
+func fx_throw(peer_id: int, from: Vector2, to: Vector2, time: float, id: String, from_roof: bool, up: bool) -> void:
+	var p: Player = main.players.get(peer_id)
+	if p:
+		p.play_attack(Look.PUNCH_R)  # (overarm: the throwing arm comes through like a punch)
+	var th := Thrown.new()
+	th.from = from
+	th.to = to
+	th.time = time
+	th.id = id
+	th.lift = (p.lift if p else 0.0) if from_roof else (BuildingProp.GROUND_H if up else 0.0)
+	var w: World = main.world
+	th.land_lift = w.roof_height(to) if from_roof and w.is_roof(w.to_cell(to)) else (BuildingProp.GROUND_H if up else 0.0)
+	main.add_child(th)
+	Sfx.play(main, "punch", from, -8.0, 1.4)  # (the whoosh of the arm)
+
+
+@rpc("authority", "call_local", "reliable")
+func fx_landed(at: Vector2, glass: bool, up: bool) -> void:
+	Sfx.play(main, "glass" if glass else "metal", at, 2.0 if glass else 0.0)
+	if glass and not up:
+		# Glass everywhere: bright little bits left on the ground.
+		for i in 7:
+			main.blood.append([at + Vector2(randf_range(-7, 7), randf_range(-4, 4)), randf_range(0.3, 0.7),
+					Color(0.75, 0.9, 0.85, 0.8)])
+		if main.decals:
+			main.decals.queue_redraw()
+
+
 ## The next blow from `p`'s hands: {hand, kind, stats, windup}. Swings alternate
 ## between the hands (a two-handed weapon uses both every time), starting from
 ## the right again after a pause. The server acts on it; the local player's
@@ -174,6 +293,7 @@ static func death_style(how: String) -> String:
 
 
 func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
+	z.release()
 	main.add_corpse(z.position, fall_dir, z.body_look(), death_style(how), z.up)
 	# What it wore can be taken off the body: always what a turned survivor had
 	# on, sometimes an ordinary zombie's (often worn half through).

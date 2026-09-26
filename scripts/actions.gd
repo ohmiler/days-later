@@ -55,7 +55,7 @@ func finish_climb(p: Player, id: int) -> void:
 	p.car_t = 0.0
 	p.position = StreetProp.roof_spot(rec)[0]
 	main.fx_sound.rpc("door", p.position)
-	main._toast(p, "ขึ้นมาบนหลังคารถ · ซอมบี้ปีนตามไม่ได้ แต่จะมารุม · เดินเพื่อกระโดดลง")
+	main._toast(p, "ขึ้นมาบนหลังคารถ · ซอมบี้ปีนตามไม่ได้ แต่จะมารุม · กด Space เพื่อกระโดดลง")
 
 
 const ALARM_CHANCE := 0.25  # a car banged on sets its alarm off (once)
@@ -90,6 +90,145 @@ func tick_alarms(delta: float) -> void:
 			main._make_noise(at, NOISE_ALARM)
 
 
+## Held by a zombie: every press of Space, a click or E is a shove and a
+## twist to get free. Tired, each does less. Free, the zombie staggers back.
+const STRUGGLE_STEP := 0.2
+const STRUGGLE_COST := 2.5
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_struggle() -> void:
+	var p := main._sender()
+	if p == null or not p.alive() or p.grabbed_by < 0:
+		return
+	var z: Zombie = main.zombies.get(p.grabbed_by)
+	if z == null:
+		p.grabbed_by = -1
+		return
+	p.struggle += STRUGGLE_STEP * (0.55 if p.stamina < Combat.TIRED else 1.0)
+	p.stamina = maxf(0.0, p.stamina - STRUGGLE_COST)
+	p.exert_t = Combat.EXERT_PAUSE
+	if p.struggle >= 1.0:
+		# Free: shove it off, it staggers back.
+		var away := (z.position - p.position).normalized() if z.position.distance_to(p.position) > 0.1 else Vector2.RIGHT
+		z.release()
+		z.stun = 0.9
+		z.attack_cd = 1.5
+		z.position = main.world.slide(z.position, away * 12.0, Zombie.RADIUS, false, false, z.up)
+		main.combat.fx_hit.rpc(z.zid, z.position, away, true, p.peer_id, "", 0.0)
+		main.fx_sound.rpc("kick", p.position)
+		main._toast(p, "ดิ้นหลุดแล้ว!")
+
+
+## V: down on hands and knees to crawl, or back up. Crawling is slow and
+## silent, zombies hardly see you, and you fit under a bus or a truck (where
+## they don't see you at all unless right beside you, and can't get in).
+@rpc("any_peer", "call_remote", "reliable")
+func req_prone() -> void:
+	var p := main._sender()
+	if p == null or not p.alive() or p.riding >= 0 or p.on_car >= 0 or p.sleeping or p.sitting != -1 or p.vaulting() or p.grabbed_by >= 0:
+		return
+	if p.prone and p.under_vehicle():
+		main._toast(p, "คลานออกมาก่อนค่อยลุก")
+		return
+	p.prone = not p.prone
+
+
+## Space at a run: a running jump the way you're going. Over something low in
+## the way (sandbags, a bin, the bonnet of a car: World.is_low) to the clear
+## ground beyond, or on open ground a leap of HOP (over a body, a trap, glass).
+## Zombies can't follow over: they go round.
+const HOP := 30.0
+const VAULT_REACH := 60.0  # farthest a jump carries you, over the widest thing
+const VAULT_COST := 10.0
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func req_jump() -> void:
+	var p := main._sender()
+	if p != null and p.alive() and p.on_car >= 0:
+		jump_off_car(p, p.move if p.move.length() > 0.1 else p.aim)  # (up on a car: Space gets you down)
+		return
+	if p == null or not p.alive() or p.vaulting() or p.grabbed_by >= 0 or p.riding >= 0 or p.on_car >= 0 or p.on_roof or p.up 			or p.sleeping or p.sitting != -1 or p.getup_t > 0.0:
+		return
+	if p.exhausted or p.stamina < VAULT_COST or Body.sprained(p.wounds):
+		main._toast(p, "ไม่มีแรงกระโดด" if not Body.sprained(p.wounds) else "ข้อเท้าแพลง กระโดดไม่ได้")
+		return
+	var dir := p.move.normalized() if p.move.length() > 0.1 else p.aim.normalized()
+	var landing := vault_landing(main.world, p.position, dir)
+	if landing[0] == Vector2.INF:
+		return  # (a wall, or something too high: no jump)
+	var to: Vector2 = landing[0]
+	p.stamina -= VAULT_COST
+	p.exert_t = main.combat.EXERT_PAUSE
+	var dur := 0.3 + p.position.distance_to(to) / 220.0
+	fx_vault.rpc(p.peer_id, p.position, to, dur, 7.0 if landing[1] else 4.0)
+	main._make_noise(to, main.NOISE_RUN)
+
+
+## Where a running jump from `from` along `dir` comes down, and whether it
+## went over something: [landing, over] (landing INF: can't jump that way).
+static func vault_landing(w: World, from: Vector2, dir: Vector2) -> Array:
+	var over := false
+	# Something low just ahead: the jump is over it, not short of it.
+	var need_over := false
+	var d := 4.0
+	while d <= VAULT_REACH * 0.6:
+		var c0 := w.to_cell(from + dir * d)
+		if w.is_solid(c0):
+			need_over = w.is_low(c0)
+			break
+		d += 2.0
+	d = 4.0
+	while d <= VAULT_REACH:
+		var at := from + dir * d
+		var c := w.to_cell(at)
+		if w.is_solid(c):
+			if not w.is_low(c):
+				return [Vector2.INF, false]
+			over = true
+		elif (over or (d >= HOP and not need_over)) and w.can_stand(at, Player.RADIUS):
+			# Clear of anything low under the feet on landing, too.
+			var clear := true
+			for o in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
+				if w.is_solid(w.to_cell(at + o * Player.RADIUS)):
+					clear = false
+			if clear:
+				return [at, over]
+		d += 2.0
+	return [Vector2.INF, false]
+
+
+@rpc("authority", "call_local", "reliable")
+func fx_vault(peer_id: int, from: Vector2, to: Vector2, dur: float, h: float, h0 := 0.0) -> void:
+	var p: Player = main.players.get(peer_id)
+	if p == null:
+		return
+	p.vault_from = from
+	p.vault_to = to
+	p.vault_t = 0.0
+	p.vault_dur = dur
+	p.vault_h = h
+	p.vault_h0 = h0  # (jumping down off a roof: starts that high)
+	p.lift = 0.0
+	p.climb_dur = 0.0
+	Sfx.play(main, "kick", from, -6.0, 1.3)  # (the push off)
+
+
+## Everyone sees `peer_id` climb from `from` up onto a roof `h` high at `to`,
+## over `dur` seconds (dur 0: they let go and dropped back).
+@rpc("authority", "call_local", "reliable")
+func fx_climb(peer_id: int, from: Vector2, to: Vector2, h: float, dur: float) -> void:
+	var p: Player = main.players.get(peer_id)
+	if p == null:
+		return
+	p.climb_from = from
+	p.climb_to = to
+	p.climb_h = h
+	p.climb_t = 0.0
+	p.climb_dur = dur
+
+
 ## Jump down off a car the way `dir` points, landing clear of it.
 func jump_off_car(p: Player, dir: Vector2) -> void:
 	if p.on_car < 0:
@@ -108,11 +247,10 @@ func jump_off_car(p: Player, dir: Vector2) -> void:
 			break
 	if land == Vector2.INF:
 		return
+	var h: float = StreetProp.roof_spot(rec)[1]
 	p.on_car = -1
-	p.position = land
 	p.stamina = maxf(0.0, p.stamina - JUMP_COST)
-	p.getup_t = 0.25  # (landing)
-	main.fx_sound.rpc("kick", land)
+	fx_vault.rpc(p.peer_id, p.position, land, 0.45, 4.0, h)  # (off the roof and down: the same arc as a running jump)
 	main._make_noise(land, main.NOISE_RUN)
 
 
@@ -223,7 +361,12 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 		"sleep":
 			main.survival.start_sleep(p, t.id)
 		"climb":
-			main.crafting._start(p, {kind = "climb", id = t.id}, CLIMB_TIME)
+			# (No progress bar: you see yourself climbing. Moving lets go: Crafting.server_tick.)
+			var rec: Dictionary = main.world.street_props[t.id]
+			var spot: Array = StreetProp.roof_spot(rec)
+			p.craft = {kind = "climb", id = t.id, t = CLIMB_TIME}
+			fx_climb.rpc(p.peer_id, p.position, spot[0], spot[1], CLIMB_TIME)
+			main.fx_sound.rpc("rustle", p.position)
 		"burn":
 			main.burn_corpse(p, t.id)
 		"travel":

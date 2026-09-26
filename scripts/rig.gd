@@ -355,7 +355,7 @@ static func _anchored(r: Dictionary, an: Dictionary, view: int, lean := 0.0) -> 
 		r.legs.append(_leg(hip, foot, side and i == 0, pref, {type = "limb", shoe = "rect", e = 0.0}))
 	r.arms_back = arms.filter(func(a): return a.behind)
 	r.arms_front = arms.filter(func(a): return not a.behind)
-	r.head = Look.HEAD
+	r.head = Look.HEAD + an.get("head", Vector2.ZERO)  # (moved in the body's own frame: back and down = looking up)
 	r.front_kick = {}
 	return r
 

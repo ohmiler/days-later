@@ -33,6 +33,7 @@ var in_game := false  # false while the title menu shows a backdrop city
 var backdrop_nodes: Array = []
 var player_name := ""
 var day := 1
+var jump_space := false  # this press of Space was a running jump: it doesn't kick too
 var last_kills := -1  # kills when last looked (-1: not yet, so a loaded total isn't announced as new)
 var dmg_numbers: Array = []  # [pos, text, crit, age]
 const MAX_GIBS := 40  # loose heads and arms; the oldest fade out first
@@ -539,6 +540,7 @@ func _server_tick(delta: float) -> void:
 
 	actions.tick_alarms(delta)
 	_tick_corpses(delta)
+	combat.tick_throws(delta)
 	survival._tick_horde()
 	var horde := survival.is_horde(day, time)
 	spawn_timer -= delta
@@ -557,7 +559,7 @@ func _server_tick(delta: float) -> void:
 		var ps := []
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0, p.aiming, p.seat, p.up, p.sitting, p.rest_face, p.on_car],
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0, p.aiming, p.seat, p.up, p.sitting, p.rest_face, p.on_car, p.prone, p.grabbed_by, snappedf(p.struggle, 0.05)],
 					p.app_code, p.wear_ids])
 		var zs := []
 		for z: Zombie in zombies.values():
@@ -901,7 +903,9 @@ func _process(delta: float) -> void:
 		# With a gun in hand the right button raises it to aim; without, it kicks. Space always kicks.
 		var rmb := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not over_bar and not over_gear and not blocked
 		var aiming := rmb and me.gun_hand() != ""
-		var kick := (rmb and not aiming) or (Input.is_key_pressed(KEY_SPACE) and not blocked)
+		if not Input.is_key_pressed(KEY_SPACE):
+			jump_space = false
+		var kick := (rmb and not aiming) or (Input.is_key_pressed(KEY_SPACE) and not blocked and not jump_space)
 		me.aiming = aiming
 		Input.set_default_cursor_shape(Input.CURSOR_CROSS if aiming else Input.CURSOR_ARROW)
 		me.sneak = sneak_toggle or Input.is_key_pressed(KEY_CTRL)
@@ -917,8 +921,10 @@ func _process(delta: float) -> void:
 			if me.riding >= 0 and me.seat == 0 and me.alive():
 				if Vehicles.step(me, world.vehicles[me.riding], move, delta, world) > Vehicles.BUMP:
 					shake = maxf(shake, 2.5)  # (felt at once; the server says how bad)
-			elif me.alive() and me.riding < 0 and not me.sleeping and me.sitting == -1 and me.rest_k < 0.05 and me.on_car < 0:
-				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof, false, me.up)
+			elif me.alive() and me.on_car >= 0 and me.on_car < world.street_props.size() and move.length() > 0.1:
+				me.position = StreetProp.roof_clamp(world.street_props[me.on_car], me.position + move * Player.SPEED * Player.ROOF_SPEED * delta)
+			elif me.alive() and me.riding < 0 and not me.vaulting() and me.grabbed_by < 0 and not me.sleeping and me.sitting == -1 and me.rest_k < 0.05 and me.on_car < 0:
+				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof, false, me.up, me.prone)
 		# On a bike the camera looks ahead of where you're going, to see what's coming.
 		var lead := Vector2.ZERO
 		if me.riding >= 0 and me.riding < world.vehicles.size() and me.alive():
@@ -1339,6 +1345,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if ui.pause.visible:
 			return  # the pause menu takes the keys
+		var held: Player = players.get(multiplayer.get_unique_id())
+		if held and held.grabbed_by >= 0 and k in [KEY_SPACE, KEY_E] and not event.echo:
+			_request(&"req_struggle", [])  # (held by a zombie: every press is a shove)
+			return
 		if k == KEY_H:
 			ui.toggle_help()
 		elif k == KEY_ENTER or k == KEY_KP_ENTER:
@@ -1363,6 +1373,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			_request(&"req_use", [])
 		elif k == KEY_G:
 			_request(&"req_drop", [])
+		elif k == KEY_T:
+			_request(&"req_throw", [])
+		elif k == KEY_V:
+			_request(&"req_prone", [])
+		elif k == KEY_SPACE and not event.echo:
+			# At a run, Space jumps (over sandbags, a bin, a car's bonnet); standing, it kicks.
+			var me: Player = players.get(multiplayer.get_unique_id())
+			if me and ((me.sprint and me.moving and me.riding < 0) or me.on_car >= 0):
+				jump_space = true
+				_request(&"req_jump", [])
 		elif k >= KEY_1 and k <= KEY_8:
 			_request(&"req_select", [k - KEY_1])
 		elif k == KEY_TAB:
@@ -1372,6 +1392,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		var slot := ui.hotbar.hover
 		var me: Player = players.get(multiplayer.get_unique_id())
+		if me and me.grabbed_by >= 0 and event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT] and world and in_game:
+			_request(&"req_struggle", [])
+			return
 		if slot >= 0 and event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
 			bar_click = true
 			if me and slot < me.inv.size():
