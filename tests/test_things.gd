@@ -79,8 +79,11 @@ func run() -> void:
 	main.things.act(me, radio.id, "toggle")
 	check(radio.state.on, "the radio switches on")
 	var z := zombie_at(_near(radio))
-	simulate(6.0)
-	check(z.investigate_t > 0.0 or z.target != null, "a playing radio draws a zombie to look")
+	var drawn := false
+	for i in 60:  # (watched throughout: it may have been and gone by the end, facing away from you)
+		simulate(0.1)
+		drawn = drawn or z.investigate_t > 0.0 or z.target != null
+	check(drawn, "a playing radio draws a zombie to look")
 
 	# A vending machine: smash it, drinks fall out, it stays broken.
 	var vend := _first("vending")
