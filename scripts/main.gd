@@ -8,7 +8,8 @@ extends Node2D
 
 const PORT := 9080
 const DAY_LENGTH := 240.0
-const MAX_ZOMBIES := 80
+const MAX_ZOMBIES := 40  # around each player (see Survival._spawn_zombie); the city itself is far bigger
+const NEAR := 900.0  # px: a player's surroundings, where zombies are about and sent to them
 const SNAPSHOT_RATE := 0.05
 # Feature modules, split out of this file. Each is a child node with a fixed
 # name, so its network calls line up between server and clients.
@@ -178,7 +179,8 @@ func _ready() -> void:
 		elif arg.begins_with("--join="):
 			_join(arg.trim_prefix("--join="))
 			return
-	_make_backdrop()
+	if DisplayServer.get_name() != "headless":
+		_make_backdrop()  # (nobody sees a title screen on a server with no screen)
 
 
 ## A real city at dusk behind the title menu, slowly drifting past.
@@ -410,7 +412,8 @@ func _server_tick(delta: float) -> void:
 	survival._tick_horde()
 	var horde := survival.is_horde(day, time)
 	spawn_timer -= delta
-	if spawn_timer <= 0 and zombies.size() < (survival.HORDE_MAX_ZOMBIES if horde else MAX_ZOMBIES):
+	survival._despawn_far(delta)
+	if spawn_timer <= 0 and zombies.size() < (survival.HORDE_MAX_ZOMBIES if horde else MAX_ZOMBIES * maxi(1, players.size())):
 		if horde and not players.is_empty():
 			survival._spawn_horde_zombie()
 			spawn_timer = 0.35
@@ -429,7 +432,9 @@ func _server_tick(delta: float) -> void:
 		var zs := []
 		for z: Zombie in zombies.values():
 			zs.append([z.zid, z.position, z.hp, z.state, z.flags, z.missing])
-		net.snapshot.rpc(ps, zs, time, day, raining)
+		# Each player is sent the zombies around them, not the whole city's.
+		for peer in multiplayer.get_peers():
+			net.snapshot.rpc_id(peer, ps, zombies_for(players.get(peer), zs), time, day, raining)
 
 
 ## Keep bodies from stacking: zombies push each other and get pushed off players.
@@ -533,6 +538,14 @@ func _toast(p: Player, text: String) -> void:
 	_notify(p.peer_id, &"show_toast", [text])
 
 
+## The snapshot entries of the zombies a player should know about: those
+## within NEAR, and any after them from further off.
+func zombies_for(p: Player, zs: Array) -> Array:
+	if p == null:
+		return []
+	return zs.filter(func(e): return p.position.distance_to(e[1]) < NEAR or zombies[e[0]].target == p)
+
+
 func _spawn_pickup(pos: Vector2, item: Dictionary, up := false) -> void:
 	pickup_add.rpc(next_pickup, pos, item, up)
 	next_pickup += 1
@@ -598,6 +611,11 @@ func leave_corpse(pos: Vector2, fall_dir: float, body: Dictionary, zombie: bool,
 func _process(delta: float) -> void:
 	if world == null:
 		return
+	# Only what's around the view is in the scene (see World.stream_around);
+	# a server with no screen needs none of it.
+	if DisplayServer.get_name() != "headless":
+		var half := get_viewport().get_visible_rect().size * 0.5 / camera.zoom
+		world.stream_around(Rect2(camera.position - half, half * 2.0))
 	if not in_game:
 		camera.position += Vector2(9, 2) * delta  # drift over the rooftops
 		shade.color = Color(0.3, 0.3, 0.42)
@@ -838,8 +856,9 @@ func _update_prompt(me: Player) -> void:
 	tag.verb = ""
 	tag.second = ""
 	tag.always_detail = false
-	for f: FurnitureProp in world.container_nodes:
-		f.set_highlight(false)
+	for f in world.near(me.position):
+		if f is FurnitureProp:
+			f.set_highlight(false)
 	if me.alive() and me.sleeping:
 		_tag(tag, "หลับอยู่ · เดินเพื่อลุกขึ้น", true, false, "", me.position + Vector2(0, -34), "sleep", "")
 	elif me.alive() and me.riding >= 0:
@@ -908,8 +927,8 @@ func _fade_trees_near(pos: Vector2) -> void:
 				t.modulate.a = 0.45
 				faded.append(t)
 	var body := Rect2(pos + Vector2(-6, -28), Vector2(12, 28))
-	for b: BuildingProp in world.building_nodes:
-		if pos.y < b.position.y and b.visual_rect().intersects(body):
+	for b in world.near(pos, 2):
+		if b is BuildingProp and pos.y < b.position.y and b.visual_rect().intersects(body):
 			b.modulate.a = 0.3
 			faded.append(b)
 	if world.bts_row >= 0:

@@ -5,8 +5,8 @@ extends Node2D
 ## so characters can walk behind them.
 
 const TILE := 16
-const W := 160
-const H := 120
+const W := 480  # cells (about a metre each): a 3 x 3 of the old 160 x 120 town
+const H := 360
 const CHUNK := 16
 const BTS_H := 64.0  # how high the skytrain deck floats above the road
 const DOOR_HP := 60.0
@@ -120,7 +120,7 @@ func _spawn_props() -> void:
 		var b := BuildingProp.new()
 		b.setup(rec)
 		b.z_index = 1
-		prop_parent.add_child(b)
+		_stream(b, b.position)
 		building_nodes.append(b)
 		var r: Rect2i = rec.rect
 		for y in range(r.position.y, r.end.y):
@@ -138,7 +138,7 @@ func _spawn_props() -> void:
 			# Drawn at the old height, stretched to the storey: a door a person walks through upright.
 			n.scale = Vector2(1, DoorProp.DOOR_STRETCH if d.kind in ["door", "shutter"] else DoorProp.WINDOW_STRETCH)
 		n.z_index = 1
-		prop_parent.add_child(n)
+		_stream(n, n.position)
 		door_nodes.append(n)
 		astar.set_point_solid(d.cell, d.closed)
 	var bnode := {}
@@ -154,7 +154,7 @@ func _spawn_props() -> void:
 		dp.z_index = 0 if flat else (3 if rec.kind == "bulb" else 1)
 		if rec.get("up", false):
 			_upstairs(dp, bnode.get(rec.building))
-		prop_parent.add_child(dp)
+		_stream(dp, dp.position)
 		var b: BuildingProp = bnode.get(rec.building)
 		if rec.kind == "bulb":
 			# The bulb hangs above everyone, so only show it with the roof lifted;
@@ -170,7 +170,7 @@ func _spawn_props() -> void:
 			light.position = dp.position
 			light.visible = false
 			light.add_to_group("street_lights")
-			prop_parent.add_child(light)
+			_stream(light, light.position)
 			light_spots.append([dp.position, BULB_LIGHT])
 	for rec in containers:
 		var f := FurnitureProp.new()
@@ -181,7 +181,7 @@ func _spawn_props() -> void:
 		f.z_index = 1
 		if rec.get("up", false):
 			_upstairs(f, building_at.get(rec.cell))
-		prop_parent.add_child(f)
+		_stream(f, f.position)
 		container_nodes.append(f)
 	for b: BuildingProp in building_nodes:
 		if b.data.get("upper", false):
@@ -189,13 +189,13 @@ func _spawn_props() -> void:
 			n.draw.connect(_draw_upper.bind(n, b.data))
 			_upstairs(n, b)
 			n.z_index = 2
-			prop_parent.add_child(n)
+			_stream(n, b.position)
 	for th in things:
 		var tp := ThingProp.new()
 		tp.thing = th
 		tp.position = to_pos(th.cell) + Vector2(0, TILE * 0.45)
 		tp.z_index = 1
-		prop_parent.add_child(tp)
+		_stream(tp, tp.position)
 		thing_nodes.append(tp)
 	for rec in street_props:
 		if rec.kind == "pole" and rec.get("lamp", Vector2.ZERO) != Vector2.ZERO:
@@ -206,7 +206,10 @@ func _spawn_props() -> void:
 		p.z_index = 0 if rec.get("flat", false) else 1  # litter lies under everyone
 		if rec.kind in StreetProp.VEHICLES:
 			p.scale = Vector2.ONE * StreetProp.VEHICLE_SCALE  # vehicles the size of vehicles
-		prop_parent.add_child(p)
+		if rec.has("vehicle"):
+			prop_parent.add_child(p)  # (bikes get ridden about: always in the scene)
+		else:
+			_stream(p, p.position)
 		if rec.has("vehicle"):
 			vehicles[rec.vehicle].node = p
 	overhead = Overhead.new()
@@ -263,6 +266,83 @@ func _draw_upper(node: Node2D, rec: Dictionary) -> void:
 	mc.commit(node)
 
 
+# --- Streaming ----------------------------------------------------------------
+# Everything in the city exists (the server's rules use it all), but only what
+# is near the camera is in the scene: a scene of tens of thousands of things
+# costs every frame even when they're off screen (sorting, culling).
+
+var stream := {}  # chunk -> [Node2D]: what stands in that CHUNK x CHUNK of cells
+var stream_on := {}  # chunks now in the scene
+const STREAM_MARGIN := 1  # chunks beyond the screen kept in (and one more before they go)
+const STREAM_PER_FRAME := 3  # chunks brought in a frame at most, so walking doesn't stutter
+
+
+func _chunk_of(pos: Vector2) -> Vector2i:
+	return Vector2i(floori(pos.x / (CHUNK * TILE)), floori(pos.y / (CHUNK * TILE)))
+
+
+## The props registered in the chunks around `pos` (r chunks each way), in or
+## out of the scene: for finding what's near without going through the whole city.
+func near(pos: Vector2, r := 1) -> Array:
+	var k := _chunk_of(pos)
+	var out := []
+	for y in range(k.y - r, k.y + r + 1):
+		for x in range(k.x - r, k.x + r + 1):
+			out.append_array(stream.get(Vector2i(x, y), []))
+	return out
+
+
+## Register a prop; it goes into the scene when the camera comes near.
+func _stream(n: Node2D, pos: Vector2) -> void:
+	var k := _chunk_of(pos)
+	if not stream.has(k):
+		stream[k] = []
+	stream[k].append(n)
+	if stream_on.has(k):
+		_attach(n)
+
+
+## Out-of-scene props aren't freed with the scene: free them with the world.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		for list in stream.values():
+			for n in list:
+				if is_instance_valid(n) and n.get_parent() == null:
+					n.free()
+
+
+func _attach(n: Node2D) -> void:
+	prop_parent.add_child(n)
+	# Lights and lit windows that came in after dusk: on, like the rest.
+	for x in [n] + n.get_children():
+		if x.is_in_group("street_lights") or x.is_in_group("night_glow"):
+			x.visible = is_night
+
+
+## Every frame on a machine with a screen: bring in what's around the view,
+## take out what's well off it. (A headless server never calls this.)
+func stream_around(view: Rect2) -> void:
+	var cs := float(CHUNK * TILE)
+	var a := Vector2i(floori(view.position.x / cs), floori(view.position.y / cs)) - Vector2i.ONE * STREAM_MARGIN
+	var b := Vector2i(floori(view.end.x / cs), floori(view.end.y / cs)) + Vector2i.ONE * STREAM_MARGIN
+	var added := 0
+	for y in range(a.y, b.y + 1):
+		for x in range(a.x, b.x + 1):
+			var k := Vector2i(x, y)
+			if stream_on.has(k) or added >= STREAM_PER_FRAME:
+				continue
+			stream_on[k] = true
+			added += 1
+			for n: Node2D in stream.get(k, []):
+				_attach(n)
+	for k: Vector2i in stream_on.keys():
+		if k.x < a.x - 1 or k.x > b.x + 1 or k.y < a.y - 1 or k.y > b.y + 1:
+			stream_on.erase(k)
+			for n: Node2D in stream.get(k, []):
+				if n.get_parent():
+					n.get_parent().remove_child(n)
+
+
 const LAMP_LIGHT := 64.0  # how far a street lamp lights the ground around it (pixels)
 const BULB_LIGHT := 40.0
 
@@ -284,7 +364,7 @@ func _add_tree(c: Vector2i) -> void:
 	t.position = to_pos(c) + Vector2(0, TILE * 0.3)
 	t.scale = Vector2.ONE * TreeProp.SCALE  # Bangkok's street trees spread over the road
 	t.z_index = 1
-	prop_parent.add_child(t)
+	_stream(t, t.position)
 	props[c] = t
 
 
@@ -367,7 +447,7 @@ func add_structure(id: int, cell: Vector2i, kind: String, hp: float) -> void:
 		n.door = d
 		n.position = Vector2(cell.x * TILE, (cell.y + 1) * TILE)
 		n.z_index = 0 if not BUILDS[kind].solid else 1
-		prop_parent.add_child(n)
+		_stream(n, n.position)
 		door_nodes.append(n)
 	door_at[cell] = id
 	astar.set_point_solid(cell, d.closed)

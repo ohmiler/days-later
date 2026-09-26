@@ -29,19 +29,33 @@ func run() -> void:
 	# Say something back, and open a cupboard for it.
 	# (Waiting for it rather than a fixed time: how long the client takes to
 	# build its city depends on the machine.)
-	for i in 60:
+	for i in 200:
 		if joined.say == "hello from the client":
 			break
 		await wait(0.1)
 	main.net.req_chat("hello from the host")
 	check(joined.say == "hello from the client", "its chat arrived here")
+	# (A cupboard near the host, so the client stands among the same zombies.)
 	var f: FurnitureProp = main.world.container_nodes[0]
+	for c: FurnitureProp in main.world.container_nodes:
+		if not c.data.get("up", false) and c.position.distance_to(me.position) < f.position.distance_to(me.position):
+			f = c
 	f.searched = true
 	joined.position = f.position + Vector2(0, 8)
-	main.actions._do_action(joined, {kind = "container", id = 0}, "look")
+	# Two zombies by the client, two far off (poking about, so they stay): it
+	# should be sent the two around it.
+	main.spawn_timer = 1e9
+	for z in main.zombies.values():
+		z.queue_free()
+	main.zombies.clear()
+	for off in [Vector2(40, 0), Vector2(-40, 10), Vector2(Main.NEAR * 2.0, 0), Vector2(0, Main.NEAR * 2.0)]:
+		var z := zombie_at(joined.position + off)
+		z.stun = 1e9  # (standing still)
+		z.investigate_t = 1e9
+	main.actions._do_action(joined, {kind = "container", id = f.data.id}, "look")
 	# Wait for its report.
 	var path := ProjectSettings.globalize_path("user://net_client.txt")
-	for i in 100:
+	for i in 200:
 		if FileAccess.file_exists(path):
 			break
 		await wait(0.1)
@@ -55,8 +69,8 @@ func run() -> void:
 		if parts.size() == 2:
 			seen[parts[0]] = parts[1]
 	check(seen.get("players") == "2", "the client sees both players")
-	check(int(seen.get("zombies", "0")) == main.zombies.size(), "the client sees the same zombies (%s / %d)" % [seen.get("zombies"), main.zombies.size()])
+	check(seen.get("zombies") == "2", "the client is sent the zombies around it, not the ones far off (%s of %d)" % [seen.get("zombies"), main.zombies.size()])
 	check(seen.get("own_code") == str(want), "the client kept its own look")
 	check(seen.get("host_name") == "Tester", "the client knows the host's name")
 	check(seen.get("host_said") == "hello from the host", "the host's chat reached the client")
-	check(seen.get("box") == "0", "opening a cupboard for the client opened its bag screen")
+	check(seen.get("box") == str(f.data.id), "opening a cupboard for the client opened its bag screen")
