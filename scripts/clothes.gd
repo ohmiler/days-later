@@ -67,13 +67,29 @@ static func draw_layer(ci, layer: String, r: Dictionary, lk: Dictionary) -> void
 	var wear: Dictionary = lk.get("wear", {})
 	if wear.is_empty():
 		return
+	for e in _by_layer(wear, "_layers", TEMPLATES).get(layer, []):
+		_draw(ci, layer, e[0], e[1], r, lk)
+
+
+## What's worn, sorted by the layer it draws at: {layer: [[shape, part], ...]}
+## in slot order. Worked out the first time a set of clothes is drawn and kept
+## in it (under `key`): a body is drawn every frame, the clothes rarely change.
+static func _by_layer(wear: Dictionary, key: String, templates: Dictionary) -> Dictionary:
+	var idx = wear.get(key)
+	if idx != null:
+		return idx
+	idx = {}
 	for slot in Items.SLOTS:
 		if not wear.has(slot):
 			continue
 		for p in parts(wear[slot]):
 			var shape: String = p.get("shape", "")
-			if layer in TEMPLATES.get(shape, []):
-				_draw(ci, layer, shape, p, r, lk)
+			for layer in templates.get(shape, []):
+				if not idx.has(layer):
+					idx[layer] = []
+				idx[layer].append([shape, p])
+	wear[key] = idx
+	return idx
 
 
 static func _draw(ci, layer: String, shape: String, p: Dictionary, r: Dictionary, lk: Dictionary) -> void:
@@ -362,18 +378,15 @@ const TOP_TEMPLATES := {
 
 
 ## Everything worn that draws at TopRig layer `layer`, in slot order.
-static func top(ci: CanvasItem, layer: String, r: Dictionary, lk: Dictionary) -> void:
+static func top(ci, layer: String, r: Dictionary, lk: Dictionary) -> void:
 	var wear: Dictionary = lk.get("wear", {})
-	for slot in Items.SLOTS:
-		if not wear.has(slot):
-			continue
-		for p in parts(wear[slot]):
-			var shape: String = p.get("shape", "")
-			if layer in TOP_TEMPLATES.get(shape, []):
-				_top(ci, layer, shape, p, r, lk)
+	if wear.is_empty():
+		return
+	for e in _by_layer(wear, "_top_layers", TOP_TEMPLATES).get(layer, []):
+		_top(ci, layer, e[0], e[1], r, lk)
 
 
-static func _top(ci: CanvasItem, layer: String, shape: String, p: Dictionary, r: Dictionary, lk: Dictionary) -> void:
+static func _top(ci, layer: String, shape: String, p: Dictionary, r: Dictionary, lk: Dictionary) -> void:
 	var col: Color = p.get("col", Color.GRAY)
 	var hc: Vector2 = r.head
 	var n: Vector2 = r.neck
