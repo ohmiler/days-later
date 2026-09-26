@@ -89,6 +89,8 @@ var last_window := -1  # server: the smashed window being climbed through (glass
 var bite_where := ""  # server: where the last bite landed, and how much of it was stopped
 var bite_guard := 0.0
 var phase := 0.0
+var pace := 0.0  # how fast the body is seen to go (px/s, smoothed): every peer, from movement
+var run_k := 0.0  # 0 walking .. 1 running, from pace: the stride changes with it (Rig RUN)
 var sleeping := false  # lying on a bed: can't move, heals, the night goes faster
 var bed := -1  # the bed (container id) this survivor calls home: where they wake after dying
 var sleep_check := 0.0  # server: time to the next look around while asleep
@@ -644,8 +646,11 @@ func _process(delta: float) -> void:
 	var step := position.distance_to(last_pos)
 	last_pos = position
 	moving = step > 0.05
+	# Walking pace is SPEED, a sprint 1.75 times that: run from about 1.15 times.
+	pace = lerpf(pace, minf(step / maxf(delta, 0.001), SPEED * 3.0), minf(1.0, 8.0 * delta))  # (capped: a respawn is not a sprint)
+	run_k = move_toward(run_k, clampf((pace - SPEED * 1.15) / (SPEED * 0.4), 0.0, 1.0) if moving else 0.0, delta * 4.0)
 	var before := phase
-	phase = phase + step * 0.3 if moving else 0.0  # longer strides
+	phase = phase + step * lerpf(0.3, 0.19, run_k) if moving else 0.0  # longer strides (longer still running)
 	if moving and floor(phase / PI) != floor(before / PI) and alive() and get_parent().get("in_game"):
 		_footstep()
 	var want_lift: float = world.roof_height(position) if on_roof else (BuildingProp.GROUND_H if up else 0.0)
@@ -849,5 +854,5 @@ func _winded() -> bool:
 func _draw_standing(ext: float, wdef: Dictionary, ldef: Dictionary) -> void:
 	Look.draw_eased(self, {view = view, angle = aim.angle(), phase = phase * (0.6 if sneak else 1.0), moving = moving and ext == 0.0,
 			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = anim != Look.NONE and anim_t < 1.2,
-			crouch = 3.0 if sneak else 0.0, weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = aiming,
+			crouch = 3.0 if sneak else 0.0, run = run_k, weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = aiming,
 			breath = Time.get_ticks_msec() * 0.0016 + get_instance_id() % 7}, look, _pose)
