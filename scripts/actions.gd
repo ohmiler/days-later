@@ -126,6 +126,8 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			main.survival.start_sleep(p, t.id)
 		"ride":
 			main.vehicles.mount(p, t.id)
+		"pillion":
+			main.vehicles.mount_pillion(p, t.id)
 		"hotwire":
 			main.crafting._start(p, {kind = "hotwire", id = t.id}, Vehicles.HOTWIRE_TIME)
 			main._make_noise(p.position, main.NOISE_SEARCH)

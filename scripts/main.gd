@@ -372,7 +372,7 @@ func _server_tick(delta: float) -> void:
 			if p.pending_t <= 0:
 				combat._resolve_melee(p, p.pending_kind, p.pending_stats)
 				p.pending_kind = Look.NONE
-		if p.alive() and p.shoot_cd <= 0 and p.riding < 0:
+		if p.alive() and p.shoot_cd <= 0 and (p.riding < 0 or p.seat == 1):  # (on the back of a bike you can fight)
 			if p.wants_kick():
 				p.kick_buf = 0.0
 				combat._melee(p, Look.KICK, combat.KICK)
@@ -415,7 +415,7 @@ func _server_tick(delta: float) -> void:
 		var ps := []
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0, p.aiming],
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0, p.aiming, p.seat],
 					p.app_code, p.wear_ids])
 		var zs := []
 		for z: Zombie in zombies.values():
@@ -658,7 +658,7 @@ func _process(delta: float) -> void:
 			net.send_input.rpc_id(1, move, aim, punch, kick, me.sprint, me.sneak, aiming)
 			me.set_attack_input(punch, kick)
 			combat.predict(me, delta)
-			if me.riding >= 0 and me.alive():
+			if me.riding >= 0 and me.seat == 0 and me.alive():
 				Vehicles.step(me, world.vehicles[me.riding], move, delta, world)
 			elif me.alive() and not me.sleeping:
 				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof)
@@ -806,8 +806,9 @@ func _update_prompt(me: Player) -> void:
 	if me.alive() and me.sleeping:
 		_tag(tag, "หลับอยู่ · เดินเพื่อลุกขึ้น", true, false, "", me.position + Vector2(0, -34), "sleep", "")
 	elif me.alive() and me.riding >= 0:
-		_tag(tag, "ลงจากรถ", true, false, "", me.position + Vector2(0, -34), "ride", "E")
-		tag.verb = ""  # (the dashboard says it: nothing over the rider's head)
+		_tag(tag, "ลงจากรถ", true, false, "", me.position + Vector2(0, -40), "ride", "E")
+		if me.seat == 0:
+			tag.verb = ""  # (the dashboard says it: nothing over the rider's head)
 	elif me.alive():
 		var t := Interact.target(self, me)
 		var list := Interact.actions(self, me, t)
