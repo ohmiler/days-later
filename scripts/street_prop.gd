@@ -40,6 +40,36 @@ static func roof_spot(rec: Dictionary) -> Array:
 			return [pos + Vector2(8 * k, 0.5), 18.5 * k]
 
 
+## Where you can walk up on a roof: a box of ground positions around
+## roof_spot (you're drawn lifted by its height). Along a bus's roof you can
+## walk a long way; a car's is a couple of steps. Keep to it (roof_clamp) and
+## you can't walk off the edge: getting down is a jump (Actions.jump_off_car).
+static func roof_area(rec: Dictionary) -> Rect2:
+	var k := VEHICLE_SCALE
+	var spot: Vector2 = roof_spot(rec)[0]
+	var side: bool = rec.get("horizontal", true) or rec.kind == "army"
+	var along := 5.0  # half the walkable length, drawing units
+	# How far back across the roof: seen side-on there's no roof top drawn to
+	# walk back onto, only its edge; seen end-on its length runs up the screen.
+	var deep := 1.0
+	if rec.kind == "army":
+		along = 12.0
+	elif BODY.has(rec.kind):
+		along = BODY[rec.kind][2] * 0.5 - 5.0
+		if not side:
+			deep = BODY[rec.kind][2] * 0.3
+	elif not side:
+		deep = 9.0
+	if side:
+		return Rect2(spot + Vector2(-along * k, -deep * k), Vector2(along * 2.0 * k, deep * k))
+	return Rect2(spot + Vector2(-3.5 * k, -deep * k), Vector2(7.0 * k, deep * k))
+
+
+static func roof_clamp(rec: Dictionary, pos: Vector2) -> Vector2:
+	var r := roof_area(rec)
+	return pos.clamp(r.position, r.end)
+
+
 ## The middle of a vehicle, as drawn: to tell how near someone is to it.
 static func middle(rec: Dictionary) -> Vector2:
 	var k := VEHICLE_SCALE

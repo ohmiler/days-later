@@ -191,11 +191,11 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 	var delta := real_delta * time_speed()
 	if p.sleeping:
 		_tick_sleep(p, delta)
-	var running := p.sprint and not p.sneak and p.move.length() > 0.1 and not p.exhausted and p.stamina > 0.0 and p.riding < 0 \
+	var running := p.sprint and not p.sneak and not p.prone and p.move.length() > 0.1 and not p.exhausted and p.stamina > 0.0 and p.riding < 0 \
 			and not Body.sprained(p.wounds)
 	# Footsteps: quiet walking, loud running, silent sneaking.
 	p.step_t -= real_delta
-	if p.move.length() > 0.1 and not p.sneak and p.step_t <= 0.0 and p.riding < 0:  # (a bike makes its own noise)
+	if p.move.length() > 0.1 and not p.sneak and not p.prone and p.step_t <= 0.0 and p.riding < 0:  # (a bike makes its own noise)
 		p.step_t = 0.5
 		main._make_noise(p.position, main.NOISE_RUN if running else main.NOISE_WALK)
 	var slow := SLEEP_NEEDS if p.sleeping else 1.0

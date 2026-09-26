@@ -22,6 +22,8 @@ func run() -> void:
 		poses.append({zombie = true, bite = t})
 		poses.append({zombie = true, breed = "runner", moving = true, phase = t * TAU})
 	poses.append({zombie = true, moving = true, phase = 1.0, breed = "fat"})
+	for f in 6:
+		poses.append({anchors = Player.crawl_anchors(sin(f / 6.0 * TAU)), lean = Player.CRAWL_LEAN})
 	for f in 8:
 		poses.append({moving = true, phase = f / 8.0 * TAU, run = 1.0})
 		poses.append({moving = true, phase = f / 8.0 * TAU, run = 0.5})

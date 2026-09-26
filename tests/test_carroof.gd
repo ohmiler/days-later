@@ -1,7 +1,8 @@
 extends "res://tests/test_base.gd"
 ## Up on a car: E climbs (a moment, walking stops it); zombies can't bite you
 ## up there but gather and bang on it, which can set its alarm off; you get
-## your breath back; a step jumps you down clear of it.
+## your breath back; walk about on it without falling off; Space jumps you
+## down clear of it.
 
 
 func run() -> void:
@@ -65,11 +66,17 @@ func run() -> void:
 	far.queue_free()
 	main.zombies.erase(far.zid)
 
-	# A step off the roof jumps you down, clear of the car.
+	# Walk about up there, but never off the edge; Space jumps you down, clear of the car.
+	var area := StreetProp.roof_area(w.street_props[me.on_car])
+	for d in [Vector2.DOWN, Vector2.LEFT, Vector2.UP, Vector2.RIGHT]:
+		me.move = d
+		simulate(1.5)
+		check(me.on_car >= 0 and area.grow(0.01).has_point(me.position), "walking %s on the roof, you stay on it" % d)
 	me.move = Vector2.DOWN
-	simulate(0.6)
+	main.actions.req_jump()
 	me.move = Vector2.ZERO
-	check(me.on_car == -1 and w.can_stand(me.position, Player.RADIUS), "a step jumps you down, clear of it")
+	simulate(0.6)  # (in the air)
+	check(me.on_car == -1 and not me.vaulting() and w.can_stand(me.position, Player.RADIUS), "Space jumps you down, clear of it")
 	me.stamina = 20.0
 	simulate(1.0)
 	check(up_gain > (me.stamina - 20.0) * 1.3, "you got your breath back faster up there (%.0f vs %.0f)" % [up_gain, me.stamina - 20.0])

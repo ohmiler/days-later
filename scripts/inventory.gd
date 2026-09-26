@@ -444,6 +444,8 @@ func _use_selected(p: Player) -> void:
 	it.n -= 1
 	if it.n <= 0:
 		p.inv[p.sel] = null
+	if d.has("leaves"):
+		_give(p, d.leaves)  # (the empty bottle; if the bag is full, it's just gone)
 	main.fx_sound.rpc("eat", p.position)
 	main._toast(p, "ใช้ %s" % Items.display_name(it.id))
 	_send_inv(p)

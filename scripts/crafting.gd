@@ -162,6 +162,8 @@ func server_tick(p: Player, delta: float) -> void:
 	if p.craft.is_empty():
 		return
 	if not p.alive() or (p.move.length() > 0.1 and not p.craft.get("mobile", false)) or p.sleeping:
+		if p.craft.kind == "climb":
+			main.actions.fx_climb.rpc(p.peer_id, p.position, p.position, 0.0, 0.0)  # (let go, back down)
 		p.craft = {}
 		main._notify(p.peer_id, &"search_started", [0.0])
 		return

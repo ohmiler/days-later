@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 16  # 16: the old single-shot rpc gone (fx_shot)
+const PROTOCOL := 17  # 17: throwing, running jumps, crawling, being grabbed (new rpcs, snapshot fields)
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -253,6 +253,9 @@ func snapshot(ps: Array, zs: Array, t: float, d: int, rain := false) -> void:
 		p.sitting = n[17]
 		p.rest_face = n[18]
 		p.on_car = n[19]
+		p.prone = n[20]
+		p.grabbed_by = n[21]
+		p.struggle = n[22]
 		if (n[12] != p.riding or seat != p.seat) and not (p.is_local and n[12] >= 0 and p.riding >= 0 and seat == p.seat):
 			if p.riding >= 0:  # got off: the bike is drawn where it stands again
 				var old: Dictionary = main.world.vehicles[p.riding]
