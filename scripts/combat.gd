@@ -6,9 +6,6 @@ extends Node
 var main: Main
 
 
-const GUN_RANGE := 250.0
-const GUN_DAMAGE := 34.0
-const GUN_COOLDOWN := 0.25
 const PUNCH := [18.0, 12.0, 0.35, 0.35, 2.5]
 const KICK := [20.0, 22.0, 0.8, 0.7, 16.0]
 const MELEE_SLACK := 3.0  # extra reach so a blow that looks like it lands, lands
@@ -289,45 +286,6 @@ func fx_sound_at(name: String, pos: Vector2) -> void:
 	Sfx.play(main, name, pos)
 
 
-## Old single-shot fire, kept for reference until guns settle.
-func _fire(p: Player) -> void:
-	if p.aim == Vector2.ZERO:
-		return
-	p.shoot_cd = GUN_COOLDOWN
-	var dir := p.aim.normalized()
-	var from := p.position
-	var length := main.world.ray_length(from, dir, GUN_RANGE)
-	var hit: Zombie = null
-	for z: Zombie in main.zombies.values():
-		if z.up != p.up:
-			continue
-		var t := (z.position - from).dot(dir)
-		if t > 0 and t < length and (from + dir * t).distance_to(z.position) < Zombie.RADIUS + 2:
-			length = t
-			hit = z
-	if hit:
-		hit.hp -= GUN_DAMAGE
-		if hit.hp <= 0:
-			main.add_corpse(hit.position, 1.0 if dir.x >= 0 else -1.0, hit.body_look(), death_style("gun"), hit.up)
-			main.zombies.erase(hit.zid)
-			hit.queue_free()
-			p.kills += 1
-	fx_shot.rpc(from, from + dir * length, hit != null)
-
-
-@rpc("authority", "call_local", "unreliable")
-func fx_shot(from: Vector2, to: Vector2, hit: bool) -> void:
-	main.tracers.append([from, to, 0.08])
-	if hit:
-		var dir := (to - from).normalized()
-		for i in 3:
-			var p := to + dir * randf_range(0, 9) + Vector2(randf_range(-3, 3), randf_range(-3, 3))
-			main.blood.append([p, randf_range(0.8, 2.6), Color(randf_range(0.35, 0.5), 0.02, 0.02, 0.85)])
-		if main.blood.size() > 600:
-			main.blood = main.blood.slice(main.blood.size() - 600)
-	main.decals.queue_redraw()
-
-
 @rpc("authority", "call_local", "unreliable")
 func fx_melee(peer_id: int, kind: int) -> void:
 	var p: Player = main.players.get(peer_id)
@@ -396,8 +354,8 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, w
 
 
 @rpc("authority", "call_local", "reliable")
-func fx_death(pos: Vector2, fall_dir: float, body: Dictionary, style: String, cid := 0) -> void:
-	main.leave_corpse(pos, fall_dir, body, true, 0.0, style, cid)
+func fx_death(pos: Vector2, fall_dir: float, body: Dictionary, style: String, cid := 0, up := false) -> void:
+	main.leave_corpse(pos, fall_dir, body, true, 0.0, style, cid, -1.0, up)
 	if style in ["behead", "arm", "burst"]:
 		Sfx.play(main, "gore", pos, 2.0)
 	elif style == "crush":

@@ -33,7 +33,7 @@ var in_game := false  # false while the title menu shows a backdrop city
 var backdrop_nodes: Array = []
 var player_name := ""
 var day := 1
-var last_kills := 0
+var last_kills := -1  # kills when last looked (-1: not yet, so a loaded total isn't announced as new)
 var dmg_numbers: Array = []  # [pos, text, crit, age]
 const MAX_GIBS := 40  # loose heads and arms; the oldest fade out first
 var gibs: Array = []
@@ -431,6 +431,12 @@ func switch_zone(dest: String, arrive: String) -> void:
 		q.sleeping = false
 		q.sitting = -1
 		q.craft = {}
+		# Anything that points at this zone's furniture means nothing in the next one.
+		q.bed = -1
+		q.sleep_bed = -1
+		q.search_id = -1
+		q.open_box = -1
+		q.getup_t = 0.0
 		q.travel_to = ""
 		q.travel_exit = ""
 		i += 1
@@ -646,6 +652,7 @@ func _leave(quit: bool) -> void:
 	if in_game and multiplayer.is_server() and multiplayer.multiplayer_peer is WebSocketMultiplayerPeer:
 		_save_all()
 	in_game = false
+	last_kills = -1
 	set_process(false)  # nothing may touch the network once it is gone
 	set_physics_process(false)
 	set_process_unhandled_input(false)
@@ -726,7 +733,7 @@ func add_corpse(pos: Vector2, fall_dir: float, body: Dictionary, style: String, 
 	var cid := next_cid
 	next_cid += 1
 	corpses[cid] = {pos = pos, fall_dir = fall_dir, body = body, style = style, age = 0.0, burn = -1.0, up = up}
-	combat.fx_death.rpc(pos, fall_dir, body, style, cid)
+	combat.fx_death.rpc(pos, fall_dir, body, style, cid, up)
 	if corpses.size() > MAX_CORPSES:
 		var oldest: int = corpses.keys().reduce(func(a, b): return a if corpses[a].age > corpses[b].age else b)
 		_drop_corpse(oldest)
@@ -910,7 +917,7 @@ func _process(delta: float) -> void:
 			if me.riding >= 0 and me.seat == 0 and me.alive():
 				if Vehicles.step(me, world.vehicles[me.riding], move, delta, world) > Vehicles.BUMP:
 					shake = maxf(shake, 2.5)  # (felt at once; the server says how bad)
-			elif me.alive() and not me.sleeping and me.sitting == -1 and me.rest_k < 0.05 and me.on_car < 0:
+			elif me.alive() and me.riding < 0 and not me.sleeping and me.sitting == -1 and me.rest_k < 0.05 and me.on_car < 0:
 				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof, false, me.up)
 		# On a bike the camera looks ahead of where you're going, to see what's coming.
 		var lead := Vector2.ZERO
@@ -934,7 +941,7 @@ func _process(delta: float) -> void:
 			ui.tutorial("move")
 		if hidden_building:
 			ui.tutorial("enter")
-		if me.kills > last_kills:
+		if last_kills >= 0 and me.kills > last_kills:
 			ui.push_feed("ฆ่าซอมบี้ · รวม %d ตัว" % me.kills, "kill")
 		last_kills = me.kills
 
