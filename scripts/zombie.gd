@@ -395,7 +395,7 @@ func _process(delta: float) -> void:
 	last_pos = position
 	moving = moved.length() > 0.03
 	if moving:
-		phase += moved.length() * 0.45 * gait
+		phase += moved.length() * (0.3 if kind == "runner" else 0.45) * gait  # (a runner's strides are long, not quick)
 	# Start or finish the lunge and knock-down animations as the flags change.
 	if flags & 1 and atk_t < 0.0:
 		atk_t = 0.0
