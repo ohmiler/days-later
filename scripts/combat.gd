@@ -12,6 +12,18 @@ const MELEE_SLACK := 3.0  # extra reach so a blow that looks like it lands, land
 const PUNCH_WINDUP := 0.08  # the hit lands when the fist is out, not on the click
 const KICK_WINDUP := 0.18  # matches the foot snapping out in Look.kick_pose
 
+## Fighting tires you: each blow costs stamina (a kick more than a punch, a
+## heavy weapon more than a light one), and you get none back for a moment
+## after. Worn out (below TIRED), blows come slower and land softer.
+const PUNCH_COST := 4.0
+const KICK_COST := 8.0
+const SWING_COST := 3.0  # a weapon: this, plus WEIGHT_COST a kilogram
+const WEIGHT_COST := 2.2
+const EXERT_PAUSE := 1.0  # seconds after a blow before your breath starts coming back
+const TIRED := 20.0
+const TIRED_SLOW := 1.35
+const TIRED_WEAK := 0.8
+
 const SEVER_CHANCE := 0.2  # a blade hit that does not kill takes an arm this often
 const COMBO_RESET := 0.9  # after this long without a blow, the next one starts the 1-2 again
 
@@ -29,18 +41,46 @@ static func next_swing(p: Player) -> Dictionary:
 	if wid == "":
 		var punch := PUNCH.duplicate()
 		punch[2] *= slow
-		return {hand = hand, kind = Look.PUNCH_R if hand == "r" else Look.PUNCH_L, stats = punch, windup = PUNCH_WINDUP}
+		return {hand = hand, kind = Look.PUNCH_R if hand == "r" else Look.PUNCH_L, stats = tired(p, punch), windup = PUNCH_WINDUP}
 	var w := Items.def(wid)
 	if Items.is_gun(wid):  # not aiming: a blow with it
 		w = {range = 17.0, dmg = w.bash, cd = 0.55, stun = 0.35, knock = 6.0, dur = 0.3}
 	var dual: bool = p.hand_weapon("r") != "" and p.hand_weapon("l") != ""
 	var dmg: float = w.dmg * (Items.OFF_HAND if hand == "l" else 1.0)
 	return {hand = hand, kind = Look.SWING if hand == "r" else Look.SWING_L,
-			stats = [w.range, dmg, w.cd * (Items.DUAL_SPEED if dual else 1.0) * slow, w.stun, w.knock], windup = w.dur * 0.45}
+			stats = tired(p, [w.range, dmg, w.cd * (Items.DUAL_SPEED if dual else 1.0) * slow, w.stun, w.knock]), windup = w.dur * 0.45}
+
+
+## A kick from `p`, as tired as they are.
+static func kick_stats(p: Player) -> Array:
+	return tired(p, KICK.duplicate())
+
+
+## Blow stats [range, dmg, cd, stun, knock] for someone worn out: slower, softer.
+static func tired(p: Player, stats: Array) -> Array:
+	if p.stamina < TIRED:
+		stats[1] *= TIRED_WEAK
+		stats[2] *= TIRED_SLOW
+	return stats
+
+
+## What a blow costs in stamina: a punch, a kick, or a swing of weapon `wid`.
+static func blow_cost(kind: int, wid: String) -> float:
+	if kind == Look.KICK:
+		return KICK_COST
+	if wid == "":
+		return PUNCH_COST
+	return SWING_COST + WEIGHT_COST * float(Items.def(wid).get("weight", 1.0))
 ## Punch hits the closest zombie in front; a kick hits everything in front.
 func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 	p.shoot_cd = stats[2]
 	p.search_id = -1  # swinging interrupts a search
+	var wid := p.hand_weapon(p.swing_hand) if kind in [Look.SWING, Look.SWING_L] else ""
+	p.stamina = maxf(0.0, p.stamina - blow_cost(kind, wid))
+	p.exert_t = EXERT_PAUSE
+	if p.stamina <= 0.0 and not p.exhausted:
+		p.exhausted = true
+		main._toast(p, "หมดแรง! หายใจก่อน")
 	fx_melee.rpc(p.peer_id, kind)
 	main._make_noise(p.position, main.NOISE_SWING * (0.6 if p.sneak else 1.0))
 	p.pending_kind = kind
@@ -320,7 +360,7 @@ func predict(me: Player, delta: float) -> void:
 		return
 	if me.wants_kick():
 		me.kick_buf = 0.0
-		me.local_cd = KICK[2]
+		me.local_cd = kick_stats(me)[2]
 		me.predicted += 1
 		show_swing(me, Look.KICK)
 	elif me.wants_punch():

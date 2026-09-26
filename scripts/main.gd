@@ -514,7 +514,7 @@ func _server_tick(delta: float) -> void:
 		if p.alive() and p.shoot_cd <= 0 and (p.riding < 0 or p.seat == 1):  # (on the back of a bike you can fight)
 			if p.wants_kick():
 				p.kick_buf = 0.0
-				combat._melee(p, Look.KICK, combat.KICK)
+				combat._melee(p, Look.KICK, Combat.kick_stats(p))
 			elif p.punching and p.aiming and p.gun_hand() != "":
 				combat.fire(p, p.gun_hand())
 			elif p.wants_punch():
