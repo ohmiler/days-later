@@ -22,6 +22,9 @@ func run() -> void:
 		poses.append({zombie = true, bite = t})
 		poses.append({zombie = true, breed = "runner", moving = true, phase = t * TAU})
 	poses.append({zombie = true, moving = true, phase = 1.0, breed = "fat"})
+	for f in 8:
+		poses.append({moving = true, phase = f / 8.0 * TAU, run = 1.0})
+		poses.append({moving = true, phase = f / 8.0 * TAU, run = 0.5})
 	for u in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]:
 		poses.append({zombie = true, rise = u, fall_dir = 1.0})
 		poses.append({rise = u, fall_dir = -1.0})
@@ -172,6 +175,18 @@ func run() -> void:
 	var w0 := Rig.build({view = [Look.SIDE, false], moving = true, phase = 1.0, breath = -PI / 2}, {})
 	var w1 := Rig.build({view = [Look.SIDE, false], moving = true, phase = 1.0, breath = PI / 2}, {})
 	check(is_equal_approx(w0.upper.y, w1.upper.y), "but not while walking")
+
+	# Running is not a fast walk: leaning in, a longer stride, a heel kicked up
+	# behind, the arms bent and pumping.
+	var walk := Rig.build({view = [Look.SIDE, false], moving = true, phase = PI / 2}, {})
+	var runs := Rig.build({view = [Look.SIDE, false], moving = true, phase = PI / 2, run = 1.0}, {})
+	var gap := func(r): return absf((r.legs[1].foot as Vector2).x - (r.legs[0].foot as Vector2).x)
+	check(runs.torso > walk.torso + 0.1, "running leans forward (%.2f vs %.2f)" % [runs.torso, walk.torso])
+	check(gap.call(runs) > gap.call(walk) + 1.5, "with a longer stride (%.1f vs %.1f)" % [gap.call(runs), gap.call(walk)])
+	var kick := Rig.build({view = [Look.SIDE, false], moving = true, phase = -PI / 4, run = 1.0}, {})
+	check((kick.legs[1].foot as Vector2).y < -3.0, "the heel kicks up behind (foot at %.1f)" % (kick.legs[1].foot as Vector2).y)
+	var elbow := func(a): return (a.hand as Vector2).distance_to(a.sh)
+	check(elbow.call(_arm_by_idx(runs, 1)) < elbow.call(_arm_by_idx(walk, 1)) - 1.5, "the arms bend at the elbow")
 
 
 func _arm_by_idx(r: Dictionary, i: int) -> Dictionary:
