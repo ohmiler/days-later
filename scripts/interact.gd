@@ -58,6 +58,8 @@ static func _candidates(main: Node, p: Player) -> Array:
 		for f in w.near(p.position):
 			if f is FurnitureProp and f.data.get("up", false) and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == w.building_at.get(w.to_cell(p.position)):
 				out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
+		_corpses(main, p, out)
+		_seats(w, p, w.building_at.get(w.to_cell(p.position)), out)
 		return out
 	if p.on_roof:
 		# Up top only the stairs and the roof edge are in reach.
@@ -93,10 +95,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 		var at := w.to_pos(th.cell)
 		if p.position.distance_to(at) < Things.REACH and w.building_at.get(th.cell) == here:
 			out.append({kind = "thing", id = th.id, pos = at, title = Things.title_of(th)})
-	for cid in main.corpse_nodes:
-		var cn: Corpse = main.corpse_nodes[cid]
-		if is_instance_valid(cn) and cn.up == p.up and cn.burn < 0.0 and p.position.distance_to(cn.position) < CORPSE_REACH:
-			out.append({kind = "corpse", id = cid, pos = cn.position + Vector2(cn.fall_dir * 8.0, -4), title = cn.title()})
+	_corpses(main, p, out)
 	for e in w.exits:
 		var r: Rect2i = e.rect
 		if Rect2(r.position * World.TILE, r.size * World.TILE).grow(12.0).has_point(p.position) and not p.up:
@@ -105,15 +104,28 @@ static func _candidates(main: Node, p: Player) -> Array:
 		if n is StreetProp and n.data.kind in StreetProp.CLIMB and not p.up \
 				and p.position.distance_to(StreetProp.middle(n.data)) < CAR_REACH:
 			out.append({kind = "car", id = n.data.id, pos = StreetProp.middle(n.data), title = "รถ"})
-	for d in w.near(p.position):
-		if d is DecorProp and d.data.kind in SEATS and d.data.get("up", false) == p.up and p.position.distance_to(d.position) < CONTAINER_REACH \
-				and w.building_at.get(d.data.cell) == here:
-			out.append({kind = "seat", id = d.data.id, pos = d.position, title = SEATS[d.data.kind]})
+	_seats(w, p, here, out)
 	for f in w.near(p.position):
 		# Furniture in the same building as you: no reaching through walls.
 		if f is FurnitureProp and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here and not f.data.get("up", false):
 			out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
 	return out
+
+
+## Bodies on your floor you could burn.
+static func _corpses(main: Node, p: Player, out: Array) -> void:
+	for cid in main.corpse_nodes:
+		var cn: Corpse = main.corpse_nodes[cid]
+		if is_instance_valid(cn) and cn.up == p.up and cn.burn < 0.0 and p.position.distance_to(cn.position) < CORPSE_REACH:
+			out.append({kind = "corpse", id = cid, pos = cn.position + Vector2(cn.fall_dir * 8.0, -4), title = cn.title()})
+
+
+## Sofas, benches and chairs on your floor, in the building you are in.
+static func _seats(w: World, p: Player, here: BuildingProp, out: Array) -> void:
+	for d in w.near(p.position):
+		if d is DecorProp and d.data.kind in SEATS and d.data.get("up", false) == p.up and p.position.distance_to(d.position) < CONTAINER_REACH \
+				and w.building_at.get(d.data.cell) == here:
+			out.append({kind = "seat", id = d.data.id, pos = d.position, title = SEATS[d.data.kind]})
 
 
 ## Rebuild a target the client asked about, if it is still in reach of `p`.
@@ -279,16 +291,3 @@ static func jump_spot(w: World, pos: Vector2) -> Vector2:
 static func trap_near(w: World, pos: Vector2) -> int:
 	var id := w.door_near(pos, TRAP_REACH)
 	return id if id >= 0 and w.is_built(id) and not w.doors[id].broken else -1
-
-
-static func container_near(w: World, pos: Vector2) -> FurnitureProp:
-	var best: FurnitureProp = null
-	var best_d := CONTAINER_REACH
-	for f in w.near(pos):
-		if not f is FurnitureProp:
-			continue
-		var d := pos.distance_to(f.position)
-		if d < best_d:
-			best_d = d
-			best = f
-	return best

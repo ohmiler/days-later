@@ -57,6 +57,7 @@ var turned := false  # died of the infection and got back up as a zombie
 var warned := {}  # server: which low-need warnings were already sent
 var fall_dir := 1.0
 var last_death_pos := Vector2.ZERO
+var last_death_up := false  # died upstairs: the body stays up there
 var shoot_cd := 0.0
 var punch_buf := 0.0  # a click that came while still busy: acted on when ready (see set_attack_input)
 var kick_buf := 0.0
@@ -216,7 +217,6 @@ func server_tick(delta: float) -> void:
 			infection = 0.0
 			bleeding = false
 			stamina = 100.0
-			turned = false
 			warned.clear()
 			wounds.clear()  # a new survivor, unhurt
 			body_dirty = true
@@ -661,14 +661,16 @@ func _process(delta: float) -> void:
 		anim_t += delta
 	if alive():
 		if death_t > 0.0:
-			# Respawned: leave the old body where it fell.
+			# Respawned: leave the old body where it fell (unless it got up and walked off).
 			if not turned and get_parent().has_method("leave_corpse"):
-				get_parent().leave_corpse(last_death_pos, fall_dir, look, false, death_t)
+				get_parent().leave_corpse(last_death_pos, fall_dir, look, false, death_t, "", 0, -1.0, last_death_up)
 			death_t = 0.0
+			turned = false  # cleared here, on every peer, once the old body is dealt with
 	else:
 		if death_t == 0.0:
 			fall_dir = -1.0 if aim.x > 0 else 1.0  # topple backwards, away from where we faced
 			last_death_pos = position
+			last_death_up = up
 		death_t += delta
 	night_eyes.energy = move_toward(night_eyes.energy, 0.55 if world.is_night and alive() and is_local else 0.0, delta * 0.5)
 	night_eyes.visible = night_eyes.energy > 0.01

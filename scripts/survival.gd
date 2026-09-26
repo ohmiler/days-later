@@ -102,6 +102,10 @@ func spot_safe(pos: Vector2) -> bool:
 
 
 func can_sleep(p: Player) -> String:
+	if p.riding >= 0:
+		return "ลงจากรถก่อนค่อยนอน"
+	if p.on_car >= 0:
+		return "ลงจากหลังคารถก่อนค่อยนอน"
 	if _nearest_zombie(p.position) < SLEEP_TOO_CLOSE:
 		return "มีซอมบี้อยู่ใกล้ นอนไม่ลง"
 	return ""

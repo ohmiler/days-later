@@ -669,11 +669,11 @@ func _build_help() -> void:
 	help.add_child(dim)
 	var sheet := HelpSheet.new()
 	sheet.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	sheet.offset_left = -370
-	sheet.offset_right = 370
-	sheet.offset_top = -320
-	sheet.offset_bottom = 320
-	sheet.pivot_offset = Vector2(370, 320)
+	sheet.offset_left = -410
+	sheet.offset_right = 410
+	sheet.offset_top = -335
+	sheet.offset_bottom = 335
+	sheet.pivot_offset = Vector2(410, 335)
 	sheet.rotation = 0.01
 	help.add_child(sheet)
 
@@ -1203,14 +1203,18 @@ class TutorialCard extends Control:
 class HelpSheet extends Control:
 	const ROWS := [
 		["[W][A][S][D]", "เดิน"], ["[E]", "ค้นของ / เก็บของ"],
-		["[คลิกซ้าย]", "ต่อย / ฟาดอาวุธ"], ["[1]–[0] / ลูกกลิ้ง", "เลือกช่องของ (คลิกได้)"],
-		["[คลิกขวา]", "เตะ ผลักซอมบี้ออก"], ["[F]", "ใช้ของ / สวมเสื้อผ้า"],
-		["[Ctrl]+ลูกกลิ้ง", "ซูมกล้อง"], ["[G]", "ทิ้งของ"],
+		["[คลิกซ้าย]", "ต่อย / ฟาดอาวุธ / ยิง"], ["[1]–[8] / ลูกกลิ้ง", "เลือกช่องของ (คลิกได้)"],
+		["[คลิกขวา] / [Space]", "เตะ ผลักซอมบี้ออก"], ["[F]", "ใช้ของ / สวมเสื้อผ้า"],
+		["[คลิกขวา] ค้าง", "ถือปืน: เล็ง แล้วคลิกซ้ายยิง"], ["[G]", "ทิ้งของ"],
 		["[Shift]", "วิ่ง (เร็ว แต่เสียงดัง)"], ["[Ctrl]/[C]", "ย่อง (เงียบ ซอมบี้เห็นยาก)"],
-		["[R]", "ตอกไม้เสริม / ซ่อมประตู"], ["[E] ที่บันได", "ขึ้น / ลงดาดฟ้า"],
+		["[R]", "ตอกไม้ / ซ่อมประตู · บรรจุกระสุน"], ["[E] ที่บันได", "ขึ้น / ลง ชั้น 2 และดาดฟ้า"],
 		["[E] ค้าง", "เลือกสิ่งที่จะทำกับของตรงหน้า"], ["[H]", "เปิด / ปิดหน้านี้"],
 		["[Tab]", "กระเป๋า · ลากของ / เก็บในตู้"], ["[Q]", "รักษาด่วน (ห้ามเลือดก่อน)"],
-		["[M]", "แผนที่ · คลิกขวาปักหมุด"], ["[Z]", "นอนพัก ที่ไหนก็ได้ · บนเตียงหลับดีกว่า"], ["[X]", "นั่งพัก · เหนื่อยหายเร็ว · E ที่โซฟา/ม้านั่งเพื่อนั่ง"], ["รถ", "E ปีนขึ้นหลังคา · ซอมบี้ขึ้นไม่ได้แต่จะรุม · เดินเพื่อกระโดดลง"], ["[Enter]", "แชท · [Esc] เมนู"], ["เสื้อผ้า", "กันกัด ลดโอกาสติดเชื้อ แต่ขาดได้"],
+		["[M]", "แผนที่ · คลิกขวาปักหมุด"], ["[Z]", "นอนพัก ที่ไหนก็ได้ · บนเตียงหลับดีกว่า"],
+		["[X]", "นั่งพัก เหนื่อยหายเร็ว (E ที่โซฟาก็ได้)"], ["รถยนต์", "E ปีนขึ้นหลังคา ซอมบี้ขึ้นไม่ถึง"],
+		["มอเตอร์ไซค์", "E ขี่ / ซ้อนท้าย · ไขควงต่อสายตรง"], ["[Ctrl]+ลูกกลิ้ง", "ซูมกล้อง"],
+		["[Enter]", "แชท · [Esc] เมนู"], ["[F11]", "เต็มจอ"],
+		["เสื้อผ้า", "กันกัด ลดโอกาสติดเชื้อ แต่ขาดได้"],
 	]
 
 	func _draw() -> void:
@@ -1222,10 +1226,10 @@ class HelpSheet extends Control:
 		for i in ROWS.size():
 			var col := i % 2
 			var row := i / 2
-			var p := Vector2(36 + col * 350, 140 + row * 50)
+			var p := Vector2(36 + col * 390, 130 + row * 40)
 			var kw := UiTheme.draw_rich(self, p, ROWS[i][0], UiTheme.heading(), 16, UiTheme.INK)
 			draw_string(UiTheme.body_bold(), p + Vector2(maxf(kw, 60) + 14, 0), ROWS[i][1], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.INK)
-			draw_dashed_line(p + Vector2(0, 16), p + Vector2(320, 16), UiTheme.PAPER_DARK, 1.0, 4.0)
+			draw_dashed_line(p + Vector2(0, 16), p + Vector2(360, 16), UiTheme.PAPER_DARK, 1.0, 4.0)
 		draw_string(UiTheme.body(), Vector2(36, size.y - 30), "ทุก 3 วันจะมีคืนฝูง: ยึดร้านสักหลัง กด E ปิดประตู แล้วกด R ตอกไม้ให้แน่น",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(UiTheme.INK, 0.65))
 

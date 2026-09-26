@@ -182,14 +182,15 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 		"take":
 			var item: Dictionary = main.pickups[t.id].item
 			var took := false
-			if item.get("n", 1) > 1 or Items.is_weapon(item.id):
+			if item.get("n", 1) == 1 and Items.stack(item.id) > 1:
+				took = main.inventory._give(p, item.id)  # joins a pile you already carry
+			else:
+				# As it lies: worn, half used, a pile of several.
 				for i in p.inv.size():
 					if p.inv[i] == null:
 						p.inv[i] = item.duplicate()
 						took = true
 						break
-			else:
-				took = main.inventory._give(p, item.id)
 			if not took:
 				main._toast(p, "กระเป๋าเต็ม")
 				return

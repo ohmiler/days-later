@@ -118,10 +118,13 @@ func _process(delta: float) -> void:
 	elif _light:
 		_light.queue_free()
 		_light = null
-	# The body is redrawn while it falls and bleeds (12 a second), then only as
-	# it slowly rots or chars; the flies and flames on their own, 12 a second.
+	# The body is redrawn every frame while it falls and the blood spurts (a
+	# fall at 12 a second looks like the game hitching), 12 a second while the
+	# pool spreads, then only as it slowly rots or chars; the flies and flames
+	# on their own, 12 a second.
 	_redraw_t -= delta
-	var every := 1.0 / 12.0 if t < 3.0 else (0.5 if burn >= 0.0 and burn < BURN_TIME + 22.0 else 1.0)
+	var falling := t < 0.8 or (spurts and t < SPURT_TIME)
+	var every := 0.0 if falling else (1.0 / 12.0 if t < 3.0 else (0.5 if burn >= 0.0 and burn < BURN_TIME + 22.0 else 1.0))
 	var busy := t < 3.0 or (t > ROT and t < BONES + 1.0) or (burn >= 0.0 and burn < BURN_TIME + 22.0)
 	if busy and _redraw_t <= 0.0:
 		_redraw_t = every
