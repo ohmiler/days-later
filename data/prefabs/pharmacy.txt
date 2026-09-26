@@ -1,0 +1,17 @@
+# A pharmacy: medicine up both walls, the glass counter across the front.
+kinds: shop
+signs: ร้านขายยา
+widen: 3
+WWBWWW
+WT.WJW
+WG.dqW
+WK.WWW
+Wf..FW
+WWdWWW
+Wb.S.W
+Wb...W
+Ws..sW
+~Ws..sW
+Wgg.gW
+W....W
+WUUUUW

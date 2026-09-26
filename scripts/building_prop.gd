@@ -15,6 +15,10 @@ var glow: Node2D  # unshaded layer for lit windows and signs at night
 var interior: Array = []  # nodes only shown while the roof is lifted off (hanging bulb)
 var rng := RandomNumberGenerator.new()
 var extra := RandomNumberGenerator.new()  # details added later; separate so the old ones stay put
+## Signs that look like their trade: a gold shop's red and gold, a pharmacy's green.
+const SIGN_COLORS := {"ร้านทอง": Color("b8201c"), "โรงรับจำนำ": Color("1c3a78"), "ร้านขายยา": Color("1a8a4a"),
+		"คลินิก": Color("2a6ab8")}
+const SIGN_TEXT := {"ร้านทอง": Color("f0c840")}
 const GRAFFITI := ["ช่วยด้วย", "มีคนรอด", "อย่าเข้า", "หนีไปวัด", "ติดเชื้อ", "SOS", "ไม่มีของแล้ว"]
 
 
@@ -245,7 +249,21 @@ func _draw_shop() -> void:
 			c.draw_rect(ac, Color("c8c8c0"))
 			c.draw_circle(ac.get_center() + Vector2(0.8, 0), 1.3, Color("6a6a66"))
 	# Ground floor: open shop front with an awning, or a pulled-down shutter.
-	if data.open:
+	if data.get("shutter", false):
+		# A real shutter (see DoorProp): the dark shop front behind it, the box it
+		# rolls up into, and an awning if the shop was open when it ended.
+		c.draw_rect(Rect2(2, -GROUND_H + 1, w - 4, GROUND_H - 1), Color("231f1a"))
+		c.draw_rect(Rect2(1, -GROUND_H - 1, w - 2, 4), Color("7a7c7e"))
+		c.draw_rect(Rect2(1, -GROUND_H + 2.5, w - 2, 0.8), Color("5a5c5e"))
+		if data.open:
+			var sa := Color.from_hsv(rng.randf(), 0.5, 0.65)
+			for i in int(w / 6) + 1:
+				var x1 := i * 6.0
+				c.draw_colored_polygon(PackedVector2Array([Vector2(x1, -GROUND_H + 3), Vector2(minf(x1 + 6, w), -GROUND_H + 3),
+						Vector2(minf(x1 + 7, w + 1), -GROUND_H + 8), Vector2(x1 + 1, -GROUND_H + 8)]),
+						sa if i % 2 == 0 else Color("e8e2d4"))
+		_shop_marks()
+	elif data.open:
 		c.draw_rect(Rect2(2, -GROUND_H + 1, w - 4, GROUND_H - 1), Color("231f1a"))
 		for i in int((w - 8) / 5):
 			c.draw_rect(Rect2(4 + i * 5, -8 - rng.randf() * 4, 3, 3), Color.from_hsv(rng.randf(), 0.45, 0.6))
@@ -261,14 +279,32 @@ func _draw_shop() -> void:
 			c.draw_line(Vector2(2, y), Vector2(w - 2, y), Color("6e7072"), 0.5)
 		if rng.randf() < 0.4:
 			c.draw_line(Vector2(w * 0.3, -9), Vector2(w * 0.6, -5), Color("b8482e", 0.6), 1.2)  # graffiti
-	_door()
+	if not data.get("shutter", false):
+		_door()
 	if data.sign != "":
 		var sr := _sign_rect()
-		var sc := Color.from_hsv(rng.randf(), 0.7, 0.75)
+		var sc: Color = SIGN_COLORS.get(data.sign, Color.from_hsv(rng.randf(), 0.7, 0.75))
 		c.draw_rect(sr, sc)
 		c.draw_rect(sr, sc.darkened(0.4), false, 0.5)
-		_text(sr, data.sign, Color.WHITE if sc.get_luminance() < 0.55 else Color("1a1a1a"), 5)
+		_text(sr, data.sign, SIGN_TEXT.get(data.sign, Color.WHITE if sc.get_luminance() < 0.55 else Color("1a1a1a")), 5)
 	_facade_life(col)
+
+
+## What hangs outside some trades: a barber's pole, a pharmacy's green cross.
+func _shop_marks() -> void:
+	match data.sign:
+		"ร้านตัดผม", "ร้านเสริมสวย":
+			var x := w - 5.0
+			c.draw_rect(Rect2(x, -GROUND_H + 6, 3, 11), Color("f0ece4"))
+			for i in 4:
+				c.draw_line(Vector2(x, -GROUND_H + 8 + i * 3), Vector2(x + 3, -GROUND_H + 6 + i * 3), Color("c8201c") if i % 2 else Color("2a4ab8"), 1.0)
+			c.draw_rect(Rect2(x - 0.5, -GROUND_H + 5, 4, 1.2), Color("b8bcc0"))
+			c.draw_rect(Rect2(x - 0.5, -GROUND_H + 17, 4, 1.2), Color("b8bcc0"))
+		"ร้านขายยา", "คลินิก":
+			var cx := w - 6.0
+			var cy := -GROUND_H + 10.0
+			c.draw_rect(Rect2(cx - 3.5, cy - 1.2, 7, 2.4), Color("2ac86a"))
+			c.draw_rect(Rect2(cx - 1.2, cy - 3.5, 2.4, 7), Color("2ac86a"))
 
 
 ## Years of living, then the end: boarded windows, balcony plants, vines,

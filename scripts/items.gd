@@ -52,13 +52,13 @@ const OVERLOAD := 1.5
 const OVERLOAD_SPEED := 0.6
 
 const TYPES := ["weapon", "gun", "ammo", "use", "trap", "material", "wear", "junk"]
-const PLACES := ["store", "med", "food", "tools", "valuables", "clothes", "home"]
+const PLACES := ["store", "med", "food", "tools", "valuables", "clothes", "home", "barber", "phone"]
 ## How often searching turns each up, relative to each other.
 const RARITY := {common = 4, uncommon = 2, rare = 1}
 const RARITY_NAMES := {common = "ธรรมดา", uncommon = "ไม่บ่อย", rare = "หายาก"}
 const RARITY_COLORS := {common = Color("c8c4b8"), uncommon = Color("6ab0e0"), rare = Color("e0b840")}
 ## Icon shapes an item's `icon` can use (drawn in draw_icon).
-const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain", "rag", "nails", "tape", "scrap", "magazine", "jerrycan", "bullets", "shells"]
+const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain", "rag", "nails", "tape", "scrap", "magazine", "jerrycan", "bullets", "shells", "spray", "battery", "phone"]
 
 ## id -> fields, read from DATA the first time Items is used.
 static var DEFS: Dictionary = _load_defs()
@@ -166,6 +166,8 @@ const FURNITURE := {
 	"valuables": ["counter", "cabinet", "crate"],
 	"clothes": ["shelf", "cabinet", "counter"],
 	"home": ["cabinet", "bed", "table"],
+	"barber": ["mirror", "cabinet", "shelf"],
+	"phone": ["glass", "shelf", "counter"],
 }
 
 
@@ -314,9 +316,18 @@ const FURN_LOOT := {
 	cabinet = {medicine = 3, clothes = 2, material = 1, junk = 1},
 	crate = {material = 5, weapon = 2, clothes = 1},
 	bed = {clothes = 3, junk = 2, medicine = 1},
+	glass = {junk = 4, medicine = 2, drink = 0.5},  # a display case: what the shop shows off
+	mirror = {weapon = 3, junk = 3, clothes = 1},  # a barber's station: scissors, razors, sprays
+	toolchest = {material = 4, weapon = 3},
+	stall = {food = 5, drink = 3},  # the food cart at the front of an eatery
+	safe = {junk = 5, weapon = 1},
+	pantry = {food = 5, drink = 2},  # the kitchen's screened food cupboard
+	sink = {junk = 2, material = 1, medicine = 1, drink = 1},
 }
 ## The kind of place tips it: a pharmacy's shelves hold medicine.
 const PLACE_BIAS := {
+	barber = {weapon = 2.0, junk = 2.0, clothes = 1.5},
+	phone = {junk = 5.0},
 	med = {medicine = 5.0},
 	food = {food = 3.0, drink = 2.0},
 	store = {food = 2.0, drink = 2.0},
@@ -326,7 +337,7 @@ const PLACE_BIAS := {
 }
 ## Share of each piece of furniture already picked clean. Fridges most of all:
 ## everyone raided those first.
-const EMPTY := {fridge = 0.3}
+const EMPTY := {fridge = 0.3, stall = 0.35, safe = 0.05}
 const EMPTY_DEFAULT := 0.15
 
 
@@ -503,6 +514,19 @@ static func _shape_icon(ci: CanvasItem, r: Rect2, icon: Dictionary) -> void:
 				var x := (-7 + i * 7) * s
 				ci.draw_rect(Rect2(c + Vector2(x - 2.5, -7 * s), Vector2(5, 10) * s), col)
 				ci.draw_rect(Rect2(c + Vector2(x - 2.5, 3 * s), Vector2(5, 4) * s), col2)
+		"spray":  # an aerosol can with its cap
+			ci.draw_rect(Rect2(c - Vector2(5, 8) * s, Vector2(10, 20) * s), col)
+			ci.draw_rect(Rect2(c - Vector2(4, 13) * s, Vector2(8, 5) * s), col2)
+			ci.draw_rect(Rect2(c + Vector2(-5, -2) * s, Vector2(10, 4) * s), col2.darkened(0.1))
+		"battery":  # two AA cells
+			for dx in [-5.0, 3.0]:
+				ci.draw_rect(Rect2(c + Vector2(dx, -10) * s, Vector2(6, 20) * s), col)
+				ci.draw_rect(Rect2(c + Vector2(dx, -10) * s, Vector2(6, 6) * s), col2)
+				ci.draw_rect(Rect2(c + Vector2(dx + 2, -12) * s, Vector2(2, 2) * s), Color("b8bcc0"))
+		"phone":
+			ci.draw_rect(Rect2(c - Vector2(6, 12) * s, Vector2(12, 24) * s), col)
+			ci.draw_rect(Rect2(c - Vector2(5, 10) * s, Vector2(10, 17) * s), col2)
+			ci.draw_rect(Rect2(c + Vector2(-2, 9) * s, Vector2(4, 1.5) * s), col2.lightened(0.3))
 		"magazine":
 			ci.draw_rect(Rect2(c - Vector2(9, 12) * s, Vector2(18, 24) * s), col)
 			ci.draw_rect(Rect2(c - Vector2(9, 12) * s, Vector2(18, 7) * s), col2)

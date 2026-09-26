@@ -49,3 +49,32 @@ func run() -> void:
 	main.doors._toggle_door(me, window)
 	check(wd.broken and not wd.closed, "smashing a window breaks it open")
 	check(z.investigate_t > 0.0 or z.target != null, "the noise brings a zombie to look")
+
+	# A shop's rolling shutter: all of it goes up or down at once, loudly; it
+	# blocks the way and the view; a zombie can bend a section up to crawl under.
+	var sh: Dictionary = {}
+	for d in w.doors:
+		if d.kind == "shutter" and not d.broken and d.group.all(func(i): return not w.doors[i].broken):
+			sh = d
+			break
+	check(not sh.is_empty(), "shops have rolling shutters")
+	var group: Array = sh.group
+	var sat := w.to_pos(sh.cell)
+	me.position = sat + Vector2(0, 14)
+	if not sh.closed:
+		main.doors._toggle_door(me, sh.id)
+	check(group.all(func(i): return w.doors[i].closed), "pulled down, the whole front is shut")
+	check(not w.can_stand(sat, 4.0) and w.sight_ray(sat + Vector2(0, 20), Vector2.UP, 40.0)[0] < 30.0,
+			"a shut shutter blocks the way and the view")
+	var z2 := zombie_at(sat + Vector2(90, 30))
+	main.doors._toggle_door(me, sh.id)
+	check(group.all(func(i): return not w.doors[i].closed), "E lifts the whole shutter")
+	check(z2.investigate_t > 0.0 or z2.target != null, "and the racket carries")
+	check(Interact.actions(main, me, {kind = "door", id = sh.id}).all(func(a): return a.verb != "board"),
+			"a shutter isn't boarded like a door")
+	main.doors._toggle_door(me, sh.id)
+	for i in 40:
+		main.doors.damage_door(sh.id, 12.0)
+	check(sh.broken and not sh.closed, "pounded long enough, a section bends up (%d hp)" % sh.hp)
+	check(group.filter(func(i): return i != sh.id).all(func(i): return w.doors[i].closed), "the rest stays down")
+	check(w.slow_at(sat) < 1.0, "and you crawl through the gap, slowly")

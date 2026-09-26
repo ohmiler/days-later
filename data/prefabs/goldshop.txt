@@ -1,0 +1,17 @@
+# A gold shop or pawnbroker: glass counters across, the safe and the altar behind.
+kinds: shop
+signs: ร้านทอง, โรงรับจำนำ
+widen: 3
+WWBWWW
+WT.WJW
+WG.dqW
+WK.WWW
+Wf..FW
+WWdWWW
+Wb.S.W
+Wb..ZW
+Wa..RW
+~W....W
+Wggg.W
+Wz...W
+WUUUUW

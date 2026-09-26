@@ -1,0 +1,17 @@
+# A hardware or wholesale shop: sacks, crates and shelves to the ceiling.
+kinds: shop
+signs: ร้านวัสดุ, ขายส่ง
+widen: 3
+WWBWWW
+WT.WJW
+WG.dqW
+WK.WWW
+Wf..FW
+WWdWWW
+Wb.S.W
+Wb..xW
+Ws..sW
+~Ws..sW
+Wy..yW
+Wk...W
+WUUUUW

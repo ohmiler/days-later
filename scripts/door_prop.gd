@@ -15,6 +15,9 @@ func _draw() -> void:
 	if kind == "window":
 		_draw_window()
 		return
+	if kind == "shutter":
+		_draw_shutter()
+		return
 	if World.BUILDS.has(kind):
 		_draw_structure(kind)
 		return
@@ -50,6 +53,35 @@ func _draw() -> void:
 		draw_line(Vector2(-1, y - tilt - 1), Vector2(T + 1, y + tilt - 1), Color("c8a878"), 0.6)
 		draw_circle(Vector2(0.5, y - tilt), 0.5, Color("6a6a6a"))
 		draw_circle(Vector2(T - 0.5, y + tilt), 0.5, Color("6a6a6a"))
+
+
+## One section of a rolling steel shutter (drawn 15 tall, stretched to the storey).
+## Up: rolled into its box (the building draws that); down: ribbed steel with
+## a padlocked bottom bar; prised: the bottom bent up into a hole to crawl under.
+func _draw_shutter() -> void:
+	var T := World.TILE
+	var steel := Color("8e9092")
+	if not door.closed and not door.broken:
+		return
+	var bottom := -6.0 if door.broken else 0.0
+	draw_rect(Rect2(0, -15, T, 15 + bottom), steel)
+	for y in range(-14, int(bottom), 1):
+		draw_line(Vector2(0, y + 0.5), Vector2(T, y + 0.5), steel.darkened(0.18 if y % 2 else 0.05), 0.4)
+	draw_line(Vector2(0, -15), Vector2(0, bottom), Color("5a5c5e"), 0.8)  # the guide rails
+	if door.broken:
+		# Bent up and out: a jagged lip over a dark gap.
+		draw_rect(Rect2(0, -6, T, 6), Color("15120f"))
+		draw_colored_polygon(PackedVector2Array([Vector2(1, -6), Vector2(T - 1, -6), Vector2(T - 3, -3.5), Vector2(3, -4)]), steel.darkened(0.3))
+		return
+	draw_rect(Rect2(0, -1.5, T, 1.5), Color("6a6c6e"))  # bottom bar
+	var mid := int(door.cell.x) % 2 == 0
+	if mid:
+		draw_rect(Rect2(T * 0.5 - 1, -2.5, 2, 2), Color("c8a040"))  # padlock
+	var dmg: float = 1.0 - door.hp / World.SHUTTER_HP
+	if dmg > 0.3:
+		draw_arc(Vector2(T * 0.5, -8), 3.0, 0.3, 2.8, 6, Color(0, 0, 0, 0.35), 0.6)  # dented
+	if dmg > 0.65:
+		draw_arc(Vector2(T * 0.3, -4), 2.5, -0.5, 2.0, 6, Color(0, 0, 0, 0.4), 0.6)
 
 
 func _draw_window() -> void:

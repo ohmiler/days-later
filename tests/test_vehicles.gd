@@ -162,7 +162,7 @@ func run() -> void:
 	simulate(0.5)
 	check(me.ride_vel.y > me.ride_vel.length() * 0.9, "and comes round in a moment (%s)" % me.ride_vel)
 	# Steering back the way you came brakes first.
-	me.position = v.pos
+	me.position = _road_spot()
 	me.ride_vel = Vector2(140, 0)
 	me.move = Vector2.RIGHT
 	simulate(0.05)

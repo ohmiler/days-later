@@ -175,6 +175,19 @@ static func _build(name: String) -> AudioStreamWAV:
 				for i in ring.size():
 					ring[i] *= exp(-float(i) / RATE * 7.0)
 				_mix(samples, ring)
+		"shutter":  # a steel shutter rattling up or down its rails
+			var n := int(0.9 * RATE)
+			samples.resize(n)
+			var y := 0.0
+			for i in n:
+				var t := float(i) / n
+				var slat := fmod(t * 0.9 * 34.0, 1.0)  # a clack per slat going round the roll
+				y += (rng.randf_range(-1, 1) - y) * 0.6
+				var ring := sin(TAU * 820.0 * i / RATE) * 0.25 + sin(TAU * 1230.0 * i / RATE) * 0.15
+				var env := clampf(t / 0.05, 0, 1) * clampf((1.0 - t) / 0.15, 0, 1)
+				samples[i] = (y * 0.7 + ring) * exp(-slat * 9.0) * env * 0.6
+			for i in int(0.15 * RATE):  # and it hits the ground (or the top of the box)
+				samples[n - int(0.15 * RATE) + i] += sin(TAU * 60.0 * i / RATE) * exp(-float(i) / RATE * 25.0) * 0.8
 		"door":  # fist and shoulder against wood
 			samples = _thump(rng, 0.22, 120.0, 70.0, 0.8)
 		"break":

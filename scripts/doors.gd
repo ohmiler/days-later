@@ -13,7 +13,7 @@ func damage_door(id: int, dmg: float) -> void:
 		return
 	var hp: float = d.hp - dmg
 	# Boards take the beating first; each one splinters off as its share runs out.
-	var base_hp := World.WINDOW_HP if main.world.is_window(id) else World.DOOR_HP
+	var base_hp := World.WINDOW_HP if main.world.is_window(id) else (World.SHUTTER_HP if d.kind == "shutter" else World.DOOR_HP)
 	var boards: int = mini(d.boards, maxi(0, ceili((hp - base_hp) / World.BOARD_HP)))
 	var pos := main.world.to_pos(d.cell)
 	if hp <= 0.0 and main.world.is_window(id):
@@ -97,6 +97,9 @@ func _toggle_door(p: Player, id: int) -> void:
 	var d: Dictionary = main.world.doors[id]
 	if main.world.is_built(id):
 		return
+	if d.kind == "shutter":
+		_toggle_shutter(p, id)
+		return
 	if main.world.is_window(id):
 		if d.closed and d.boards == 0:
 			door_state.rpc(id, false, 0.0, 0, true)
@@ -109,25 +112,49 @@ func _toggle_door(p: Player, id: int) -> void:
 	if d.broken:
 		main._toast(p, "ประตูพัง ต้องซ่อมด้วยไม้กระดาน [R]")
 		return
-	if not d.closed:
-		# Never shut it on someone standing in the doorway; anyone just
-		# brushing its edge gets eased out to their own side first.
+	if not d.closed and not _clear_doorway(p, [id]):
+		return
+	door_state.rpc(id, not d.closed, d.hp, d.boards, false)
+	main.fx_sound.rpc("door_close" if d.closed else "door_open", main.world.to_pos(d.cell))
+
+
+## Never shut a door on someone standing in the doorway; anyone just brushing
+## its edge gets eased out to their own side first. False if something's in the way.
+func _clear_doorway(p: Player, ids: Array) -> bool:
+	for id in ids:
 		for q: Player in main.players.values():
 			if q.alive() and not q.on_roof and main.world.door_overlap(id, q.position) == 2:
 				main._toast(p, "ออกจากช่องประตูก่อนปิด" if q == p else "มีคนยืนขวางประตูอยู่")
-				return
+				return false
 		for z: Zombie in main.zombies.values():
 			if main.world.door_overlap(id, z.position) == 2:
 				main._toast(p, "มีซอมบี้ขวางประตูอยู่!")
-				return
+				return false
+	for id in ids:
 		for q: Player in main.players.values():
 			if q.alive() and not q.on_roof and main.world.door_overlap(id, q.position) == 1:
 				q.position = main.world.nudge_out_of_door(id, q.position)
 		for z: Zombie in main.zombies.values():
 			if main.world.door_overlap(id, z.position) == 1:
 				z.position = main.world.nudge_out_of_door(id, z.position)
-	door_state.rpc(id, not d.closed, d.hp, d.boards, false)
-	main.fx_sound.rpc("door_close" if d.closed else "door_open", main.world.to_pos(d.cell))
+	return true
+
+
+## A rolling shutter goes up or down all at once, with a racket the whole
+## soi hears. A section prised up (broken) stays that way.
+func _toggle_shutter(p: Player, id: int) -> void:
+	var w := main.world
+	var ids: Array = w.doors[id].get("group", [id]).filter(func(i): return not w.doors[i].broken)
+	if ids.is_empty():
+		return
+	var closing: bool = not w.doors[ids[0]].closed
+	if closing and not _clear_doorway(p, ids):
+		return
+	for i in ids:
+		door_state.rpc(i, closing, w.doors[i].hp, 0, false)
+	var pos := w.to_pos(w.doors[id].cell)
+	main.fx_sound.rpc("shutter", pos)
+	main._make_noise(pos, main.NOISE_HIT)
 
 
 ## Spikes stab and stagger whatever steps on them; barbed wire cuts while you're in it.

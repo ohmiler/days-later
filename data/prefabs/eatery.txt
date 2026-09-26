@@ -1,0 +1,17 @@
+# A shophouse eatery: the cart out front by the shutter, tables and stools inside.
+kinds: shop
+signs: ข้าวมันไก่, ก๋วยเตี๋ยวเรือ, ส้มตำ ไก่ย่าง, อาหารตามสั่ง, โจ๊ก ข้าวต้ม, กาแฟโบราณ
+widen: 3
+WWBWWW
+WT.WJW
+WG.dqW
+WK.WWW
+Wf..FW
+WWdWWW
+Wb.S.W
+Wb..fW
+Wr.r.W
+~Wr.r.W
+W...RW
+WH..tW
+WUUUUW

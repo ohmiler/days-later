@@ -1,0 +1,17 @@
+# A motorbike repair shop: bikes in bits on an oily floor, tools on the wall.
+kinds: shop
+signs: ซ่อมมอเตอร์ไซค์
+widen: 3
+WWBWWW
+WT.WJW
+WG.dqW
+WK.WWW
+Wf..FW
+WWdWWW
+Wb.S.W
+Wb..XW
+Wi...W
+~Wl.e.W
+Wx.eXW
+Wi..RW
+WUUUUW

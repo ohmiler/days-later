@@ -1,0 +1,17 @@
+# A barber's or a hairdresser's: stations along one wall, a bench to wait on.
+kinds: shop
+signs: ร้านตัดผม, ร้านเสริมสวย
+widen: 3
+WWBWWW
+WT.WJW
+WG.dqW
+WK.WWW
+Wf..FW
+WWdWWW
+Wb.S.W
+Wb..IW
+WMA.uW
+~W....W
+WMA.zW
+Wj..RW
+WUUUUW
