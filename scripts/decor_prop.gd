@@ -221,6 +221,74 @@ func _draw() -> void:
 			for i in 5:
 				var p := Vector2(rng.randf_range(-6, 5), rng.randf_range(-6, -1))
 				draw_rect(Rect2(p, Vector2(2.5, 1.2)), Color.from_hsv(rng.randf(), 0.4, rng.randf_range(0.3, 0.8)))
+		"lightbox":
+			# A lit sign box standing on the pavement, in the colours of its trade.
+			var sign: String = data.building.get("sign", "") if data.get("building") else ""
+			var col: Color = {"ร้านขายยา": Color("1a9a4a"), "คลินิก": Color("2a6ab8"), "ร้านโทรศัพท์": Color("e0402a"),
+					"นวดแผนไทย": Color("c8508a"), "ร้านเสริมสวย": Color("d86aa8"), "ร้านตัดผม": Color("2a4ab8")}.get(sign, Color("d8a030"))
+			_shadow(4)
+			draw_rect(Rect2(-0.6, -5, 1.2, 5), Color("5a5a5a"))
+			draw_rect(Rect2(-4, -15, 8, 10), Color("f0ece4"))
+			draw_rect(Rect2(-4, -15, 8, 2.5), col)
+			draw_rect(Rect2(-4, -15, 8, 10), col.darkened(0.3), false, 0.5)
+			match sign:
+				"ร้านขายยา", "คลินิก":
+					draw_rect(Rect2(-2.5, -10.5, 5, 1.6), col)
+					draw_rect(Rect2(-0.8, -12.2, 1.6, 5), col)
+				"ร้านโทรศัพท์":
+					draw_rect(Rect2(-1.5, -11.5, 3, 5.5), Color("2a2c30"))
+					draw_rect(Rect2(-1, -11, 2, 4), Color("5a8ab8"))
+				"นวดแผนไทย":  # a foot
+					draw_set_transform(Vector2(0, -9), 0.3, Vector2(0.7, 1.2))
+					draw_circle(Vector2.ZERO, 2.0, col)
+					draw_set_transform(Vector2.ZERO)
+				_:  # scissors
+					draw_line(Vector2(-2, -11), Vector2(2, -7), col, 0.6)
+					draw_line(Vector2(2, -11), Vector2(-2, -7), col, 0.6)
+					draw_circle(Vector2(-2, -6.5), 0.8, col)
+					draw_circle(Vector2(2, -6.5), 0.8, col)
+		"flag":
+			# A tall feather flag on a pole, the kind every shop opening puts out.
+			var fc := Color.from_hsv(rng.randf(), 0.8, 0.85)
+			draw_rect(Rect2(-2, -1, 4, 1), Color("3a3a3a"))
+			draw_line(Vector2(-1, 0), Vector2(-1, -30), Color("c8ccd0"), 0.6)
+			draw_colored_polygon(PackedVector2Array([Vector2(-1, -30), Vector2(3, -29), Vector2(4, -14), Vector2(-1, -10)]), fc)
+			for i in 3:
+				draw_rect(Rect2(0.3, -26 + i * 4, 2.2, 1.2), Color(1, 1, 1, 0.8))
+		"menu":
+			# A sandwich board with the day's dishes chalked up.
+			_shadow(4)
+			draw_colored_polygon(PackedVector2Array([Vector2(-3.5, 0), Vector2(-2.5, -11), Vector2(2.5, -11), Vector2(3.5, 0)]), Color("6a4a30"))
+			draw_rect(Rect2(-2.2, -10, 4.4, 8), Color("2a3a2e"))
+			for i in 4:
+				draw_line(Vector2(-1.6, -8.5 + i * 2), Vector2(rng.randf_range(0, 1.6), -8.5 + i * 2), Color(1, 1, 1, 0.7), 0.5)
+		"grill":
+			# A charcoal grill with chicken on bamboo sticks.
+			_shadow(6)
+			draw_rect(Rect2(-6, -6, 12, 4), Color("3a3a3a"))
+			draw_rect(Rect2(-5, -2, 1, 2), Color("3a3a3a"))
+			draw_rect(Rect2(4, -2, 1, 2), Color("3a3a3a"))
+			draw_rect(Rect2(-5.5, -6.5, 11, 1), Color("e05a2a"))  # the coals glowing
+			for i in 4:
+				draw_line(Vector2(-4.5 + i * 3, -7), Vector2(-3 + i * 3, -11), Color("c8a878"), 0.4)
+				draw_circle(Vector2(-3.8 + i * 3, -8.8), 1.0, Color("a8502a"))
+			draw_line(Vector2(0, -12), Vector2(1, -18), Color(0.8, 0.8, 0.8, 0.35), 1.5)  # smoke
+		"pipes":
+			# Lengths of PVC pipe leaning on the wall.
+			for i in 4:
+				var x := -5.0 + i * 2.5
+				draw_line(Vector2(x, 0), Vector2(x + 2, -20), Color("4a7ac8") if i % 2 else Color("e8e4dc"), 1.3)
+		"plants":
+			# Pots of plants by the door: a bougainvillea, a mother-in-law's tongue.
+			_shadow(5)
+			for i in 2:
+				var x := -3.0 + i * 6.0
+				draw_rect(Rect2(x - 2.5, -4, 5, 4), Color("a8583a"))
+				for k in 4:
+					draw_circle(Vector2(x + rng.randf_range(-2.5, 2.5), -5.5 - rng.randf() * 4), 1.6, Color("4a8a3a").darkened(rng.randf() * 0.3))
+				if i == 0:
+					for k in 3:
+						draw_circle(Vector2(x + rng.randf_range(-2, 2), -7 - rng.randf() * 3), 0.9, Color("e04a9a"))
 		"hiphra":
 			# A Buddha shelf high on the wall: gold images, a garland, a flower vase.
 			draw_rect(Rect2(-7, -33, 14, 1.5), Color("8a5a2a"))

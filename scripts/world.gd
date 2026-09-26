@@ -147,6 +147,8 @@ func _spawn_props() -> void:
 		dp.data = rec
 		dp.position = to_pos(rec.cell) + Vector2(0, TILE * 0.45)
 		var flat: bool = rec.kind in ["oil", "litter", "mattress", "toilet", "shoes"]
+		if rec.get("outside", false):
+			dp.position.y = to_pos(rec.cell).y  # (out on the pavement: stands a little further back, by the wall)
 		dp.z_index = 0 if flat else (3 if rec.kind == "bulb" else 1)
 		prop_parent.add_child(dp)
 		var b: BuildingProp = bnode.get(rec.building)
