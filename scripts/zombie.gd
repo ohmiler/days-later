@@ -31,6 +31,8 @@ var hp := 60.0
 var scream_cd := 0.0
 var trap_cd := 0.0  # server: time until spikes can hurt it again
 var net_pos := Vector2.ZERO
+var samples: Array = []  # client: [[server time, pos], ...] from the snapshots, played back smoothly
+var heard := 0.0  # client: when a snapshot last mentioned it (Net.FORGET)
 var path: Array[Vector2i] = []
 var target: Player
 var repath := 0.0
@@ -213,6 +215,12 @@ func server_tick(delta: float) -> void:
 		_move((target.position - position).normalized(), delta)
 	else:
 		_follow(delta)
+
+
+## Client: where it was at server time `t` (from a snapshot).
+func push_sample(t: float, pos: Vector2) -> void:
+	net_pos = pos
+	NetCodec.push(samples, t, pos)
 
 
 ## If a closed door is in the way, pound on it. Returns true while bashing.
@@ -445,7 +453,9 @@ func _process(delta: float) -> void:
 	z_index = 2 if lift > 1.0 else 1
 	var before := position
 	if not multiplayer.is_server():
-		position = position.lerp(net_pos, minf(1.0, 15.0 * delta))
+		# A moment behind the server, between its snapshots (NetCodec.sample_at).
+		var at := NetCodec.sample_at(samples, (get_parent().net.clock if get_parent() is Main else 0.0) - NetCodec.INTERP)
+		position = position.lerp(net_pos, minf(1.0, 15.0 * delta)) if at == Vector2.INF else at
 	var moved := position - before if not multiplayer.is_server() else position - last_pos
 	last_pos = position
 	moving = moved.length() > 0.03

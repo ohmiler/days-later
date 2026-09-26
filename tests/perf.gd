@@ -11,6 +11,7 @@ extends "res://tests/test_base.gd"
 ## with 80 bodies about, 229 calls and 4.3 ms.)
 
 const BUDGET := {4.0: [400, 12.0], 1.0: [2500, 25.0]}  # zoom -> [draw calls, ms a frame]
+const CROWD := {40: 16.7, 100: 33.3}  # dressed zombies on screen -> ms a frame (60 fps, 30 fps)
 
 
 func _measure(zoom: float) -> Array:
@@ -60,3 +61,24 @@ func run() -> void:
 	print("  %d bodies, zoom 4: %.0f draw calls, %.2f ms a frame" % [Main.MAX_CORPSES, m[0], m[1]])
 	check(m[0] <= BUDGET[4.0][0], "a street of bodies: draw calls within %d" % BUDGET[4.0][0])
 	check(m[1] <= BUDGET[4.0][1], "a street of bodies: a frame within %.0f ms" % BUDGET[4.0][1])
+
+	# A crowd: zombies dressed from head to foot, all on screen and all coming
+	# for you (so all moving, all redrawn every frame): the worst case for
+	# drawing people, which aren't batched the way the town and bodies are.
+	for cid in main.corpses.keys():
+		main._drop_corpse(cid)
+	await frames(5)
+	var outfit := {head = "helmet", over = "stabvest", back = "backpack", hands = "gloves", knees = "kneepads", face = "mask"}
+	for n in CROWD:
+		while main.zombies.size() < n:
+			var zz := zombie_at(me.position + Vector2(randf_range(-150, 150), randf_range(-85, 85)))
+			zz.apply_outfit([Color("6a5a4a"), Color("34507a"), Color("3a2a1c"), outfit])
+		me.hp = 1e9  # (they bite; this is about drawing them)
+		m = await _measure(4.0)
+		# The server's share (zombie AI, needs, everything but drawing), timed apart.
+		var t0 := Time.get_ticks_usec()
+		for i in 60:
+			main._server_tick(1.0 / 60.0)
+		var server := (Time.get_ticks_usec() - t0) / 1000.0 / 60.0
+		print("  %d dressed zombies on screen, zoom 4: %.0f draw calls, %.2f ms a frame (of it the server's tick %.2f ms)" % [n, m[0], m[1], server])
+		check(m[1] <= CROWD[n], "%d dressed zombies: a frame within %.1f ms" % [n, CROWD[n]])

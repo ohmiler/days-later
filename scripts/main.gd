@@ -11,6 +11,7 @@ const DAY_LENGTH := 240.0
 const MAX_ZOMBIES := 40  # around each player (see Survival._spawn_zombie); the city itself is far bigger
 const NEAR := 900.0  # px: a player's surroundings, where zombies are about and sent to them
 const SNAPSHOT_RATE := 0.05
+const SOCKET_BUFFER := 4 * 1024 * 1024  # bytes each way (see _socket)
 # Feature modules, split out of this file. Each is a child node with a fixed
 # name, so its network calls line up between server and clients.
 var combat: Combat
@@ -72,7 +73,6 @@ var zone := ""  # the zone this server runs (see Zones); "" until one is loaded
 var address := ""  # the server joined (to find the next zone's server on the same machine)
 var time := 0.3
 var spawn_timer := 0.0
-var snap_timer := 0.0
 var tracers: Array = []  # [from, to, ttl]
 var decals: Node2D
 var decals_up: Node2D  # things dropped upstairs, in the building you're up in (see _draw_decals_up)
@@ -244,7 +244,7 @@ func _host(dedicated: bool, resume := false) -> void:
 				get_tree().quit(1)
 			return
 		saved = r.data
-	var peer := WebSocketMultiplayerPeer.new()
+	var peer := _socket()
 	if peer.create_server(port) != OK:
 		ui.set_status("เปิดพอร์ต %d ไม่ได้ (มีเกมอื่นเปิดอยู่หรือเปล่า?)" % port)
 		return
@@ -276,7 +276,7 @@ func _host(dedicated: bool, resume := false) -> void:
 
 func _join(to: String) -> void:
 	address = to
-	var peer := WebSocketMultiplayerPeer.new()
+	var peer := _socket()
 	var url := "ws://%s:%d" % [to, port]
 	if peer.create_client(url) != OK:
 		ui.set_status("ที่อยู่ไม่ถูกต้อง")
@@ -553,20 +553,7 @@ func _server_tick(delta: float) -> void:
 			survival._spawn_zombie()
 			spawn_timer = 1.5 if world.is_night else 5.0
 
-	snap_timer -= delta
-	if snap_timer <= 0:
-		snap_timer = SNAPSHOT_RATE
-		var ps := []
-		for p: Player in players.values():
-			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0, p.aiming, p.seat, p.up, p.sitting, p.rest_face, p.on_car, p.prone, p.grabbed_by, snappedf(p.struggle, 0.05)],
-					p.app_code, p.wear_ids])
-		var zs := []
-		for z: Zombie in zombies.values():
-			zs.append([z.zid, z.position, z.hp, z.state, z.flags, z.missing])
-		# Each player is sent the zombies around them, not the whole city's.
-		for peer in multiplayer.get_peers():
-			net.snapshot.rpc_id(peer, ps, zombies_for(players.get(peer), zs), time, day, raining)
+	net.send_snapshots(delta)
 
 
 ## Keep bodies from stacking: zombies push each other and get pushed off players.
@@ -650,6 +637,15 @@ func _notify(peer_id: int, method: StringName, args: Array) -> void:
 
 
 ## Back to the title screen, or out of the game. Saves first when this is the server.
+## A WebSocket with room for the big messages: the world as it stands, sent to
+## someone joining, is well over the default 64 KB (which drops it).
+func _socket() -> WebSocketMultiplayerPeer:
+	var peer := WebSocketMultiplayerPeer.new()
+	peer.inbound_buffer_size = SOCKET_BUFFER
+	peer.outbound_buffer_size = SOCKET_BUFFER
+	return peer
+
+
 func _leave(quit: bool) -> void:
 	if in_game and multiplayer.is_server() and multiplayer.multiplayer_peer is WebSocketMultiplayerPeer:
 		_save_all()
@@ -673,10 +669,11 @@ func _toast(p: Player, text: String) -> void:
 
 ## The snapshot entries of the zombies a player should know about: those
 ## within NEAR, and any after them from further off.
-func zombies_for(p: Player, zs: Array) -> Array:
+## The zombies `p` is told about: those around them, and any after them.
+func zombies_for(p: Player) -> Array:
 	if p == null:
 		return []
-	return zs.filter(func(e): return p.position.distance_to(e[1]) < NEAR or zombies[e[0]].target == p)
+	return zombies.values().filter(func(z): return p.position.distance_to(z.position) < NEAR or z.target == p)
 
 
 func _spawn_pickup(pos: Vector2, item: Dictionary, up := false) -> void:

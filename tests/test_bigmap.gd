@@ -59,11 +59,7 @@ func run() -> void:
 	check(main.zombies.has(chaser.zid), "but not one that's after someone")
 
 	# Each player is sent the zombies around them (and any after them).
-	var zs := []
-	for z: Zombie in main.zombies.values():
-		zs.append([z.zid, z.position, z.hp, z.state, z.flags, z.missing])
-	var mine: Array = main.zombies_for(me, zs).map(func(e): return e[0])
+	var mine: Array = main.zombies_for(me).map(func(z): return z.zid)
 	check(chaser.zid in mine, "a zombie after you is sent to you even from far off")
 	var far := zombie_at(me.position + Vector2(0, Main.NEAR + 200.0))
-	zs.append([far.zid, far.position, far.hp, far.state, far.flags, far.missing])
-	check(not far.zid in main.zombies_for(me, zs).map(func(e): return e[0]), "one far off and minding its own business isn't")
+	check(not far.zid in main.zombies_for(me).map(func(z): return z.zid), "one far off and minding its own business isn't")
