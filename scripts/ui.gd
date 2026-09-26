@@ -450,7 +450,7 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	# Riding: the dashboard comes up, and the hotbar and weapons (no use on a bike) fade back.
 	var v: Dictionary = {}
 	var w: World = me.world
-	if me.alive() and me.riding >= 0 and me.riding < w.vehicles.size():
+	if me.alive() and me.riding >= 0 and me.seat == 0 and me.riding < w.vehicles.size():  # (the rider's; not on the back)
 		v = w.vehicles[me.riding]
 	dash.update(me, v, delta)
 	hotbar.modulate.a = lerpf(1.0, 0.18, dash.k)

@@ -12,7 +12,8 @@ class_name Rig
 ## girth, recoil, crouch, anchors, breath (a clock: standing still, the chest
 ## rises and falls with it).
 ## `anchors` poses the body by where it touches something instead of by an
-## action: {seat, hands: [far, near], feet: [far, near]}, in the same space
+## action (with `free_arms`, only the seat and feet: the arms fight or hold a
+## weapon as they would standing): {seat, hands: [far, near], feet: [far, near]}, in the same space
 ## (facing +x side-on). The hips sit on `seat`, and elbows and knees bend to
 ## put the hands and feet where they're asked (see _reach). A bike, a chair,
 ## a jerrycan held in both hands: each just says where its handholds are.
@@ -70,7 +71,16 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var r := {view = view, sx = sx, girth = girth, base = base, tip = tip, fall_dir = fall_dir,
 			zombie = zombie, closed = fall >= 1.0, hips = Vector2.ZERO, shadow = st.get("shadow", true)}
 	if st.has("anchors") and fall <= 0.0:
-		return _anchored(r, st.anchors, view, st.get("lean", 0.0))
+		var ar := _anchored(r, st.anchors, view, st.get("lean", 0.0))
+		if st.get("free_arms", false):
+			# Sat, but fighting: the arms as they'd be on foot (the torso stays upright).
+			ar.torso = 0.0
+			var arms := _fist_arms(view, angle, sx, attack, ext, weapon, weapon_l, girth, st.get("aiming", false))
+			for i in arms.size():
+				arms[i].idx = i
+			ar.arms_back = arms.filter(func(a): return a.behind)
+			ar.arms_front = arms.filter(func(a): return not a.behind)
+		return ar
 	if st.get("rise", -1.0) >= 0.0 and fall <= 0.0:
 		r.view = Look.SIDE
 		r.sx = -1.0 if fall_dir > 0 else 1.0  # (seen side-on, the way it fell)

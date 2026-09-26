@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 10
+const PROTOCOL := 11  # 11: riding pillion (a seat in the snapshot)
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -229,16 +229,25 @@ func snapshot(ps: Array, zs: Array, t: float, d: int, rain := false) -> void:
 		p.sleep_bed = n[11]
 		if not p.is_local:
 			p.aiming = n[14]
-		if n[12] != p.riding and not (p.is_local and n[12] >= 0 and p.riding >= 0):
+		var seat: int = n[15]
+		if (n[12] != p.riding or seat != p.seat) and not (p.is_local and n[12] >= 0 and p.riding >= 0 and seat == p.seat):
 			if p.riding >= 0:  # got off: the bike is drawn where it stands again
-				main.world.vehicles[p.riding].rider = 0
-				Vehicles._place(main.world.vehicles[p.riding])
+				var old: Dictionary = main.world.vehicles[p.riding]
+				if p.seat == 1:
+					old.pillion = 0
+				else:
+					old.rider = 0
+				Vehicles._place(old)
 			p.riding = n[12]
+			p.seat = seat if p.riding >= 0 else 0
 			p.ride_vel = Vector2.ZERO
 			if p.riding >= 0:
-				main.world.vehicles[p.riding].rider = p.peer_id
+				if p.seat == 1:
+					main.world.vehicles[p.riding].pillion = p.peer_id
+				else:
+					main.world.vehicles[p.riding].rider = p.peer_id
 				Vehicles._place(main.world.vehicles[p.riding])
-		if p.riding >= 0:
+		if p.riding >= 0 and p.seat == 0:
 			var v: Dictionary = main.world.vehicles[p.riding]
 			v.fuel = n[13]
 			if not p.is_local:  # someone else riding by: the bike goes with them

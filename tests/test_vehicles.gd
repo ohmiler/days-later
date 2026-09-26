@@ -1,7 +1,7 @@
 extends "res://tests/test_base.gd"
 ## Motorbikes: parked bikes can be ridden, go much faster than walking, burn
 ## fuel, are loud, knock zombies down, can't go indoors, stay where you leave
-## them (even after a reload), and can be hotwired and refuelled.
+## them (even after a reload), can be hotwired and refuelled, and carry two.
 
 
 ## A stretch of open road with nothing parked on it for a good way to the right.
@@ -98,6 +98,58 @@ func run() -> void:
 	check(me.riding < 0 and v.rider == 0, "tapping E gets you off")
 	var left_at: Vector2 = v.pos
 	check(me.position.distance_to(left_at) < 16.0, "you step off beside it")
+
+	# Two up: a friend hops on the back, rides along, can fight, and gets off.
+	v.pos = _road_spot()
+	Vehicles._place(v)
+	me.position = v.pos + Vector2(0, 10)
+	main.vehicles.mount(me, v.id)
+	var p2: Player = main._add_player(77)
+	p2.pname = "Noi"
+	p2.position = v.pos + Vector2(0, -10)
+	var t2 := Interact.target(main, p2)
+	var acts2: Array = main.vehicles.actions_for(p2, v.id)
+	check(t2.get("kind") == "vehicle" and acts2[0].verb == "pillion" and acts2[0].ok, "E on a ridden bike offers a seat on the back")
+	main.actions._do_action(p2, t2, "pillion")
+	check(p2.riding == v.id and p2.seat == 1 and v.pillion == 77, "and puts you there")
+	var p3: Player = main._add_player(78)
+	p3.position = v.pos + Vector2(0, -10)
+	check(not main.vehicles.actions_for(p3, v.id)[0].ok, "a third can't squeeze on")
+	var from := me.position
+	me.move = Vector2.RIGHT
+	simulate(0.5)
+	var two_went := me.position.x - from.x
+	check(p2.position == me.position, "the one on the back goes where the bike goes")
+	p2.set_attack_input(true, false)
+	simulate(0.1)
+	p2.set_attack_input(false, false)
+	check(p2.anim != Look.NONE, "and can swing a punch from there")
+	main.vehicles.dismount(p2)
+	check(p2.riding < 0 and p2.seat == 0 and v.pillion == 0 and me.riding == v.id, "hopping off the back leaves the rider riding")
+	me.move = Vector2.ZERO
+	simulate(1.5)
+	main.vehicles.dismount(me)
+	# Same start, alone: quicker away.
+	v.pos = _road_spot()
+	Vehicles._place(v)
+	me.position = v.pos + Vector2(0, 10)
+	main.vehicles.mount(me, v.id)
+	from = me.position
+	me.move = Vector2.RIGHT
+	simulate(0.5)
+	check(me.position.x - from.x > two_went, "two up pulls away slower (%.0f vs %.0f px)" % [two_went, me.position.x - from.x])
+	me.move = Vector2.ZERO
+	simulate(1.5)
+	p2.position = me.position + Vector2(0, -10)
+	main.vehicles.mount_pillion(p2, v.id)
+	main.vehicles.dismount(me)
+	check(p2.riding < 0 and v.pillion == 0 and v.rider == 0, "when the rider gets off, so does the one behind")
+	check(p2.position.distance_to(v.pos) < 16.0, "beside the bike")
+	for id in [77, 78]:
+		main.players[id].queue_free()
+		main.players.erase(id)
+	v.pos = left_at  # (back where the first ride left it, for the reload check below)
+	Vehicles._place(v)
 
 	# No riding into buildings.
 	var door_cell := Vector2i(-1, -1)

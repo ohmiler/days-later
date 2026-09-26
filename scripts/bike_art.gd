@@ -113,6 +113,21 @@ static func rider_anchors(model: String, view := "side") -> Dictionary:
 			feet = [at.call(b.pegs, -3.2), at.call(b.pegs, 3.2)]}
 
 
+## Where someone riding on the back sits: behind the rider on the pillion seat,
+## feet on the rear pegs, hands on the rider's waist (see rider_anchors).
+static func pillion_anchors(model: String, view := "side") -> Dictionary:
+	var b: Dictionary = BIKE_SEATS.get(model, BIKE_SEATS.wave)
+	var seat: Vector2 = b.seat + Vector2(-6.5, -1.0)
+	var pegs: Vector2 = b.pegs + Vector2(-5.5, 0.5)
+	var waist: Vector2 = b.seat + Vector2(-1.5, -4.5)
+	if view == "side":
+		return {seat = seat, hands = [waist + Vector2(-0.6, 0.3), waist], feet = [pegs + Vector2(-0.6, 0), pegs]}
+	var k := DEPTH if view == "front" else -DEPTH
+	var at := func(p: Vector2, x: float) -> Vector2: return Vector2(x, p.y + p.x * k)
+	return {seat = at.call(seat, 0.0), hands = [at.call(waist, -3.0), at.call(waist, 3.0)],
+			feet = [at.call(pegs, -3.4), at.call(pegs, 3.4)]}
+
+
 ## Draw a bike. `v`: {seed, model?}; view "side" (dir +1 faces right),
 ## "front" (coming toward the camera) or "back" (going away).
 static var wheel_turn := 0.0  # set for one draw: how far round the wheels have rolled (a ridden bike)

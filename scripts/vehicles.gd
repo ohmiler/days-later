@@ -55,7 +55,7 @@ static func setup(w: World) -> void:
 		var h := World.hash01(rec.seed, 3, 17)
 		w.vehicles.append({id = w.vehicles.size(), model = model, seed = rec.seed, pos = rec.pos,
 				dir = rec.get("dir", 1.0 if rec.seed % 2 else -1.0), view = rec.get("view", "side"), fuel = m.fuel * h * 0.6, hp = m.hp,
-				key = World.hash01(rec.seed, 5, 23) < KEY_CHANCE, upright = rec.seed % 7 != 3, rider = 0, rec = rec})
+				key = World.hash01(rec.seed, 5, 23) < KEY_CHANCE, upright = rec.seed % 7 != 3, rider = 0, pillion = 0, rec = rec})
 		rec.vehicle = w.vehicles.size() - 1
 
 
@@ -74,8 +74,11 @@ static func step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World
 		top *= SLOW_GROUND
 	if v.fuel <= 0.0 or v.hp <= 0:
 		top = 0.0
+	var two: bool = v.get("pillion", 0) != 0  # two up: a little slower away and at the top
+	if two:
+		top *= 0.94
 	var want := move.limit_length(1.0) * top
-	var rate: float = m.accel if want.length() > p.ride_vel.length() else m.accel * 1.6  # brakes bite harder
+	var rate: float = m.accel * (0.85 if two else 1.0) if want.length() > p.ride_vel.length() else m.accel * 1.6  # brakes bite harder
 	p.ride_vel = p.ride_vel.move_toward(want, rate * delta)
 	var before := p.position
 	p.position = w.slide(p.position, p.ride_vel * delta, RADIUS, false, true)
@@ -119,10 +122,19 @@ func server_tick(p: Player, delta: float) -> void:
 	if not p.alive() or p.sleeping:
 		dismount(p)
 		return
+	if p.seat == 1:
+		# Riding pillion: wherever the bike goes (the rider steers).
+		var d: Player = main.players.get(v.rider)
+		if d:
+			p.position = d.position
+		return
 	var m: Dictionary = MODELS[v.model]
 	step(p, v, p.move, delta, main.world)
+	var q: Player = main.players.get(v.pillion) if v.pillion != 0 else null
+	if q:
+		q.position = p.position
 	var speed := p.ride_vel.length()
-	v.fuel = maxf(0.0, v.fuel - m.use * (0.1 + 0.9 * speed / m.speed) * delta)
+	v.fuel = maxf(0.0, v.fuel - m.use * (0.1 + 0.9 * speed / m.speed) * (1.15 if q else 1.0) * delta)
 	if v.fuel <= 0.0 and speed < 1.0 and p.move.length() > 0.1:
 		main._toast(p, "แบตหมด" if m.electric else "น้ำมันหมด!")
 	# The engine carries.
@@ -167,19 +179,55 @@ func mount(p: Player, id: int) -> void:
 	main.fx_sound.rpc("door", v.pos)
 
 
+## Get on the back of a bike someone is riding.
+func mount_pillion(p: Player, id: int) -> void:
+	var v: Dictionary = main.world.vehicles[id]
+	if v.rider == 0 or v.pillion != 0 or p.riding >= 0 or v.rider == p.peer_id:
+		return
+	p.riding = id
+	p.seat = 1
+	p.ride_vel = Vector2.ZERO
+	var d: Player = main.players.get(v.rider)
+	p.position = d.position if d else v.pos
+	v.pillion = p.peer_id
+	main.fx_sound.rpc("rustle", v.pos)
+	if d:
+		main._toast(d, "%s ซ้อนท้ายแล้ว" % p.pname)
+
+
 func dismount(p: Player) -> void:
 	if p.riding < 0:
 		return
 	var v: Dictionary = main.world.vehicles[p.riding]
+	if p.seat == 1:
+		# Off the back: the rider rides on.
+		v.pillion = 0
+		p.riding = -1
+		p.seat = 0
+		_step_off(p, v)
+		return
 	v.rider = 0
 	p.riding = -1
+	# Whoever was on the back gets off too.
+	var q: Player = main.players.get(v.pillion) if v.pillion != 0 else null
+	v.pillion = 0
+	if q:
+		q.riding = -1
+		q.seat = 0
+		_step_off(q, v, Vector2(0, -9))
+		main._toast(q, "คนขี่ลงแล้ว")
 	_place(v)
+	_step_off(p, v)
+	_send(v)
+
+
+## Stand someone beside the bike (first free spot, `first` tried before the rest).
+func _step_off(p: Player, v: Dictionary, first := Vector2(0, 9)) -> void:
 	p.ride_vel = Vector2.ZERO
-	for off in [Vector2(0, 9), Vector2(0, -9), Vector2(10, 0), Vector2(-10, 0)]:
+	for off in [first, Vector2(0, 9), Vector2(0, -9), Vector2(10, 0), Vector2(-10, 0)]:
 		if main.world.can_stand(v.pos + off, Player.RADIUS):
 			p.position = v.pos + off
-			break
-	_send(v)
+			return
 
 
 func _send(v: Dictionary) -> void:
@@ -208,11 +256,14 @@ func refuel(p: Player, id: int) -> void:
 	_send(v)
 
 
-## What E can do with a bike.
+## What E can do with a bike: ride it, or with someone on it, hop on the back.
 func actions_for(p: Player, id: int) -> Array:
 	var v: Dictionary = main.world.vehicles[id]
 	var m: Dictionary = MODELS[v.model]
 	var out := []
+	if v.rider != 0:
+		out.append(Interact._act("pillion", "ซ้อนท้าย", v.pillion == 0, "มีคนซ้อนแล้ว"))
+		return out
 	var why := ""
 	if v.hp <= 0:
 		why = "รถพัง"

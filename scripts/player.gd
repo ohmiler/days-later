@@ -92,6 +92,7 @@ var bed := -1  # the bed (container id) this survivor calls home: where they wak
 var sleep_check := 0.0  # server: time to the next look around while asleep
 var sleep_bed := -1  # the bed slept in now (-1: the floor)
 var riding := -1  # the bike (World.vehicles id) being ridden, or -1
+var seat := 0  # on a bike: 0 riding it, 1 on the back (pillion: the rider steers, you can fight)
 var ride_vel := Vector2.ZERO  # a rider's speed and heading (server, and the rider's own machine)
 # How a rider looks turning (every machine, just for show): the view the bike
 # is turning from, how far through the turn, and how far it leans.
@@ -330,18 +331,47 @@ func _draw_riding(v: Dictionary) -> void:
 	BikeArt.braking = ride_acc < -40.0 and ride_spd > 10.0
 	BikeArt.draw(self, v.seed, view, dir, "far", xf)
 	Look.body_xf = xf
+	# Someone on the back sits behind the rider: drawn first, unless the bike is
+	# going away from us (then they're nearer the camera).
+	var q: Player = null
+	if v.get("pillion", 0) != 0 and get_parent().get("players") != null:
+		q = get_parent().players.get(v.pillion)
+	if q and view != "back":
+		_draw_pillion(q, v, view, rv, dir)
 	Look.draw(self, st, look)
+	if q and view == "back":
+		_draw_pillion(q, v, view, rv, dir)
 	Look.body_xf = Transform2D.IDENTITY
 	BikeArt.draw(self, v.seed, view, dir, "near", xf)
 	BikeArt.wheel_turn = 0.0
 	BikeArt.braking = false
 
 
+## Whoever rides on the back: sat on the pillion seat, holding on to the rider,
+## or, fighting or holding a weapon, arms free to swing (see Rig free_arms).
+func _draw_pillion(q: Player, v: Dictionary, view: String, rv: int, dir: float) -> void:
+	var wdef := Items.def(q.hand_weapon("r"))
+	var ldef := Items.def(q.hand_weapon("l"))
+	var dur := 0.22
+	if q.anim == Look.SWING:
+		dur = wdef.get("dur", 0.34)
+	elif q.anim == Look.SWING_L:
+		dur = ldef.get("dur", 0.34)
+	var ext := 0.0
+	if q.anim in [Look.PUNCH_L, Look.PUNCH_R, Look.SWING, Look.SWING_L] and q.anim_t < dur:
+		ext = sin(q.anim_t / dur * PI) if q.anim in [Look.PUNCH_L, Look.PUNCH_R] else q.anim_t / dur
+	var fighting: bool = ext > 0.0 or q.aiming or not wdef.get("draw", {}).is_empty() or (q.anim != Look.NONE and q.anim_t < 1.2)
+	var st := {view = [rv, dir < 0.0], anchors = BikeArt.pillion_anchors(v.model, view), shadow = false,
+			angle = q.aim.angle(), attack = q.anim if ext > 0.0 else Look.NONE, ext = ext, guard = fighting,
+			weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = q.aiming, free_arms = fighting}
+	Look.draw(self, st, q.look)
+
+
 ## Every machine, each frame: notice the bike turning, lean into bends, kick up dust.
 func _ride_look(delta: float) -> void:
 	if turn_t > 0.0:
 		turn_t = maxf(0.0, turn_t - delta)
-	if riding < 0 or riding >= world.vehicles.size():
+	if riding < 0 or riding >= world.vehicles.size() or seat == 1:  # (on the back, the rider's bike does the looking)
 		lean = 0.0
 		return
 	var v: Dictionary = world.vehicles[riding]
@@ -490,6 +520,12 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if seat == 1 and riding >= 0 and riding < world.vehicles.size():
+		# On the back: exactly where the rider is, on every machine.
+		var d = get_parent().players.get(world.vehicles[riding].rider) if get_parent().get("players") != null else null
+		if d:
+			position = d.position
+			net_pos = d.position
 	_ride_look(delta)
 	if not multiplayer.is_server():
 		if is_local:
@@ -557,8 +593,10 @@ func _draw() -> void:
 		queue_redraw()
 		return
 	if riding >= 0 and riding < world.vehicles.size():
-		_draw_riding(world.vehicles[riding])
-		return
+		if seat == 0:
+			_draw_riding(world.vehicles[riding])
+		queue_redraw()
+		return  # (on the back you're drawn by the rider, in the right order: see _draw_riding)
 	var wdef := Items.def(hand_weapon("r"))
 	var ldef := Items.def(hand_weapon("l"))
 	var dur := 0.22

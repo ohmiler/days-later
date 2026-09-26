@@ -354,7 +354,7 @@ func predict(me: Player, delta: float) -> void:
 	me.kick_buf -= delta
 	if me.anim_t > 1.0:
 		me.predicted = 0  # nothing came back for a while: stop waiting on it
-	if not me.alive() or me.riding >= 0 or me.sleeping or me.local_cd > 0.0 or me.aiming:
+	if not me.alive() or (me.riding >= 0 and me.seat == 0) or me.sleeping or me.local_cd > 0.0 or me.aiming:
 		return
 	if me.wants_kick():
 		me.kick_buf = 0.0
