@@ -40,6 +40,10 @@ static func _candidates(main: Node, p: Player) -> Array:
 	var st := stairs_near(w, p.position)
 	if st != NONE:
 		out.append({kind = "stairs", id = st, pos = w.to_pos(st), title = "บันได"})
+	if p.on_car >= 0:
+		# On a car roof: only getting down again.
+		out.append({kind = "car", id = p.on_car, pos = p.position + Vector2(0, 1), title = "หลังคารถ"})
+		return out
 	if p.up:
 		# Upstairs: the stairs, and what's up here with you.
 		for pid in main.pickups:
@@ -87,6 +91,10 @@ static func _candidates(main: Node, p: Player) -> Array:
 		var at := w.to_pos(th.cell)
 		if p.position.distance_to(at) < Things.REACH and w.building_at.get(th.cell) == here:
 			out.append({kind = "thing", id = th.id, pos = at, title = Things.title_of(th)})
+	for n in w.near(p.position):
+		if n is StreetProp and n.data.kind in StreetProp.CLIMB and not p.up \
+				and p.position.distance_to(StreetProp.middle(n.data)) < CAR_REACH:
+			out.append({kind = "car", id = n.data.id, pos = StreetProp.middle(n.data), title = "รถ"})
 	for d in w.near(p.position):
 		if d is DecorProp and d.data.kind in SEATS and d.data.get("up", false) == p.up and p.position.distance_to(d.position) < CONTAINER_REACH \
 				and w.building_at.get(d.data.cell) == here:
@@ -171,6 +179,12 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 					out.append(_act("claim", "ตั้งเป็นเตียงประจำ (ตายแล้วตื่นที่นี่)"))
 		"zombie":
 			out.append(_act("stomp", "เหยียบหัวให้ตาย"))
+		"car":
+			if p.on_car >= 0:
+				out.append(_act("jumpdown", "กระโดดลง (ทางที่หัน)"))
+			else:
+				var busy: bool = main.players.values().any(func(q): return q != p and q.on_car == t.id)
+				out.append(_act("climb", "ปีนขึ้นหลังคารถ", not busy, "มีคนอยู่บนรถแล้ว"))
 		"seat":
 			var taken: bool = main.players.values().any(func(q): return q != p and q.sitting == t.id)
 			out.append(_act("sit", "นั่งพัก", not taken, "มีคนนั่งอยู่"))
@@ -206,6 +220,9 @@ static func _board(p: Player, d: Dictionary) -> Dictionary:
 
 static func has_wood(p: Player) -> bool:
 	return p.inv.any(func(it): return it != null and it.id == "wood")
+
+
+const CAR_REACH := 34.0  # how near a car's middle you climb from
 
 
 ## What you can sit on, and what it's called.

@@ -96,7 +96,7 @@ func server_tick(delta: float) -> void:
 		# Flat on the ground it still snaps at ankles that come too close.
 		if attack_cd <= 0.0:
 			for p: Player in players.values():
-				if p.alive() and not p.on_roof and p.up == up and p.riding < 0 and p.position.distance_to(position) < 11.0:
+				if p.alive() and not p.on_roof and p.on_car < 0 and p.up == up and p.riding < 0 and p.position.distance_to(position) < 11.0:
 					attack_cd = GROUND_BITE_CD
 					p.bite(bite_damage() * 0.6, "legs")
 					break
@@ -107,7 +107,7 @@ func server_tick(delta: float) -> void:
 		return
 	if lunge_t > 0.0:
 		lunge_t -= delta
-		if lunge_t <= 0.0 and target and target.alive() and not target.on_roof and target.up == up and position.distance_to(target.position) < 16.0:
+		if lunge_t <= 0.0 and target and target.alive() and not target.on_roof and target.on_car < 0 and target.up == up and position.distance_to(target.position) < 16.0:
 			target.bite(bite_damage(), target.bite_part(position, false))
 		return
 	if repath <= 0:
@@ -179,6 +179,14 @@ func server_tick(delta: float) -> void:
 		return
 	var d := position.distance_to(target.position)
 	if d >= 12 and not up and _bash_door_ahead():
+		return
+	if target.on_car >= 0 and d < 18:
+		# Up on a car out of reach: it bangs on the car, and gets others' attention.
+		facing = (target.position - position).angle()
+		if attack_cd <= 0:
+			attack_cd = randf_range(0.9, 1.5)
+			if get_parent() is Main:
+				get_parent().actions.bang_car(target.on_car, position)
 		return
 	if d < 12:
 		if attack_cd <= 0:
