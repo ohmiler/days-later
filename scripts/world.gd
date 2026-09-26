@@ -144,6 +144,8 @@ func _spawn_props() -> void:
 	var bnode := {}
 	for b: BuildingProp in building_nodes:
 		bnode[b.data] = b
+	for i in decor.size():
+		decor[i].id = i  # (what you sit on is known by this)
 	for rec in decor:
 		var dp := DecorProp.new()
 		dp.data = rec

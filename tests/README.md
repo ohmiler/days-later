@@ -22,7 +22,7 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | File | Checks |
 |---|---|
 | `test_actions` | What E does through the real path: doors, searching and reopening furniture, stomping, picking up, nothing out of reach |
-| `test_beds` | Sleeping heals (faster shut in), the night speeds up when everyone sleeps, moving or a zombie wakes you, a claimed bed is where you wake after dying |
+| `test_beds` | Sleeping heals (faster shut in), the night speeds up when everyone sleeps, moving or a zombie wakes you, a claimed bed is where you wake after dying; getting up takes a moment, you lie the way you face; X sits you down (breath back faster), E sits you on a sofa or bench |
 | `test_admin` | The developer panel (F2): conjuring items, healing, zombies of a kind, clearing them, the time; only for the host |
 | `test_body` | Bites leave wounds where they land (bruises under armour), bleeding until bandaged or it stops on its own, open bites festering into a fever (not the zombie infection; antibiotics clear it), bitten arms swing slower and legs walk slower, mending slowly when fed, healing (faster asleep), sprains stop running, wounds saved |
 | `test_city` | The building plans (data/prefabs) are drawn correctly, the city from a seed is exactly the same as before (saved cities depend on it), every door and cupboard can be walked to |

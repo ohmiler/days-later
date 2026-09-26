@@ -290,6 +290,8 @@ func _nearest_player() -> Player:
 		var reach := SIGHT_DAY if lit else SIGHT_DARK
 		if p.sneak:
 			reach *= 0.5
+		elif p.sitting != -1 or p.sleeping:
+			reach *= 0.65  # (low down, harder to spot)
 		if d > reach or d > best_d:
 			continue
 		# Eyes look ahead; right up close it senses you any way round. Once it
