@@ -116,7 +116,8 @@ static func save_world(main: Node) -> void:
 		seed = main.world_seed, gen = CityGen.GEN, day = main.day, time = main.time,
 		next_zid = main.next_zid, next_pickup = main.next_pickup,
 		doors = doors, searched = searched, stripped = stripped, boxes = boxes, pickups = items, zombies = zs,
-		things = main.things.changed(), vehicles = main.vehicles.changed(),
+		things = main.things.changed(), vehicles = main.vehicles.changed(), corpses = main.corpse_list(),
+		next_cid = main.next_cid,
 	})
 
 
@@ -177,6 +178,10 @@ static func load_world_into(main: Node, w: Dictionary) -> bool:
 			world.container_nodes[id].set_stripped(true)
 	for e in w.pickups:
 		main.pickups[e[0]] = {pos = e[1], item = e[2], up = e[3] if e.size() > 3 else false}
+	main.next_cid = w.get("next_cid", 1)
+	for e in w.get("corpses", []):
+		main.corpses[e[0]] = {pos = e[1], fall_dir = e[2], body = e[3], style = e[4], age = e[5], burn = e[6], up = e[7]}
+		main.leave_corpse(e[1], e[2], e[3], true, e[5], e[4], e[0], e[6], e[7])
 	for e in w.zombies:
 		if not e[3].is_empty():
 			main.outfits[e[0]] = e[3]

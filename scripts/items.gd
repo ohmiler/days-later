@@ -58,7 +58,7 @@ const RARITY := {common = 4, uncommon = 2, rare = 1}
 const RARITY_NAMES := {common = "ธรรมดา", uncommon = "ไม่บ่อย", rare = "หายาก"}
 const RARITY_COLORS := {common = Color("c8c4b8"), uncommon = Color("6ab0e0"), rare = Color("e0b840")}
 ## Icon shapes an item's `icon` can use (drawn in draw_icon).
-const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain", "rag", "nails", "tape", "scrap", "magazine", "jerrycan", "bullets", "shells", "spray", "battery", "phone"]
+const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain", "rag", "nails", "tape", "scrap", "magazine", "jerrycan", "bullets", "shells", "spray", "battery", "phone", "lighter", "matches"]
 
 ## id -> fields, read from DATA the first time Items is used.
 static var DEFS: Dictionary = _load_defs()
@@ -514,6 +514,15 @@ static func _shape_icon(ci: CanvasItem, r: Rect2, icon: Dictionary) -> void:
 				var x := (-7 + i * 7) * s
 				ci.draw_rect(Rect2(c + Vector2(x - 2.5, -7 * s), Vector2(5, 10) * s), col)
 				ci.draw_rect(Rect2(c + Vector2(x - 2.5, 3 * s), Vector2(5, 4) * s), col2)
+		"lighter":  # a cheap plastic lighter
+			ci.draw_rect(Rect2(c - Vector2(4, 8) * s, Vector2(8, 18) * s), col)
+			ci.draw_rect(Rect2(c - Vector2(4, 12) * s, Vector2(8, 4) * s), col2)
+			ci.draw_rect(Rect2(c + Vector2(-2, -14) * s, Vector2(3, 2) * s), Color("3a3a3a"))
+		"matches":  # a matchbox, a match sticking out
+			ci.draw_rect(Rect2(c - Vector2(9, 6) * s, Vector2(18, 12) * s), col)
+			ci.draw_rect(Rect2(c - Vector2(9, 2) * s, Vector2(18, 4) * s), Color("f0ece4"))
+			ci.draw_line(c + Vector2(4, -6) * s, c + Vector2(11, -13) * s, Color("e8d8b0"), 1.5 * s)
+			ci.draw_circle(c + Vector2(11, -13) * s, 1.8 * s, col2)
 		"spray":  # an aerosol can with its cap
 			ci.draw_rect(Rect2(c - Vector2(5, 8) * s, Vector2(10, 20) * s), col)
 			ci.draw_rect(Rect2(c - Vector2(4, 13) * s, Vector2(8, 5) * s), col2)

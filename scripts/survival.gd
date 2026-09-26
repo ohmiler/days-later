@@ -132,6 +132,9 @@ func start_sleep(p: Player, bed: int) -> void:
 		main._toast(p, "นอนกลางแจ้ง · อันตราย หลับไม่สนิท")
 
 
+const REEK := 90.0  # how near a rotting body keeps you from sleeping well
+
+
 func _tick_sleep(p: Player, delta: float) -> void:
 	p.sleep_check -= delta
 	if p.sleep_check <= 0.0:
@@ -141,8 +144,20 @@ func _tick_sleep(p: Player, delta: float) -> void:
 			main._toast(p, "สะดุ้งตื่น! มีอะไรอยู่ใกล้ๆ")
 			return
 		p.sleep_safe = spot_safe(p.position)
+	# A rotting body close by: you hardly sleep for the smell.
+	var reek := false
+	for c in main.corpses.values():
+		if c.burn < 0.0 and c.age > Corpse.ROT and c.get("up", false) == p.up and c.pos.distance_to(p.position) < REEK:
+			reek = true
+			break
+	if reek and not p.warned.has("reek"):
+		p.warned["reek"] = true
+		main._toast(p, "กลิ่นศพเหม็นจนหลับไม่สนิท · เผาหรือเอาศพออกไป")
+	elif not reek:
+		p.warned.erase("reek")
 	if p.hunger > 20.0 and p.thirst > 20.0:
-		p.hp = minf(Player.MAX_HP, p.hp + SLEEP_HEAL * (SAFE_BONUS if p.sleep_safe else 1.0) * (BED_BONUS if p.sleep_bed >= 0 else 1.0) * delta)
+		p.hp = minf(Player.MAX_HP, p.hp + SLEEP_HEAL * (SAFE_BONUS if p.sleep_safe else 1.0) * (BED_BONUS if p.sleep_bed >= 0 else 1.0)
+				* (0.4 if reek else 1.0) * delta)
 	p.stamina = minf(100.0, p.stamina + 40.0 * delta)
 	p.exhausted = false
 

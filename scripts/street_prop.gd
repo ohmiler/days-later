@@ -584,37 +584,39 @@ func _zonesign() -> void:
 ## Victory Monument: a stepped round base, bronze figures standing round the
 ## pedestal, and the obelisk above them, five bayonets joined, rising far up.
 func _monument() -> void:
+	# (This prop stands at the front of the base, so people sort in front of
+	# and behind it right; the base itself is drawn round the roundabout's middle,
+	# the same five cells the base blocks.)
+	var o := Vector2(0, -5 * World.TILE)
 	var stone := Color("b8b4aa")
-	c.draw_set_transform(Vector2(0, -2), 0, Vector2(1, 0.42))
-	c.draw_circle(Vector2.ZERO, 82.0, Color(0, 0, 0, 0.18))
+	c.draw_circle(o + Vector2(0, 3), 82.0, Color(0, 0, 0, 0.16))
 	for i in 3:
-		c.draw_circle(Vector2(0, -i * 9.0), 74.0 - i * 13.0, stone.darkened(0.12 - i * 0.04))
-		c.draw_circle(Vector2(0, -i * 9.0 - 3.0), 72.0 - i * 13.0, stone.lightened(i * 0.03))
-	c.draw_set_transform(Vector2.ZERO)
-	# The pedestal.
-	c.draw_rect(Rect2(-22, -58, 44, 46), stone.darkened(0.05))
-	c.draw_rect(Rect2(-22, -58, 44, 4), stone.lightened(0.1))
-	c.draw_rect(Rect2(8, -58, 14, 46), stone.darkened(0.15))
-	# The obelisk: five blades joined, narrowing to a point.
-	var h := 240.0
-	var base := -58.0
-	var blades := [[-13.0, -7.0, stone.darkened(0.08)], [-7.0, -1.0, stone.lightened(0.06)], [-1.0, 5.0, stone],
-			[5.0, 10.0, stone.darkened(0.12)], [10.0, 14.0, stone.darkened(0.2)]]
+		c.draw_circle(o + Vector2(0, -i * 4.0), 78.0 - i * 18.0, stone.darkened(0.14 - i * 0.04))
+		c.draw_arc(o + Vector2(0, -i * 4.0), 78.0 - i * 18.0, 0, TAU, 48, stone.lightened(0.12), 1.5)
+	# Five bronze figures round the pedestal (soldier, sailor, airman, policeman, civilian).
+	var bronze := Color("4a4232")
+	for i in 5:
+		var a := -PI / 2 + TAU * (i + 0.5) / 5.0
+		var p := o + Vector2(cos(a) * 30.0, sin(a) * 30.0 - 8.0)
+		c.draw_rect(Rect2(p.x - 4, p.y - 4, 8, 4), stone.darkened(0.2))
+		c.draw_rect(Rect2(p.x - 2.2, p.y - 17, 4.4, 13), bronze)
+		c.draw_circle(Vector2(p.x, p.y - 19.5), 2.3, bronze)
+		c.draw_line(Vector2(p.x + 2.5, p.y - 16), Vector2(p.x + 4, p.y - 6), bronze, 1.2)
+	# The pedestal, and the obelisk on it: five blades joined, narrowing to a point.
+	var ped := o + Vector2(0, -8)
+	c.draw_rect(Rect2(ped.x - 16, ped.y - 40, 32, 40), stone.darkened(0.05))
+	c.draw_rect(Rect2(ped.x - 16, ped.y - 40, 32, 3), stone.lightened(0.1))
+	c.draw_rect(Rect2(ped.x + 6, ped.y - 40, 10, 40), stone.darkened(0.15))
+	var h := 230.0
+	var base := ped.y - 40.0
+	var blades := [[-12.0, -7.0, stone.darkened(0.08)], [-7.0, -1.0, stone.lightened(0.06)], [-1.0, 5.0, stone],
+			[5.0, 9.0, stone.darkened(0.12)], [9.0, 12.0, stone.darkened(0.2)]]
 	for bl in blades:
 		var x0: float = bl[0]
 		var x1: float = bl[1]
 		c.draw_colored_polygon(PackedVector2Array([Vector2(x0, base), Vector2(x1, base), Vector2(x1 * 0.12, base - h),
 				Vector2(x0 * 0.12, base - h)]), bl[2])
 	c.draw_line(Vector2(0, base - h), Vector2(0, base - h - 8), stone.darkened(0.3), 1.0)
-	# Five bronze figures round the pedestal (soldier, sailor, airman, policeman, civilian).
-	var bronze := Color("4a4232")
-	for i in 5:
-		var x := -34.0 + i * 17.0
-		var y := -14.0 + absf(i - 2) * -3.0
-		c.draw_rect(Rect2(x - 3.5, y - 4, 7, 4), stone.darkened(0.2))  # its plinth
-		c.draw_rect(Rect2(x - 2.2, y - 17, 4.4, 13), bronze)
-		c.draw_circle(Vector2(x, y - 19.5), 2.3, bronze)
-		c.draw_line(Vector2(x + 2.5, y - 16), Vector2(x + 4, y - 6), bronze, 1.2)
 
 
 ## Stairs up from the pavement to the skytrain station.

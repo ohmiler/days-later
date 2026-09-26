@@ -41,6 +41,13 @@ var map_t := 0.0
 var raining := false  # the server rolls the weather; clients get it in every snapshot
 var rain_fx: Control
 var bar_click := false  # a mouse button went down on the hotbar: do not punch until it is let go
+## Bodies of zombies killed (server keeps them; everyone draws them as they
+## rot away, see Corpse): cid -> {pos, fall_dir, body, style, age, burn}.
+## burn: -1 not burning, else seconds since it was set alight.
+var corpses := {}
+var next_cid := 1
+var corpse_nodes := {}  # every machine: cid -> the Corpse drawing it
+const MAX_CORPSES := 80  # the oldest go first
 var outfits := {}  # zid -> [shirt, pants, hair] for zombies that were players
 const AUTOSAVE_EVERY := 60.0
 var autosave_t := AUTOSAVE_EVERY
@@ -52,6 +59,7 @@ const NOISE_SWING := 90.0
 const NOISE_HIT := 130.0
 const NOISE_SEARCH := 60.0
 const NOISE_BREAK := 170.0
+const NOISE_BURN := 140.0  # a body burning: crackle, smoke, the smell
 var sneak_toggle := false
 var roof_k := 0.0  # 0 on the street .. 1 up on the roofs (eases, drives the rooftop view)
 const ROOF_DIM := 0.4  # how much the street below darkens while you're up top
@@ -352,6 +360,11 @@ func _drop_world() -> void:
 	zombies.clear()
 	pickups.clear()
 	outfits.clear()
+	corpses.clear()
+	for n in corpse_nodes.values():
+		if is_instance_valid(n):
+			n.queue_free()
+	corpse_nodes.clear()
 	actions.alarms.clear()
 	hidden_building = null
 	world.dispose()
@@ -519,6 +532,7 @@ func _server_tick(delta: float) -> void:
 	doors._tick_traps(delta)
 
 	actions.tick_alarms(delta)
+	_tick_corpses(delta)
 	survival._tick_horde()
 	var horde := survival.is_horde(day, time)
 	spawn_timer -= delta
@@ -706,8 +720,98 @@ func splatter(pos: Vector2, dir: Vector2, n: int) -> void:
 		decals.queue_redraw()
 
 
+## Server: a zombie's body left where it fell, for everyone to see rot away
+## (and for someone to burn).
+func add_corpse(pos: Vector2, fall_dir: float, body: Dictionary, style: String, up := false) -> void:
+	var cid := next_cid
+	next_cid += 1
+	corpses[cid] = {pos = pos, fall_dir = fall_dir, body = body, style = style, age = 0.0, burn = -1.0, up = up}
+	combat.fx_death.rpc(pos, fall_dir, body, style, cid)
+	if corpses.size() > MAX_CORPSES:
+		var oldest: int = corpses.keys().reduce(func(a, b): return a if corpses[a].age > corpses[b].age else b)
+		_drop_corpse(oldest)
+
+
+func _drop_corpse(cid: int) -> void:
+	corpses.erase(cid)
+	corpse_gone.rpc(cid)
+
+
+## Server, every tick: bodies rot, burning ones burn down, then they're gone.
+func _tick_corpses(delta: float) -> void:
+	for cid in corpses.keys():
+		var c: Dictionary = corpses[cid]
+		c.age += delta
+		if c.burn >= 0.0:
+			var before: float = c.burn
+			c.burn += delta
+			if floori(c.burn / 3.0) != floori(before / 3.0) and c.burn < Corpse.BURN_TIME:
+				_make_noise(c.pos, NOISE_BURN)  # smoke and the crackle: things come to see
+			for p: Player in players.values():
+				if c.burn < Corpse.BURN_TIME and p.alive() and p.up == c.up and p.position.distance_to(c.pos) < 9.0:
+					p.take_damage(3.0 * delta)  # (stood in the fire)
+			if c.burn > Corpse.BURN_TIME + Corpse.ASH_TIME:
+				_drop_corpse(cid)
+		elif c.age > Corpse.GONE:
+			_drop_corpse(cid)
+
+
+## Set a body alight (with a lighter or matches).
+func burn_corpse(p: Player, cid: int) -> void:
+	var c: Dictionary = corpses.get(cid, {})
+	if c.is_empty() or c.burn >= 0.0:
+		return
+	var slot := -1
+	for i in p.inv.size():
+		if p.inv[i] != null and Items.has_tag(p.inv[i].id, "fire"):
+			slot = i
+			break
+	if slot < 0:
+		_toast(p, "ต้องมีไฟแช็กหรือไม้ขีดไฟ")
+		return
+	p.inv[slot].hp -= 1  # (a strike of the lighter, a match used)
+	if p.inv[slot].hp <= 0:
+		_toast(p, "%sหมดแล้ว" % Items.display_name(p.inv[slot].id))
+		p.inv[slot] = null
+	inventory._send_inv(p)
+	c.burn = 0.0
+	corpse_burn.rpc(cid)
+	_make_noise(c.pos, NOISE_BURN)
+
+
+@rpc("authority", "call_local", "reliable")
+func corpse_burn(cid: int) -> void:
+	var n: Corpse = corpse_nodes.get(cid)
+	if n and is_instance_valid(n):
+		n.burn = 0.0
+
+
+@rpc("authority", "call_local", "reliable")
+func corpse_gone(cid: int) -> void:
+	var n: Corpse = corpse_nodes.get(cid)
+	corpse_nodes.erase(cid)
+	if n and is_instance_valid(n):
+		n.queue_free()
+
+
+## To someone joining: every body lying about, as it is now.
+@rpc("authority", "call_remote", "reliable")
+func corpses_sync(list: Array) -> void:
+	for e in list:
+		leave_corpse(e[1], e[2], e[3], true, e[5], e[4], e[0], e[6], e[7])
+
+
+func corpse_list() -> Array:
+	var out := []
+	for cid in corpses:
+		var c: Dictionary = corpses[cid]
+		out.append([cid, c.pos, c.fall_dir, c.body, c.style, c.age, c.burn, c.get("up", false)])
+	return out
+
+
 ## A fallen body on the ground; `age` lets a respawned player's body carry on where it was.
-func leave_corpse(pos: Vector2, fall_dir: float, body: Dictionary, zombie: bool, age: float, style := "") -> void:
+func leave_corpse(pos: Vector2, fall_dir: float, body: Dictionary, zombie: bool, age: float, style := "", cid := 0,
+		burn := -1.0, up := false) -> void:
 	var c := Corpse.new()
 	c.position = pos
 	c.lk = body
@@ -715,6 +819,12 @@ func leave_corpse(pos: Vector2, fall_dir: float, body: Dictionary, zombie: bool,
 	c.zombie = zombie
 	c.fall_dir = fall_dir
 	c.t = age
+	c.burn = burn
+	c.up = up
+	if cid > 0:
+		if corpse_nodes.has(cid) and is_instance_valid(corpse_nodes[cid]):
+			corpse_nodes[cid].queue_free()
+		corpse_nodes[cid] = c
 	add_child(c)
 
 
