@@ -255,23 +255,30 @@ func _draw_shop() -> void:
 			c.draw_circle(ac.get_center() + Vector2(0.8, 0), 1.3, Color("6a6a66"))
 	# Ground floor: open shop front with an awning, or a pulled-down shutter.
 	if data.get("shutter", false):
-		# A real shutter (see DoorProp): the dark shop front behind it, the box it
-		# rolls up into, and an awning if the shop was open when it ended.
-		c.draw_rect(Rect2(2, -GROUND_H + 1, w - 4, GROUND_H - 1), Color("231f1a"))
-		c.draw_rect(Rect2(1, -GROUND_H - 1, w - 2, 4), Color("7a7c7e"))
-		c.draw_rect(Rect2(1, -GROUND_H + 2.5, w - 2, 0.8), Color("5a5c5e"))
+		# A real shutter (see DoorProp) between the two pillars (the side walls,
+		# one cell each): the dark shop behind it, the box it rolls up into, and
+		# over that an awning if the shop was open when it ended.
+		var T := float(World.TILE)
+		var span := Rect2(T, -GROUND_H, w - 2 * T, GROUND_H)
+		c.draw_rect(Rect2(span.position.x, -GROUND_H + 3, span.size.x, GROUND_H - 3), Color("231f1a"))
+		for x in [0.0, w - T]:  # the pillars, a shade darker at their inner edge
+			c.draw_rect(Rect2(x + (T - 1.5 if x == 0.0 else 0.0), -GROUND_H, 1.5, GROUND_H), col.darkened(0.25))
 		if data.sign in ["ร้านทอง", "โรงรับจำนำ"]:
-			# Gold shops: red and gold all round the front, like every one on Yaowarat.
+			# Gold shops: red pillars trimmed in gold, like every one on Yaowarat.
 			var band := Color("a81c18")
-			c.draw_rect(Rect2(0, -GROUND_H, 2.5, GROUND_H), band)
-			c.draw_rect(Rect2(w - 2.5, -GROUND_H, 2.5, GROUND_H), band)
+			c.draw_rect(Rect2(0, -GROUND_H, T, GROUND_H), band)
+			c.draw_rect(Rect2(w - T, -GROUND_H, T, GROUND_H), band)
 			c.draw_rect(Rect2(0, -GROUND_H - 1, w, 1.2), Color("e0b840"))
+		c.draw_rect(Rect2(span.position.x - 0.5, -GROUND_H - 1, span.size.x + 1, 4), Color("7a7c7e"))
+		c.draw_rect(Rect2(span.position.x - 0.5, -GROUND_H + 2.2, span.size.x + 1, 0.8), Color("5a5c5e"))
 		if data.open:
 			var sa: Color = TRADE_AWNING.get(data.sign, Color.from_hsv(rng.randf(), 0.5, 0.65))
-			for i in int(w / 6) + 1:
-				var x1 := i * 6.0
-				c.draw_colored_polygon(PackedVector2Array([Vector2(x1, -GROUND_H + 3), Vector2(minf(x1 + 6, w), -GROUND_H + 3),
-						Vector2(minf(x1 + 7, w + 1), -GROUND_H + 8), Vector2(x1 + 1, -GROUND_H + 8)]),
+			var n := int(span.size.x / 6.0)
+			var sw := span.size.x / n
+			for i in n:
+				var x1 := span.position.x + i * sw
+				c.draw_colored_polygon(PackedVector2Array([Vector2(x1, -GROUND_H - 1), Vector2(x1 + sw, -GROUND_H - 1),
+						Vector2(x1 + sw + 0.8, -GROUND_H + 4), Vector2(x1 + 0.8, -GROUND_H + 4)]),
 						sa if i % 2 == 0 else Color("e8e2d4"))
 		_shop_marks()
 	elif data.open:
