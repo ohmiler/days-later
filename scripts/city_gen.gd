@@ -5,9 +5,26 @@ class_name CityGen
 ## Deterministic for a given seed so every client builds the same city.
 
 const ROAD_W := 6
+## The town is laid out in sections of SECTION cells, repeated to fill the map
+## (until a hand-drawn district plan replaces it). In each section:
+const SECTION := Vector2i(160, 120)
 const XS := [2, 42, 82, 122]  # left edge of each north-south avenue
 const YS := [2, 44, 92]  # top edge of each east-west avenue
 const CANAL_Y := 68  # canal rows 68..70, towpaths either side
+## ...and across the whole map:
+static var ALL_XS: Array = _repeat(XS, SECTION.x, World.W)
+static var ALL_YS: Array = _repeat(YS, SECTION.y, World.H)
+static var CANALS: Array = _repeat([CANAL_Y], SECTION.y, World.H)
+## Scattered things (clutter, parked bikes) are placed per this much map.
+static var AREA: float = float(World.W * World.H) / (SECTION.x * SECTION.y)
+
+
+static func _repeat(at: Array, step: int, size: int) -> Array:
+	var out := []
+	for o in range(0, size, step):
+		for v in at:
+			out.append(o + v)
+	return out
 const SOI_W := 3
 
 const SIGNS := ["ข้าวมันไก่", "ก๋วยเตี๋ยวเรือ", "ร้านขายยา", "ซ่อมมอเตอร์ไซค์", "ร้านทอง", "กาแฟโบราณ",
@@ -33,7 +50,7 @@ const SIGN_LOOT := {
 ## Which city generator this is. Saves remember it: a city saved by an older
 ## generator cannot be rebuilt from its seed any more (see SaveGame).
 ## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
-const GEN := 5  # 5: a floor upstairs (bedrooms), shops with stock behind instead of beds
+const GEN := 6  # 6: a map 3 x 3 the size
 const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
 const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
 const MAX_DEPTH := 15
@@ -123,40 +140,45 @@ static func prefab_problems() -> Array:
 
 static func build(w: World, rng: RandomNumberGenerator) -> void:
 	w.fill(Rect2i(0, 0, World.W, World.H), World.GRASS)
-	for x in XS:
+	for x in ALL_XS:
 		w.fill(Rect2i(x - 2, 0, ROAD_W + 4, World.H), World.SIDEWALK)
-	for y in YS:
+	for y in ALL_YS:
 		w.fill(Rect2i(0, y - 2, World.W, ROAD_W + 4), World.SIDEWALK)
-	w.fill(Rect2i(0, CANAL_Y - 2, World.W, 7), World.SIDEWALK)  # towpaths two wide
-	w.fill(Rect2i(0, CANAL_Y, World.W, 3), World.WATER)
+	for y in CANALS:
+		w.fill(Rect2i(0, y - 2, World.W, 7), World.SIDEWALK)  # towpaths two wide
+		w.fill(Rect2i(0, y, World.W, 3), World.WATER)
 	# Roads last, so avenues become bridges where they cross the canal.
-	for x in XS:
+	for x in ALL_XS:
 		w.fill(Rect2i(x, 0, ROAD_W, World.H), World.ROAD)
 		w.roads.append({rect = Rect2i(x, 0, ROAD_W, World.H), horizontal = false})
-	for y in YS:
+	for y in ALL_YS:
 		w.fill(Rect2i(0, y, World.W, ROAD_W), World.ROAD)
 		w.roads.append({rect = Rect2i(0, y, World.W, ROAD_W), horizontal = true})
-	for x in XS:
-		for y in YS:
+	for x in ALL_XS:
+		for y in ALL_YS:
 			w.intersections.append(Rect2i(x, y, ROAD_W, ROAD_W))
 
-	var bx := [[10, 40], [50, 80], [90, 120], [130, World.W]]
-	var by := [[10, 42], [52, CANAL_Y - 2], [CANAL_Y + 5, 90], [100, World.H]]
-	for i in bx.size():
-		for j in by.size():
-			var b := Rect2i(bx[i][0], by[j][0], bx[i][1] - bx[i][0], by[j][1] - by[j][0])
-			if i == 1 and j == 0:
-				_temple_block(w, b, rng)
-			elif i == 2 and j == 3:
-				_condo_block(w, b, rng)
-			elif i == 3 and j == 3:
-				_park_block(w, b, rng)
-			else:
-				_shophouse_block(w, b, rng)
+	var bx := [[10, 40], [50, 80], [90, 120], [130, SECTION.x]]
+	var by := [[10, 42], [52, CANAL_Y - 2], [CANAL_Y + 5, 90], [100, SECTION.y]]
+	for ox in range(0, World.W, SECTION.x):
+		for oy in range(0, World.H, SECTION.y):
+			for i in bx.size():
+				for j in by.size():
+					var b := Rect2i(ox + bx[i][0], oy + by[j][0], bx[i][1] - bx[i][0], by[j][1] - by[j][0])
+					if i == 1 and j == 0:
+						_temple_block(w, b, rng)
+					elif i == 2 and j == 3:
+						_condo_block(w, b, rng)
+					elif i == 3 and j == 3:
+						_park_block(w, b, rng)
+					else:
+						_shophouse_block(w, b, rng)
 
 	_skytrain(w)
 	_street_furniture(w, rng)
-	w.spawn_cell = Vector2i(XS[2] - 2, YS[1] + ROAD_W)  # a street corner in the middle of town
+	# A street corner in the middle of town.
+	var mid := Vector2i(World.W / SECTION.x / 2 * SECTION.x, World.H / SECTION.y / 2 * SECTION.y)
+	w.spawn_cell = mid + Vector2i(XS[2] - 2, YS[1] + ROAD_W)
 	# Last, so everything above comes out the same for a given seed as it always has.
 	_aftermath(w, rng)
 	Things.place_all(w, rng)
@@ -518,7 +540,7 @@ static func _park_block(w: World, b: Rect2i, rng: RandomNumberGenerator) -> void
 # --- Street furniture -------------------------------------------------------
 
 static func _skytrain(w: World) -> void:
-	var y: int = YS[1]
+	var y: int = World.H / SECTION.y / 2 * SECTION.y + YS[1]  # (one line, through the middle of town)
 	w.bts_row = y + 2
 	for x in range(5, World.W, 10):
 		var cells := [Vector2i(x, y + 2), Vector2i(x, y + 3)]
@@ -567,7 +589,7 @@ static func _street_furniture(w: World, rng: RandomNumberGenerator) -> void:
 
 	# Food carts and rubbish around the shops, and motorbikes along the kerb of
 	# the avenues running up and down (those along the shop fronts: see below).
-	for i in 900:
+	for i in int(900 * AREA):
 		var c := Vector2i(rng.randi_range(0, World.W - 1), rng.randi_range(1, World.H - 1))
 		var t := w.get_tile(c)
 		if t not in [World.SIDEWALK, World.SOI] or w.blocked.has(c):
@@ -642,7 +664,7 @@ static func _aftermath(w: World, rng: RandomNumberGenerator) -> void:
 			_wreck(w, c, rng)
 	_checkpoint(w, rng, spawn)
 	# Things along pavements and sois.
-	for i in 1600:
+	for i in int(1600 * AREA):
 		var c := Vector2i(rng.randi_range(1, World.W - 2), rng.randi_range(1, World.H - 2))
 		var t := w.get_tile(c)
 		var roll := rng.randf()
@@ -692,9 +714,10 @@ static func _aftermath(w: World, rng: RandomNumberGenerator) -> void:
 				_park(w, {kind = "motorbike", pos = w.to_pos(wall - Vector2i.DOWN) + Vector2(rng.randf_range(-3, 3), 2), seed = rng.randi(),
 						view = "back", dir = 1.0})
 	# Long-tail boats left in the canal, some half sunk.
-	for x in range(4, World.W - 4, 9):
-		if rng.randf() < 0.5 and w.get_tile(Vector2i(x, CANAL_Y + 1)) == World.WATER:
-			_prop(w, "boat", w.to_pos(Vector2i(x, CANAL_Y + 1)) + Vector2(0, 4), rng)
+	for cy in CANALS:
+		for x in range(4, World.W - 4, 9):
+			if rng.randf() < 0.5 and w.get_tile(Vector2i(x, cy + 1)) == World.WATER:
+				_prop(w, "boat", w.to_pos(Vector2i(x, cy + 1)) + Vector2(0, 4), rng)
 
 
 static func _prop(w: World, kind: String, pos: Vector2, rng: RandomNumberGenerator, flat := false) -> void:
@@ -835,12 +858,24 @@ static func _size_beds(w: World) -> void:
 	for d in w.decor:
 		if d.kind == "stairs":
 			stairs[d.cell] = true
-	for rec in w.buildings:
+	# The beds in each building, found once (not every building against every cupboard).
+	var owner := {}
+	for i in w.buildings.size():
+		var r: Rect2i = w.buildings[i].rect
+		for y in range(r.position.y, r.end.y):
+			for x in range(r.position.x, r.end.x):
+				owner[Vector2i(x, y)] = i
+	var beds_in := {}
+	for f in w.containers:
+		if f.kind == "bed" and not f.has("long") and not f.get("up", false) and owner.has(f.cell):
+			if not beds_in.has(owner[f.cell]):
+				beds_in[owner[f.cell]] = []
+			beds_in[owner[f.cell]].append(f)
+	for i in w.buildings.size():
+		var rec: Dictionary = w.buildings[i]
 		if not rec.has("keep_clear"):
 			continue
-		for f in w.containers:
-			if f.kind != "bed" or f.has("long") or f.get("up", false) or not rec.rect.has_point(f.cell):
-				continue
+		for f in beds_in.get(i, []):
 			for side in [2, 1, -1]:
 				var step := Vector2i.DOWN if side == 2 else Vector2i(side, 0)
 				var c: Vector2i = f.cell + step

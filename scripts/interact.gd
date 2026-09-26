@@ -49,8 +49,8 @@ static func _candidates(main: Node, p: Player) -> Array:
 		for z: Zombie in main.zombies.values():
 			if z.up and z.flags & 2 and p.position.distance_to(z.position) < STOMP_REACH:
 				out.append({kind = "zombie", id = z.zid, pos = z.position, title = "ซอมบี้ล้มอยู่"})
-		for f: FurnitureProp in w.container_nodes:
-			if f.data.get("up", false) and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == w.building_at.get(w.to_cell(p.position)):
+		for f in w.near(p.position):
+			if f is FurnitureProp and f.data.get("up", false) and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == w.building_at.get(w.to_cell(p.position)):
 				out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
 		return out
 	if p.on_roof:
@@ -87,9 +87,9 @@ static func _candidates(main: Node, p: Player) -> Array:
 		var at := w.to_pos(th.cell)
 		if p.position.distance_to(at) < Things.REACH and w.building_at.get(th.cell) == here:
 			out.append({kind = "thing", id = th.id, pos = at, title = Things.title_of(th)})
-	for f: FurnitureProp in w.container_nodes:
+	for f in w.near(p.position):
 		# Furniture in the same building as you: no reaching through walls.
-		if p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here and not f.data.get("up", false):
+		if f is FurnitureProp and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here and not f.data.get("up", false):
 			out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
 	return out
 
@@ -237,7 +237,9 @@ static func trap_near(w: World, pos: Vector2) -> int:
 static func container_near(w: World, pos: Vector2) -> FurnitureProp:
 	var best: FurnitureProp = null
 	var best_d := CONTAINER_REACH
-	for f: FurnitureProp in w.container_nodes:
+	for f in w.near(pos):
+		if not f is FurnitureProp:
+			continue
 		var d := pos.distance_to(f.position)
 		if d < best_d:
 			best_d = d

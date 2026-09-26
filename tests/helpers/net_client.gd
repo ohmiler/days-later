@@ -35,7 +35,7 @@ func _process(d: float) -> bool:
 		2:
 			# Report once the host has answered and opened the cupboard (or given up waiting).
 			var answered: bool = main.players.values().any(func(p): return p.say == "hello from the host")
-			if t > 4.5 and ((answered and main.ui.gear.box_id >= 0) or t > 10.0):
+			if t > 4.5 and ((answered and main.ui.gear.box_id >= 0) or t > 25.0):
 				var me: Player = main.players.get(main.multiplayer.get_unique_id())
 				lines.append("players %d" % main.players.size())
 				lines.append("zombies %d" % main.zombies.size())
@@ -55,4 +55,4 @@ func _process(d: float) -> bool:
 				f.store_string("\n".join(["in_game %s" % main.in_game, "status %s" % main.ui.status.text]))
 				f.close()
 				return true
-	return t > 20.0
+	return t > 40.0

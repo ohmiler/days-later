@@ -344,17 +344,53 @@ func fx_announce(text: String, siren: bool) -> void:
 		Sfx.play(main, "siren", main.camera.position, -6.0, 1.0)
 
 
+## Zombies are about wherever someone is: a new one turns up out of sight
+## around a player who has fewer than MAX_ZOMBIES near them. (The city is too
+## big to fill; where nobody is, nobody needs them.)
 func _spawn_zombie() -> void:
+	var around: Array = main.players.values().filter(func(q): return q.alive())
+	if around.is_empty():
+		return
+	var p: Player = around[randi() % around.size()]
+	var near := 0
+	for z: Zombie in main.zombies.values():
+		if z.position.distance_to(p.position) < main.NEAR:
+			near += 1
+	if near >= main.MAX_ZOMBIES:
+		return
 	for attempt in 30:
-		var c := Vector2i(randi_range(0, World.W - 1), randi_range(0, World.H - 1))
-		var pos := main.world.to_pos(c)
-		if main.world.is_solid(c):
+		var pos: Vector2 = p.position + Vector2.from_angle(randf() * TAU) * randf_range(320.0, main.NEAR - 60.0)
+		var c := main.world.to_cell(pos)
+		if not main.world.in_bounds(c) or main.world.is_solid(c):
 			continue
 		var too_close := false
-		for p: Player in main.players.values():
-			if p.position.distance_to(pos) < 300:
+		for q: Player in main.players.values():
+			if q.position.distance_to(pos) < 300:
 				too_close = true
 		if not too_close:
 			main._add_zombie(main.next_zid, pos)
 			main.next_zid += 1
 			return
+
+
+var _despawn_t := 0.0
+
+
+## Zombies left far from everyone, after no one, wander off (are dropped):
+## the ones that matter are the ones around the players.
+func _despawn_far(delta: float) -> void:
+	_despawn_t -= delta
+	if _despawn_t > 0.0:
+		return
+	_despawn_t = 2.0
+	for z: Zombie in main.zombies.values():
+		if z.target != null or z.investigate_t > 0.0:
+			continue
+		var far := true
+		for p: Player in main.players.values():
+			if p.position.distance_to(z.position) < main.NEAR * 1.5:
+				far = false
+				break
+		if far:
+			main.zombies.erase(z.zid)
+			z.queue_free()
