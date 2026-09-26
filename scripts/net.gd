@@ -121,6 +121,7 @@ func send_world(id: int) -> void:
 	sync_state.rpc_id(id, searched, items, doors, stripped)
 	main.things.send_all(id)
 	main.vehicles.send_all(id)
+	main.corpses_sync.rpc_id(id, main.corpse_list())
 
 
 func _on_peer_disconnected(id: int) -> void:

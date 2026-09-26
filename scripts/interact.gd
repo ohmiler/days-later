@@ -93,6 +93,10 @@ static func _candidates(main: Node, p: Player) -> Array:
 		var at := w.to_pos(th.cell)
 		if p.position.distance_to(at) < Things.REACH and w.building_at.get(th.cell) == here:
 			out.append({kind = "thing", id = th.id, pos = at, title = Things.title_of(th)})
+	for cid in main.corpse_nodes:
+		var cn: Corpse = main.corpse_nodes[cid]
+		if is_instance_valid(cn) and cn.up == p.up and cn.burn < 0.0 and p.position.distance_to(cn.position) < CORPSE_REACH:
+			out.append({kind = "corpse", id = cid, pos = cn.position + Vector2(cn.fall_dir * 8.0, -4), title = cn.title()})
 	for e in w.exits:
 		var r: Rect2i = e.rect
 		if Rect2(r.position * World.TILE, r.size * World.TILE).grow(12.0).has_point(p.position) and not p.up:
@@ -189,6 +193,9 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 			var ex: Array = w.exits.filter(func(e): return e.id == t.id)
 			if not ex.is_empty():
 				out.append(_act("travel", "เดินทางไป%s" % Zones.name_of(ex[0].to), Zones.open(ex[0].to), "ยังไปไม่ได้ (ย่านนี้ยังไม่เปิด)"))
+		"corpse":
+			var fire := p.inv.any(func(it): return it != null and Items.has_tag(it.id, "fire"))
+			out.append(_act("burn", "จุดไฟเผาศพ", fire, "ต้องมีไฟแช็กหรือไม้ขีดไฟ"))
 		"car":
 			if p.on_car >= 0:
 				out.append(_act("jumpdown", "กระโดดลง (ทางที่หัน)"))
@@ -233,6 +240,7 @@ static func has_wood(p: Player) -> bool:
 
 
 const CAR_REACH := 34.0  # how near a car's middle you climb from
+const CORPSE_REACH := 20.0
 
 
 ## What you can sit on, and what it's called.

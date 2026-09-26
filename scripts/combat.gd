@@ -137,7 +137,7 @@ static func death_style(how: String) -> String:
 
 
 func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
-	fx_death.rpc(z.position, fall_dir, z.body_look(), death_style(how))
+	main.add_corpse(z.position, fall_dir, z.body_look(), death_style(how), z.up)
 	# What it wore can be taken off the body: always what a turned survivor had
 	# on, sometimes an ordinary zombie's (often worn half through).
 	var i := 0
@@ -308,7 +308,7 @@ func _fire(p: Player) -> void:
 	if hit:
 		hit.hp -= GUN_DAMAGE
 		if hit.hp <= 0:
-			fx_death.rpc(hit.position, 1.0 if dir.x >= 0 else -1.0, hit.body_look(), death_style("gun"))
+			main.add_corpse(hit.position, 1.0 if dir.x >= 0 else -1.0, hit.body_look(), death_style("gun"), hit.up)
 			main.zombies.erase(hit.zid)
 			hit.queue_free()
 			p.kills += 1
@@ -396,8 +396,8 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, w
 
 
 @rpc("authority", "call_local", "reliable")
-func fx_death(pos: Vector2, fall_dir: float, body: Dictionary, style: String) -> void:
-	main.leave_corpse(pos, fall_dir, body, true, 0.0, style)
+func fx_death(pos: Vector2, fall_dir: float, body: Dictionary, style: String, cid := 0) -> void:
+	main.leave_corpse(pos, fall_dir, body, true, 0.0, style, cid)
 	if style in ["behead", "arm", "burst"]:
 		Sfx.play(main, "gore", pos, 2.0)
 	elif style == "crush":
