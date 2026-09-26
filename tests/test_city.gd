@@ -5,10 +5,10 @@ extends "res://tests/test_base.gd"
 ## purpose, update the fingerprints below (and think about old saves).
 
 const SEED := 777
-## (Generator 7: zones, each its own map, the first one here. Changing these means old
+## (Generator 8: the first zone drawn by hand, Victory Monument. Changing these means old
 ## cities can no longer be rebuilt: bump CityGen.GEN so their saves move to a
 ## new city instead of loading wrong.)
-const FINGERPRINT := {tiles = 3622999061, doors = 1372506714, containers = 502539381, buildings = 3617317347}
+const FINGERPRINT := {tiles = 1559731154, doors = 3936762461, containers = 2169627897, buildings = 4233577653}
 
 
 func _fingerprint(w: World) -> Dictionary:
@@ -48,19 +48,24 @@ func run() -> void:
 	check(kinds_a == kinds_b, "street props come out the same too (%d)" % kinds_a.size())
 	check(a.can_stand(a.to_pos(a.spawn_cell), 5), "the spawn corner is free to stand on")
 	# Every door and furniture cell is reachable from spawn (nothing walled in by props).
-	# (A closed door is solid to the path finder, so aim for the cells beside it.)
-	var start := a.to_pos(a.spawn_cell)
+	# One flood from the spawn corner through everything you can walk (doors
+	# open: you can open them); then each door and cupboard needs a reached
+	# cell beside it. Upstairs, a flood from the stairs of its building.
+	var reached := {}
+	var queue := [a.spawn_cell]
+	reached[a.spawn_cell] = true
+	while not queue.is_empty():
+		var c: Vector2i = queue.pop_back()
+		for dir in World.DIRS:
+			var n: Vector2i = c + dir
+			if reached.has(n) or not a.in_bounds(n):
+				continue
+			if a.door_at.has(n) or not a.is_solid(n):
+				reached[n] = true
+				queue.append(n)
 	var unreachable := []
 	for d in a.doors:
-		if d.kind != "door":
-			continue
-		var ok := false
-		for dir in World.DIRS:
-			var c: Vector2i = d.cell + dir
-			if not a.is_solid(c) and not a.path_between(start, a.to_pos(c)).is_empty():
-				ok = true
-				break
-		if not ok:
+		if d.kind in ["door", "shutter"] and not World.DIRS.any(func(dir): return reached.has(d.cell + dir) and not a.door_at.has(d.cell + dir)):
 			unreachable.append(d.cell)
 	for f in a.containers:
 		if f.get("up", false):
@@ -68,7 +73,7 @@ func run() -> void:
 			var st: Vector2i = a.building_at[f.cell].data.stairs
 			if not World.DIRS.any(func(dir): return not a.is_solid_up(f.cell + dir) and (f.cell + dir == st or not a.path_up(a.to_pos(st), a.to_pos(f.cell + dir)).is_empty())):
 				unreachable.append(f.cell)
-		elif not World.DIRS.any(func(dir): return not a.is_solid(f.cell + dir) and not a.path_between(start, a.to_pos(f.cell + dir)).is_empty()):
+		elif not World.DIRS.any(func(dir): return reached.has(f.cell + dir) and not a.is_solid(f.cell + dir)):
 			unreachable.append(f.cell)
 	check(unreachable.is_empty(), "every door and cupboard can be walked up to from spawn (%d cannot: %s)" % [unreachable.size(), unreachable.slice(0, 5)])
 	var kinds := {}

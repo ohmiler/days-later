@@ -215,7 +215,7 @@ func _clear_backdrop() -> void:
 func _host(dedicated: bool, resume := false) -> void:
 	if zone == "" and resume:
 		zone = SaveGame.last_zone()
-	if zone == "" or not Zones.ZONES.has(zone):
+	if zone == "" or not Zones.open(zone):
 		zone = Zones.first()
 	SaveGame.zone = zone
 	var saved := {}
@@ -367,7 +367,7 @@ func _drop_world() -> void:
 ## with friends) the whole group travels together.
 func travel(p: Player, e: Dictionary) -> void:
 	var dest: String = e.to
-	if not Zones.ZONES.has(dest):
+	if not Zones.open(dest):
 		return
 	if DisplayServer.get_name() == "headless" and multiplayer.get_unique_id() == 1 and not players.has(1) \
 			and Zones.def(dest).port > 0 and Zones.def(dest).port != port:
@@ -406,7 +406,7 @@ func switch_zone(dest: String, arrive: String) -> void:
 		SaveGame.load_world_into(self, saved)
 	day = d0
 	time = t0
-	var at := world.to_pos(Zones.arrival(arrive, Vector2i(World.W, World.H)))
+	var at := world.arrival_of(arrive)
 	var i := 0
 	for q: Player in players.values():
 		q.world = world
@@ -1043,6 +1043,13 @@ func _fade_trees_near(pos: Vector2) -> void:
 		if b is BuildingProp and pos.y < b.position.y and b.visual_rect().intersects(body):
 			b.modulate.a = 0.3
 			faded.append(b)
+	# Under a drawn zone's skytrain (drawn BTS_H up from the line it follows).
+	var lifted := pos + Vector2(0, World.BTS_H - 14)
+	for i in world.bts_path.size() - 1:
+		if Geometry2D.get_closest_point_to_segment(lifted, world.bts_path[i], world.bts_path[i + 1]).distance_to(lifted) < 44.0:
+			world.overhead.modulate.a = 0.45
+			faded.append(world.overhead)
+			break
 	if world.bts_row >= 0:
 		var deck_bottom := (world.bts_row + 3) * World.TILE - World.BTS_H + 9
 		var deck_top := (world.bts_row - 1) * World.TILE - World.BTS_H

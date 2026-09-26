@@ -227,7 +227,7 @@ static func load_player_into(p: Player, name: String) -> bool:
 	# city: they keep what they carry, and start at the spawn corner.
 	p.position = d.pos if same_city else p.world.spawn_point()
 	if d.get("travel_to", "") == p.world.zone and d.get("travel_exit", "") != "":
-		p.position = p.world.to_pos(Zones.arrival(d.travel_exit, Vector2i(World.W, World.H)))
+		p.position = p.world.arrival_of(d.travel_exit)
 		same_city = false
 	p.travel_to = ""
 	p.travel_exit = ""

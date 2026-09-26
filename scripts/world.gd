@@ -78,6 +78,11 @@ var vehicles: Array = []  # bikes you can ride (see Vehicles)
 var things: Array = []  # {id, kind, cell, state}: taps, radios, vending machines (see Things)
 var thing_nodes: Array = []
 var bts_row := -1
+var bts_path := PackedVector2Array()  # a drawn zone's skytrain: the line it follows, in pixels (see CityGen._skytrain_plan)
+var bts_station := Vector2(-1, -1)  # ...and the rows (pixels, from..to) its station spans
+var circle := {}  # a drawn zone's roundabout: {at (cell), r, island}
+var medians: Array = []  # raised islands down the middle of wide streets (Rect2i)
+var blocks: Array = []  # a drawn zone's blocks: [{rect, use, name}]
 var spawn_cell := Vector2i(W / 2, H / 2)
 
 var chunks := {}
@@ -90,10 +95,7 @@ func generate(seed_val: int, zone_id := "") -> void:
 	var size: Vector2i = CityGen.SECTION if zone == "backdrop" else Zones.def(zone).size
 	W = size.x
 	H = size.y
-	exits = []
-	if zone != "backdrop":
-		for e in Zones.def(zone).exits:
-			exits.append({id = e.id, to = e.to, to_exit = e.to_exit, rect = Zones.exit_rect(e.id, size)})
+	exits = [] if zone == "backdrop" else Zones.exits_of(zone)
 	city_seed = seed_val
 	tint.seed = seed_val + 1
 	tint.frequency = 0.04
@@ -436,6 +438,14 @@ func set_tile(c: Vector2i, t: int) -> void:
 	tiles[c.y * W + c.x] = t
 	astar.set_point_solid(c, is_solid(c))
 	chunks[c / CHUNK].queue_redraw()
+
+
+## Where someone comes in by way out `exit_id` (the spawn corner if there's no such way).
+func arrival_of(exit_id: String) -> Vector2:
+	for e in exits:
+		if e.id == exit_id:
+			return to_pos(Zones.arrival(e))
+	return spawn_point()
 
 
 ## Upstairs, only the floor up there is somewhere to stand.
@@ -930,28 +940,49 @@ func _draw_markings(node: Node2D) -> void:
 	var yellow := Color(0.85, 0.68, 0.2, 0.85)
 	for rd in roads:
 		var rect: Rect2i = rd.rect
+		# Lane lines a quarter and three quarters across; down the middle, the
+		# double yellow (or on the wide streets, a raised island).
+		var wd := float((rect.size.y if rd.horizontal else rect.size.x) * TILE)
+		var mid := wd / 2.0
+		var median: bool = rd.get("median", false)
 		if rd.horizontal:
 			var y0 := rect.position.y * TILE
-			for x in W:
-				if in_intersection(Vector2i(x, rect.position.y)):
+			for x in range(rect.position.x, rect.end.x):
+				if in_intersection(Vector2i(x, rect.position.y)) or get_tile(Vector2i(x, rect.position.y + 1)) != ROAD:
 					continue
 				var px := x * TILE
-				ci.draw_line(Vector2(px, y0 + 46.5), Vector2(px + 16, y0 + 46.5), yellow, 1.0)
-				ci.draw_line(Vector2(px, y0 + 49.5), Vector2(px + 16, y0 + 49.5), yellow, 1.0)
+				if median:
+					ci.draw_rect(Rect2(px, y0 + mid - 12, 16, 24), Color("9a968c"))
+					ci.draw_rect(Rect2(px, y0 + mid - 12, 16, 2.5), Color("d8d0bc"))
+					ci.draw_rect(Rect2(px, y0 + mid + 9.5, 16, 2.5), Color("c8302a") if x % 2 else Color("e8e4dc"))
+				else:
+					ci.draw_line(Vector2(px, y0 + mid - 1.5), Vector2(px + 16, y0 + mid - 1.5), yellow, 1.0)
+					ci.draw_line(Vector2(px, y0 + mid + 1.5), Vector2(px + 16, y0 + mid + 1.5), yellow, 1.0)
 				if x % 2 == 0:
-					ci.draw_line(Vector2(px + 3, y0 + 24), Vector2(px + 13, y0 + 24), white, 1.0)
-					ci.draw_line(Vector2(px + 3, y0 + 72), Vector2(px + 13, y0 + 72), white, 1.0)
+					ci.draw_line(Vector2(px + 3, y0 + wd / 4.0), Vector2(px + 13, y0 + wd / 4.0), white, 1.0)
+					ci.draw_line(Vector2(px + 3, y0 + wd * 0.75), Vector2(px + 13, y0 + wd * 0.75), white, 1.0)
 		else:
 			var x0 := rect.position.x * TILE
-			for y in H:
-				if in_intersection(Vector2i(rect.position.x, y)):
+			for y in range(rect.position.y, rect.end.y):
+				if in_intersection(Vector2i(rect.position.x, y)) or get_tile(Vector2i(rect.position.x + 1, y)) != ROAD:
 					continue
 				var py := y * TILE
-				ci.draw_line(Vector2(x0 + 46.5, py), Vector2(x0 + 46.5, py + 16), yellow, 1.0)
-				ci.draw_line(Vector2(x0 + 49.5, py), Vector2(x0 + 49.5, py + 16), yellow, 1.0)
+				if median:
+					ci.draw_rect(Rect2(x0 + mid - 12, py, 24, 16), Color("9a968c"))
+					ci.draw_rect(Rect2(x0 + mid - 12, py, 24, 3), Color("d8d0bc"))
+					ci.draw_rect(Rect2(x0 + mid - 12, py, 2.5, 16), Color("c8302a") if y % 2 else Color("e8e4dc"))
+					ci.draw_rect(Rect2(x0 + mid + 9.5, py, 2.5, 16), Color("c8302a") if y % 2 else Color("e8e4dc"))
+				else:
+					ci.draw_line(Vector2(x0 + mid - 1.5, py), Vector2(x0 + mid - 1.5, py + 16), yellow, 1.0)
+					ci.draw_line(Vector2(x0 + mid + 1.5, py), Vector2(x0 + mid + 1.5, py + 16), yellow, 1.0)
 				if y % 2 == 0:
-					ci.draw_line(Vector2(x0 + 24, py + 3), Vector2(x0 + 24, py + 13), white, 1.0)
-					ci.draw_line(Vector2(x0 + 72, py + 3), Vector2(x0 + 72, py + 13), white, 1.0)
+					ci.draw_line(Vector2(x0 + wd / 4.0, py + 3), Vector2(x0 + wd / 4.0, py + 13), white, 1.0)
+					ci.draw_line(Vector2(x0 + wd * 0.75, py + 3), Vector2(x0 + wd * 0.75, py + 13), white, 1.0)
+	if not circle.is_empty():
+		# The roundabout: a kerb round the island, a lane line round the road.
+		var c := to_pos(circle.at)
+		ci.draw_arc(c, (circle.island + 0.5) * TILE, 0, TAU, 64, Color("d8d0bc"), 3.0)
+		ci.draw_arc(c, (circle.island + circle.r) * 0.5 * TILE + 8, 0, TAU, 64, Color(0.85, 0.83, 0.78, 0.5), 1.0)
 	# Zebra crossings on every side of every junction.
 	for it: Rect2i in intersections:
 		var o := Vector2(it.position) * TILE
@@ -960,7 +991,7 @@ func _draw_markings(node: Node2D) -> void:
 		var south := get_tile(it.position + Vector2i(0, it.size.y)) == ROAD
 		var west := get_tile(it.position + Vector2i(-1, 0)) == ROAD
 		var east := get_tile(it.position + Vector2i(it.size.x, 0)) == ROAD
-		for k in 12:
+		for k in int(sz / 8):
 			var s := k * 8.0 + 1.5
 			if north:
 				ci.draw_rect(Rect2(o.x + s, o.y - 26, 5, 22), white)
@@ -972,4 +1003,6 @@ func _draw_markings(node: Node2D) -> void:
 				ci.draw_rect(Rect2(o.x + sz + 4, o.y + s, 22, 5), white)
 	if bts_row >= 0:
 		ci.draw_rect(Rect2(0, (bts_row - 1) * TILE, W * TILE, 4 * TILE), Color(0, 0, 0, 0.2))  # skytrain shadow
+	for i in bts_path.size() - 1:
+		ci.draw_line(bts_path[i], bts_path[i + 1], Color(0, 0, 0, 0.18), 4 * TILE)  # (and a drawn zone's)
 	ci.commit(node)
