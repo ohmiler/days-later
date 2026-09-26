@@ -78,7 +78,10 @@ func run() -> void:
 	_stand_by(radio)
 	main.things.act(me, radio.id, "toggle")
 	check(radio.state.on, "the radio switches on")
+	main.survival._set_rain(false)  # (rain muffles it: the weather is random)
+	main.survival.rain_t = 1e9
 	var z := zombie_at(_near(radio))
+	main.things._radio_t = 0.0  # (it plays out now, before the zombie can wander off)
 	var drawn := false
 	for i in 60:  # (watched throughout: it may have been and gone by the end, facing away from you)
 		simulate(0.1)
