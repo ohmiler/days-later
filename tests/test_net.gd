@@ -79,7 +79,7 @@ func run() -> void:
 	# The host goes on to the next zone: the client comes too.
 	var zpath := ProjectSettings.globalize_path("user://net_client_zone.txt")
 	DirAccess.remove_absolute(zpath)
-	var ex: Dictionary = main.world.exits[0]
+	var ex: Dictionary = main.world.exits.filter(func(e): return Zones.open(e.to))[0]
 	main.travel(me, ex)
 	for i in 200:
 		if FileAccess.file_exists(zpath):

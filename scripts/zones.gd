@@ -22,10 +22,49 @@ static func _load() -> Dictionary:
 	var out := {}
 	ORDER = []
 	for id in cf.get_sections():
+		var z := {name = cf.get_value(id, "name", id), port = cf.get_value(id, "port", 0),
+				exits = cf.get_value(id, "exits", []), todo = cf.get_value(id, "todo", false), plan = {}}
 		var sz: Array = cf.get_value(id, "size", [320, 240])
-		out[id] = {name = cf.get_value(id, "name", id), size = Vector2i(sz[0], sz[1]),
-				port = cf.get_value(id, "port", 0), exits = cf.get_value(id, "exits", [])}
-		ORDER.append(id)
+		var plan_file: String = cf.get_value(id, "plan", "")
+		if plan_file != "":
+			z.plan = _load_plan(plan_file)
+			sz = z.plan.get("size", sz)
+		z.size = Vector2i(sz[0], sz[1])
+		out[id] = z
+		if not z.todo:
+			ORDER.append(id)
+	return out
+
+
+## A hand-drawn zone's plan (data/zones/*.cfg, section [plan]) as a dictionary.
+static func _load_plan(path: String) -> Dictionary:
+	var cf := ConfigFile.new()
+	if cf.load(path) != OK:
+		push_error("Could not read zone plan %s" % path)
+		return {}
+	var out := {}
+	for key in cf.get_section_keys("plan"):
+		out[key] = cf.get_value("plan", key)
+	return out
+
+
+## Is there a zone there to go to (not one still to be made)?
+static func open(id: String) -> bool:
+	return ZONES.has(id) and not ZONES[id].todo
+
+
+## A zone's ways out: [{id, edge, to, to_exit, rect}]. A plan says where
+## they are; otherwise the edge's avenue across the middle.
+static func exits_of(id: String) -> Array:
+	var z := def(id)
+	var out := []
+	if not z.plan.is_empty():
+		for e in z.plan.get("exits", []):
+			var r: Array = e.rect
+			out.append({id = e.id, edge = e.edge, to = e.to, to_exit = e.to_exit, rect = Rect2i(r[0], r[1], r[2], r[3])})
+		return out
+	for e in z.exits:
+		out.append({id = e.id, edge = e.id, to = e.to, to_exit = e.to_exit, rect = exit_rect(e.id, z.size)})
 	return out
 
 
@@ -60,8 +99,9 @@ static func exit_rect(edge: String, size: Vector2i) -> Rect2i:
 
 
 ## Where someone coming in by a way out appears: a few steps in from it.
-static func arrival(edge: String, size: Vector2i) -> Vector2i:
-	var r := exit_rect(edge, size)
+static func arrival(e: Dictionary) -> Vector2i:
+	var r: Rect2i = e.rect
+	var edge: String = e.edge
 	var mid := r.position + r.size / 2
 	match edge:
 		"east":

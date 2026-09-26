@@ -8,8 +8,11 @@ static var _glow_tex: Texture2D
 ## Vehicles are drawn this much bigger than their shapes below, so a car is
 ## longer than a person is tall (see CityGen._size_vehicles for what they block).
 const VEHICLE_SCALE := 1.6
-const VEHICLES := ["car", "taxi", "tuktuk", "wreck", "army"]  # drawn bigger (a motorbike is drawn to size)
-const CLIMB := ["car", "taxi", "wreck", "army"]  # vehicles you can climb up on (not a tuk-tuk's canvas roof)
+const VEHICLES := ["car", "taxi", "tuktuk", "wreck", "army", "van", "pickup", "songthaew", "bus"]  # drawn bigger (a motorbike is drawn to size)
+const CLIMB := ["car", "taxi", "wreck", "army", "van", "pickup", "songthaew", "bus"]  # vehicles you can climb up on (not a tuk-tuk's canvas roof)
+## Roof heights and lengths (drawing units, before VEHICLE_SCALE) of the Thai
+## traffic: [roof height side-on, roof height end-on, length]. See roof_spot.
+const BODY := {van = [19.0, 21.0, 34.0], pickup = [15.0, 16.0, 33.0], songthaew = [18.0, 19.0, 33.0], bus = [30.0, 30.0, 92.0]}
 
 
 ## On a car's roof: where you stand (on the ground, just in front of it, so
@@ -27,6 +30,11 @@ static func roof_spot(rec: Dictionary) -> Array:
 				return [pos + Vector2(15.5 * k, 0.5), 15.0 * k * low]
 			return [pos + Vector2(8 * k, 0.5), 18.0 * k * low]
 		_:
+			if BODY.has(rec.kind):
+				var b: Array = BODY[rec.kind]
+				if rec.get("horizontal", true):
+					return [pos + Vector2(b[2] * 0.5 * k, 0.5), b[0] * k]
+				return [pos + Vector2(8 * k, 0.5), b[1] * k + (b[2] - 32.0) * 0.3 * k]
 			if rec.get("horizontal", true):
 				return [pos + Vector2(15.5 * k, 0.5), 16.0 * k]
 			return [pos + Vector2(8 * k, 0.5), 18.5 * k]
@@ -37,6 +45,9 @@ static func middle(rec: Dictionary) -> Vector2:
 	var k := VEHICLE_SCALE
 	if rec.kind == "army":
 		return rec.pos + Vector2(24 * k, -5 * k)
+	if BODY.has(rec.kind):
+		var len_: float = BODY[rec.kind][2]
+		return rec.pos + (Vector2(len_ * 0.5 * k, -6 * k) if rec.get("horizontal", true) else Vector2(8 * k, -len_ * 0.45 * k))
 	return rec.pos + (Vector2(16 * k, -6 * k) if rec.get("horizontal", true) else Vector2(8 * k, -15 * k))
 
 var data: Dictionary
@@ -91,6 +102,13 @@ func _paint() -> void:
 				_car_end()
 		"tuktuk":
 			_tuktuk()
+		"van", "pickup", "songthaew", "bus":
+			if data.horizontal:
+				_thai_side()
+			else:
+				_thai_end()
+		"busstop":
+			_busstop()
 		"motorbike":
 			_motorbike()
 		"cart":
@@ -103,6 +121,10 @@ func _paint() -> void:
 			_wreck()
 		"zonesign":
 			_zonesign()
+		"monument":
+			_monument()
+		"btsstairs":
+			_bts_stairs()
 		"glass":
 			_glass()
 		"papers":
@@ -204,6 +226,99 @@ func _car_end() -> void:
 	c.draw_rect(Rect2(15, -9, 1, 4), Color("161616"))
 	if data.kind == "taxi":
 		c.draw_rect(Rect2(6, -20, 4, 2), Color("e8d040"))
+
+
+## The Thai traffic side-on (facing right): a minivan, a pickup, a songthaew
+## (a pickup with a roof and benches in the back), a city bus.
+func _thai_side() -> void:
+	var col: Color = data.color
+	var kind: String = data.kind
+	var L: float = BODY[kind][2]
+	var H: float = BODY[kind][0]
+	_shadow(Vector2(L * 0.53, 3), Vector2(L * 0.5, -1))
+	var glass := Color("2a323a")
+	match kind:
+		"bus":
+			var low := Color("b8322a") if col == Color("d8c8a0") else col.darkened(0.25)
+			c.draw_rect(Rect2(1, -H, L, H - 3), col)
+			c.draw_rect(Rect2(1, -10, L, 7), low)  # the lower half in the company colour
+			c.draw_rect(Rect2(1, -H, L, 2), col.lightened(0.15))
+			for x in range(6, int(L) - 8, 9):
+				c.draw_rect(Rect2(x, -H + 5, 7, 9), glass)  # a row of windows
+			c.draw_rect(Rect2(L - 7, -H + 4, 6, 17), glass)  # the driver's window
+			c.draw_rect(Rect2(L - 16, -H + 5, 6, 22), glass.darkened(0.2))  # front door
+			c.draw_rect(Rect2(28, -H + 5, 6, 22), glass.darkened(0.2))  # back door
+			c.draw_rect(Rect2(L - 14, -H - 3, 10, 3), Color("2a2a2a"))  # route number box
+			c.draw_rect(Rect2(L - 13, -H - 2.5, 8, 2), Color("e8a030"))
+			for x in [14.0, L - 20.0]:
+				c.draw_circle(Vector2(x, -3), 3.2, Color("161616"))
+				c.draw_circle(Vector2(x, -3), 1.2, Color("6a6a6a"))
+		"van":
+			c.draw_colored_polygon(PackedVector2Array([Vector2(1, -3), Vector2(L, -3), Vector2(L, -10), Vector2(L - 5, -H), Vector2(2, -H), Vector2(1, -H + 2)]), col)
+			c.draw_rect(Rect2(4, -H + 3, L - 11, 6), glass)  # the long side windows
+			c.draw_colored_polygon(PackedVector2Array([Vector2(L - 6, -H + 3), Vector2(L - 3, -11), Vector2(L - 6, -11)]), glass)
+			c.draw_rect(Rect2(1, -8, L, 1), col.darkened(0.2))
+			for x in [7.0, L - 7.0]:
+				c.draw_circle(Vector2(x, -3), 2.8, Color("161616"))
+		"pickup", "songthaew":
+			c.draw_rect(Rect2(1, -9, 19, 6), col.darkened(0.1))  # the bed
+			c.draw_rect(Rect2(1, -9, 19, 1.5), col.lightened(0.1))
+			c.draw_colored_polygon(PackedVector2Array([Vector2(20, -3), Vector2(L, -3), Vector2(L, -9), Vector2(L - 3, -10), Vector2(28, -15),
+					Vector2(21, -15), Vector2(20, -10)]), col)  # the cab
+			c.draw_colored_polygon(PackedVector2Array([Vector2(22, -10), Vector2(27, -10), Vector2(27, -14), Vector2(22.5, -14)]), glass)
+			if kind == "songthaew":
+				c.draw_rect(Rect2(1, -H, 20, 2), col.darkened(0.2))  # the roof over the benches
+				for x in [1.5, 10.0, 19.5]:
+					c.draw_line(Vector2(x, -9), Vector2(x, -H), Color("3a3a3a"), 0.8)
+				c.draw_rect(Rect2(2, -12, 17, 1.5), Color("7a5a3a"))  # a bench
+				c.draw_rect(Rect2(1, -H + 2, 20, 1.2), Color("e8d040"))  # its route stripe
+			for x in [7.0, L - 7.0]:
+				c.draw_circle(Vector2(x, -3), 2.8, Color("161616"))
+				c.draw_circle(Vector2(x, -3), 1.1, Color("6a6a6a"))
+	c.draw_rect(Rect2(L - 1, -8, 1.5, 2), Color("e8e0c0"))
+	c.draw_rect(Rect2(0.5, -8, 1.5, 2), Color("a82a20"))
+	if data.get("stand", false):
+		c.draw_rect(Rect2(L * 0.3, -H - 5, L * 0.4, 4), Color("f0ece4"))  # the destination card in the window
+		c.draw_rect(Rect2(L * 0.3, -H - 5, L * 0.4, 4), Color("c83a2e"), false, 0.5)
+
+
+## The same, seen from behind or in front (running up and down the screen):
+## the roof from above, the end facing us.
+func _thai_end() -> void:
+	var col: Color = data.color
+	var kind: String = data.kind
+	var L: float = BODY[kind][2] * 0.85
+	_shadow(Vector2(9, 5), Vector2(8, -3))
+	c.draw_rect(Rect2(1, -L, 14, L - 4), col)
+	match kind:
+		"bus":
+			var low := Color("b8322a") if col == Color("d8c8a0") else col.darkened(0.25)
+			c.draw_rect(Rect2(3, -L + 8, 10, 12), Color("9a9c9e"))  # air-con box on the roof
+			c.draw_rect(Rect2(1, -12, 14, 8), low)
+			c.draw_rect(Rect2(2.5, -16, 11, 5), Color("2a323a"))
+		"pickup", "songthaew":
+			c.draw_rect(Rect2(2.5, -L + 2, 11, L * 0.55), col.darkened(0.15) if kind == "pickup" else col.darkened(0.3))
+			c.draw_rect(Rect2(2.5, -12, 11, 3), Color("2a323a"))
+		_:
+			c.draw_rect(Rect2(2.5, -L + 3, 11, L - 18), col.lightened(0.1))
+			c.draw_rect(Rect2(2.5, -13, 11, 3.5), Color("2a323a"))
+	c.draw_rect(Rect2(1, -6, 14, 5), col.darkened(0.3))
+	c.draw_rect(Rect2(2, -5, 2.5, 1.5), Color("e8e0c0"))
+	c.draw_rect(Rect2(11.5, -5, 2.5, 1.5), Color("e8e0c0"))
+	c.draw_rect(Rect2(0, -9, 1, 4), Color("161616"))
+	c.draw_rect(Rect2(15, -9, 1, 4), Color("161616"))
+
+
+## A bus shelter: a bench, a roof on two posts, the route board.
+func _busstop() -> void:
+	_shadow(Vector2(10, 3), Vector2(0, -1))
+	c.draw_rect(Rect2(-10, -8, 20, 2), Color("8a8e92"))  # bench
+	for x in [-10.0, 9.0]:
+		c.draw_rect(Rect2(x, -24, 1.2, 24), Color("6a6e72"))
+	c.draw_rect(Rect2(-12, -26, 24, 3), Color("2a5aa8"))  # roof
+	c.draw_rect(Rect2(-7, -21, 8, 9), Color("e8e4dc"))  # the board of route numbers
+	for i in 3:
+		c.draw_rect(Rect2(-6, -20 + i * 3, 6, 1.2), Color("c83a2e") if i % 2 else Color("2a5aa8"))
 
 
 func _tuktuk() -> void:
@@ -464,6 +579,53 @@ func _zonesign() -> void:
 		if i in [2, 3]:
 			continue
 		c.draw_rect(Rect2(-36 + i * 12, -8, 12, 3), Color("c8302a") if i % 2 == 0 else Color("f0ece4"))
+
+
+## Victory Monument: a stepped round base, bronze figures standing round the
+## pedestal, and the obelisk above them, five bayonets joined, rising far up.
+func _monument() -> void:
+	var stone := Color("b8b4aa")
+	c.draw_set_transform(Vector2(0, -2), 0, Vector2(1, 0.42))
+	c.draw_circle(Vector2.ZERO, 82.0, Color(0, 0, 0, 0.18))
+	for i in 3:
+		c.draw_circle(Vector2(0, -i * 9.0), 74.0 - i * 13.0, stone.darkened(0.12 - i * 0.04))
+		c.draw_circle(Vector2(0, -i * 9.0 - 3.0), 72.0 - i * 13.0, stone.lightened(i * 0.03))
+	c.draw_set_transform(Vector2.ZERO)
+	# The pedestal.
+	c.draw_rect(Rect2(-22, -58, 44, 46), stone.darkened(0.05))
+	c.draw_rect(Rect2(-22, -58, 44, 4), stone.lightened(0.1))
+	c.draw_rect(Rect2(8, -58, 14, 46), stone.darkened(0.15))
+	# The obelisk: five blades joined, narrowing to a point.
+	var h := 240.0
+	var base := -58.0
+	var blades := [[-13.0, -7.0, stone.darkened(0.08)], [-7.0, -1.0, stone.lightened(0.06)], [-1.0, 5.0, stone],
+			[5.0, 10.0, stone.darkened(0.12)], [10.0, 14.0, stone.darkened(0.2)]]
+	for bl in blades:
+		var x0: float = bl[0]
+		var x1: float = bl[1]
+		c.draw_colored_polygon(PackedVector2Array([Vector2(x0, base), Vector2(x1, base), Vector2(x1 * 0.12, base - h),
+				Vector2(x0 * 0.12, base - h)]), bl[2])
+	c.draw_line(Vector2(0, base - h), Vector2(0, base - h - 8), stone.darkened(0.3), 1.0)
+	# Five bronze figures round the pedestal (soldier, sailor, airman, policeman, civilian).
+	var bronze := Color("4a4232")
+	for i in 5:
+		var x := -34.0 + i * 17.0
+		var y := -14.0 + absf(i - 2) * -3.0
+		c.draw_rect(Rect2(x - 3.5, y - 4, 7, 4), stone.darkened(0.2))  # its plinth
+		c.draw_rect(Rect2(x - 2.2, y - 17, 4.4, 13), bronze)
+		c.draw_circle(Vector2(x, y - 19.5), 2.3, bronze)
+		c.draw_line(Vector2(x + 2.5, y - 16), Vector2(x + 4, y - 6), bronze, 1.2)
+
+
+## Stairs up from the pavement to the skytrain station.
+func _bts_stairs() -> void:
+	var concrete := Color("a8a49c")
+	_shadow(Vector2(9, 3), Vector2(0, -1))
+	for i in 8:
+		c.draw_rect(Rect2(-8, -3 - i * 5.5, 16, 3.5), concrete.darkened(i * 0.03))
+	c.draw_rect(Rect2(-9, -46, 18, 3), Color("5a7a8a"))  # its roof
+	c.draw_line(Vector2(-8, -2), Vector2(-8, -44), Color("7a7a76"), 1.0)
+	c.draw_line(Vector2(8, -2), Vector2(8, -44), Color("7a7a76"), 1.0)
 
 
 func _army() -> void:

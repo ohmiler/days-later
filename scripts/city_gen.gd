@@ -33,6 +33,9 @@ const SIGNS := ["ข้าวมันไก่", "ก๋วยเตี๋ย�
 const WALL_COLORS := [Color("e2d3b0"), Color("d8b48a"), Color("a8c8c0"), Color("e0b0a4"), Color("b4c498"),
 		Color("c8b8d8"), Color("ecdca8"), Color("9ab4c8"), Color("d89a78"), Color("c8c0b0")]
 const CAR_COLORS := [Color("e4e2dc"), Color("a8aaac"), Color("2a2c2e"), Color("8a2a26"), Color("34507a"), Color("6a6a5e")]
+const BUS_COLORS := [Color("d8c8a0"), Color("2a5aa8"), Color("e8e4dc")]  # the old red-and-cream, the blue air-con, the white one
+## How many cells a parked vehicle takes along its length (see _vehicle; its drawing may overhang a little).
+const VEHICLE_CELLS := {car = 2, taxi = 2, van = 2, pickup = 2, songthaew = 2, bus = 7}
 const TAXI_COLORS := [Color("e0609a"), Color("e0802a"), Color("3a6ac8"), Color("3a8a4a")]
 ## Dressing for each kind of place (see DecorProp); floor things never block.
 ## What a shop sells decides what you can find inside it (see Items.roll).
@@ -50,7 +53,7 @@ const SIGN_LOOT := {
 ## Which city generator this is. Saves remember it: a city saved by an older
 ## generator cannot be rebuilt from its seed any more (see SaveGame).
 ## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
-const GEN := 7  # 7: zones (a map per zone, ways out at the edges)
+const GEN := 8  # 8: zones drawn by hand (Victory Monument)
 const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
 const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
 const MAX_DEPTH := 15
@@ -139,10 +142,186 @@ static func prefab_problems() -> Array:
 
 
 static func build(w: World, rng: RandomNumberGenerator) -> void:
+	AREA = float(World.W * World.H) / (SECTION.x * SECTION.y)
+	var plan: Dictionary = {} if w.zone == "backdrop" else Zones.def(w.zone).plan
+	if plan.is_empty():
+		_layout_sections(w, rng)
+	else:
+		_layout_plan(w, plan, rng)
+	# Last, so everything above comes out the same for a given seed as it always has.
+	_aftermath(w, rng)
+	Things.place_all(w, rng)
+	_size_vehicles(w)
+	_size_beds(w)
+	_shop_fronts(w)
+	_zone_exits(w)
+	_landmarks(w)
+
+
+## A zone drawn by hand (data/zones/*.cfg): its streets, roundabout, canal,
+## skytrain and blocks where the plan puts them; the blocks filled with
+## shophouses and sois as anywhere else.
+static func _layout_plan(w: World, plan: Dictionary, rng: RandomNumberGenerator) -> void:
+	ALL_XS = []
+	ALL_YS = []
+	CANALS = []
+	w.fill(Rect2i(0, 0, World.W, World.H), World.GRASS)
+	var rects := []
+	for rd in plan.get("roads", []):
+		var a: Array = rd.rect
+		rects.append(Rect2i(a[0], a[1], a[2], a[3]))
+	for r: Rect2i in rects:
+		w.fill(r.grow(2), World.SIDEWALK)
+	var circle: Dictionary = plan.get("circle", {})
+	if not circle.is_empty():
+		_disk(w, Vector2i(circle.at[0], circle.at[1]), circle.r + 2, World.SIDEWALK)
+	for cn in plan.get("canals", []):
+		w.fill(Rect2i(0, cn.y - 2, World.W, cn.h + 4), World.SIDEWALK)  # towpaths
+		w.fill(Rect2i(0, cn.y, World.W, cn.h), World.WATER)
+		CANALS.append(cn.y)
+	# Streets last, so they're bridges where they cross the canal.
+	var roads: Array = plan.get("roads", [])
+	for i in rects.size():
+		var r: Rect2i = rects[i]
+		w.fill(r, World.ROAD)
+		var horizontal := r.size.x > r.size.y
+		w.roads.append({rect = r, horizontal = horizontal, median = roads[i].get("median", false), name = roads[i].get("name", "")})
+		if roads[i].get("median", false):
+			# A raised island down the middle (the skytrain's pillars stand on it).
+			var wd := r.size.y if horizontal else r.size.x
+			var m := Rect2i(r.position.x, r.position.y + wd / 2 - 1, r.size.x, 2) if horizontal \
+					else Rect2i(r.position.x + wd / 2 - 1, r.position.y, 2, r.size.y)
+			w.medians.append(m)
+	for j in plan.get("junctions", []):
+		w.intersections.append(Rect2i(j[0], j[1], j[2], j[3]))
+	if not circle.is_empty():
+		var at := Vector2i(circle.at[0], circle.at[1])
+		_disk(w, at, circle.r, World.ROAD)
+		_disk(w, at, circle.island, World.GRASS)  # a ring of garden round the paved middle
+		_disk(w, at, circle.island - 4, World.PLAZA)
+		for k in 8:
+			var a := TAU * (k + 0.5) / 8.0
+			w.fill(Rect2i(at + Vector2i(roundi(cos(a) * (circle.island - 2)), roundi(sin(a) * (circle.island - 2))), Vector2i.ONE), World.TREE)
+		w.circle = {at = at, r = circle.r, island = circle.island}
+		for dy in range(-5, 6):
+			for dx in range(-5, 6):
+				if dx * dx + dy * dy <= 25:
+					w.blocked[at + Vector2i(dx, dy)] = true  # the monument's base
+	w.fill(Rect2i(0, World.H - 3, World.W, 3), World.SIDEWALK)  # (the south edge: shops face onto it)
+	w.blocks = []
+	for b in plan.get("blocks", []):
+		var br := Rect2i(b.rect[0], b.rect[1], b.rect[2], b.rect[3])
+		w.blocks.append({rect = br, use = b.get("use", "shophouses"), name = b.get("name", "")})
+		_shophouse_block(w, br, rng)
+	if plan.has("bts"):
+		_skytrain_plan(w, plan.bts)
+	_street_furniture(w, rng)
+	var sp: Array = plan.get("spawn", [World.W / 2, World.H / 2])
+	w.spawn_cell = Vector2i(sp[0], sp[1])
+
+
+## Would this lot stand on the roundabout (or its pavement)?
+static func _on_circle(w: World, r: Rect2i) -> bool:
+	if w.circle.is_empty():
+		return false
+	var c := Vector2(w.circle.at)
+	var near := Vector2(clampf(c.x, r.position.x, r.end.x - 1), clampf(c.y, r.position.y, r.end.y - 1))
+	return near.distance_to(c) <= w.circle.r + 3
+
+
+## Every cell within `r` of `at`.
+static func _disk(w: World, at: Vector2i, r: int, tile: int) -> void:
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if dx * dx + dy * dy <= r * r:
+				w.fill(Rect2i(at + Vector2i(dx, dy), Vector2i.ONE), tile)
+
+
+## The skytrain of a drawn zone: up the street at column `x`, round the far side
+## of the roundabout at `around` cells, on down; a station over `station`
+## (rows). World.bts_path is the line it follows, in pixels.
+static func _skytrain_plan(w: World, bts: Dictionary) -> void:
+	var T := World.TILE
+	var x: float = (bts.x + 0.5) * T
+	var path := PackedVector2Array()
+	if not w.circle.is_empty():
+		var c: Vector2 = w.to_pos(w.circle.at)
+		var r: float = bts.get("around", 36) * T
+		path.append(Vector2(x, 0))
+		for i in 25:
+			var a := -PI / 2 + PI * i / 24.0
+			path.append(c + Vector2(cos(a), sin(a)) * r)
+		path.append(Vector2(x, World.H * T))
+	else:
+		path.append(Vector2(x, 0))
+		path.append(Vector2(x, World.H * T))
+	w.bts_path = path
+	w.bts_station = Vector2(bts.station[0], bts.station[1]) * T if bts.has("station") else Vector2(-1, -1)
+	# Pillars every 10 cells along it, where there's street or pavement to stand them on.
+	var d := 0.0
+	for i in path.size() - 1:
+		var a: Vector2 = path[i]
+		var b: Vector2 = path[i + 1]
+		var seg := a.distance_to(b)
+		while d < seg:
+			var p := a.lerp(b, d / seg)
+			var cell := w.to_cell(p)
+			if w.get_tile(cell) in [World.ROAD, World.SIDEWALK, World.PLAZA] and not w.blocked.has(cell) \
+					and not (w.circle.has("at") and Vector2(cell).distance_to(Vector2(w.circle.at)) < w.circle.island + 1):
+				w.blocked[cell] = true
+				w.street_props.append({kind = "pillar", pos = w.to_pos(cell) + Vector2(-8, 8)})
+			d += 10.0 * T
+		d -= seg
+	if w.bts_station.x >= 0:
+		# Stairs down from the station to the pavement on both sides of the street.
+		var sy := int((w.bts_station.x + w.bts_station.y) / 2 / T)
+		for rd in w.roads:
+			var r: Rect2i = rd.rect
+			if not rd.horizontal and r.has_point(Vector2i(int(x / T), sy)):
+				for side in [r.position.x - 2, r.end.x + 1]:
+					var cell := Vector2i(side, sy)
+					w.blocked[cell] = true
+					w.street_props.append({kind = "btsstairs", pos = w.to_pos(cell) + Vector2(0, 8), seed = side})
+				break
+
+
+## The one-off buildings a drawn zone is known by (the monument...).
+static func _landmarks(w: World) -> void:
+	if w.circle.is_empty():
+		return
+	var at: Vector2i = w.circle.at
+	w.street_props.append({kind = "monument", pos = w.to_pos(at) + Vector2(0, 5 * World.TILE), seed = 0})
+	# Round the roundabout: the bus stops everyone waited at, and where the
+	# minivans to everywhere used to queue, left as they were.
+	var reach: int = w.circle.r + 6
+	for arm in [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]:
+		for side in [-1, 1]:
+			var cell: Vector2i = at + arm * reach + Vector2i(arm.y, arm.x) * side * 9
+			for k in 6:
+				if w.get_tile(cell) == World.SIDEWALK and not w.blocked.has(cell) and w.get_tile(cell + Vector2i.DOWN) == World.SIDEWALK:
+					break
+				cell += Vector2i(arm.y, arm.x) * side
+			if w.get_tile(cell) == World.SIDEWALK and not w.blocked.has(cell):
+				w.blocked[cell] = true
+				w.street_props.append({kind = "busstop", pos = w.to_pos(cell) + Vector2(0, 6), seed = cell.x * 31 + cell.y})
+	# The minivan stand along the street west of the roundabout.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = w.city_seed + 77
+	for k in 5:
+		var c := Vector2i(at.x - (w.circle.r + 10 + k * 4), at.y - 6)
+		if _fits(w, [c, c + Vector2i.RIGHT], true):
+			for cell in [c, c + Vector2i.RIGHT]:
+				w.blocked[cell] = true
+			w.street_props.append({kind = "van", horizontal = true, pos = Vector2(c.x * World.TILE, (c.y + 1) * World.TILE),
+					color = Color("e8e6e0"), seed = rng.randi(), stand = true})
+
+
+## The old town: sections of avenues, sois, a temple, condos, a park and a
+## canal, repeated to fill the map (zones without a plan, the title screen).
+static func _layout_sections(w: World, rng: RandomNumberGenerator) -> void:
 	ALL_XS = repeat(XS, SECTION.x, World.W)
 	ALL_YS = repeat(YS, SECTION.y, World.H)
 	CANALS = repeat([CANAL_Y], SECTION.y, World.H)
-	AREA = float(World.W * World.H) / (SECTION.x * SECTION.y)
 	w.fill(Rect2i(0, 0, World.W, World.H), World.GRASS)
 	for x in ALL_XS:
 		w.fill(Rect2i(x - 2, 0, ROAD_W + 4, World.H), World.SIDEWALK)
@@ -183,13 +362,6 @@ static func build(w: World, rng: RandomNumberGenerator) -> void:
 	# A street corner in the middle of town.
 	var mid := Vector2i(World.W / SECTION.x / 2 * SECTION.x, World.H / SECTION.y / 2 * SECTION.y)
 	w.spawn_cell = mid + Vector2i(XS[2] - 2, YS[1] + ROAD_W)
-	# Last, so everything above comes out the same for a given seed as it always has.
-	_aftermath(w, rng)
-	Things.place_all(w, rng)
-	_size_vehicles(w)
-	_size_beds(w)
-	_shop_fronts(w)
-	_zone_exits(w)
 
 
 static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGenerator) -> void:
@@ -494,6 +666,12 @@ static func _row(w: World, x0: int, x1: int, y: int, depth: int, rng: RandomNumb
 			bw = STORE_W
 		if left - bw < SHOP_W[0] - 1:
 			bw = mini(left, STORE_W)  # the last one takes what's left
+		if _on_circle(w, Rect2i(start, y, bw, depth)):
+			# (on a drawn zone's roundabout: left as an open soi)
+			w.fill(Rect2i(x, y, start + bw - x, depth), World.SOI)
+			x = start + bw
+			shared = false
+			continue
 		add_building(w, Rect2i(start, y, bw, depth), kind, rng)
 		x = start + bw
 		shared = true
@@ -562,10 +740,13 @@ static func _street_furniture(w: World, rng: RandomNumberGenerator) -> void:
 		var r: Rect2i = rd.rect
 		var sides := [[r.position.y - 1, Vector2(0, 20)], [r.end.y, Vector2(0, -20)]] if rd.horizontal \
 				else [[r.position.x - 1, Vector2(20, 0)], [r.end.x, Vector2(-20, 0)]]
+		var from: int = r.position.x if rd.horizontal else r.position.y
+		var to: int = r.end.x if rd.horizontal else r.end.y
+		var wd: int = r.size.y if rd.horizontal else r.size.x
 		for side in sides:
 			var prev: Vector2 = Vector2.INF
 			var n := 0
-			for i in range(1, World.W if rd.horizontal else World.H, 6):
+			for i in range(from + 1, to, 6):
 				var c := Vector2i(i, side[0]) if rd.horizontal else Vector2i(side[0], i)
 				if w.get_tile(c) != World.SIDEWALK:
 					prev = Vector2.INF
@@ -580,15 +761,15 @@ static func _street_furniture(w: World, rng: RandomNumberGenerator) -> void:
 		# Street trees on the outer edge of the pavement.
 		var outer := [r.position.y - 2, r.end.y + 1] if rd.horizontal else [r.position.x - 2, r.end.x + 1]
 		for o in outer:
-			for i in range(4, World.W if rd.horizontal else World.H, 9):
+			for i in range(from + 4, to, 9):
 				var c := Vector2i(i, o) if rd.horizontal else Vector2i(o, i)
 				if w.get_tile(c) == World.SIDEWALK and rng.randf() < 0.55 						and World.DIRS.all(func(d): return w.get_tile(c + d) != World.DOOR):  # never in front of a door
 					w.fill(Rect2i(c, Vector2i.ONE), World.TREE)
 		# Abandoned traffic.
-		var length := World.W if rd.horizontal else World.H
+		var length := to - from
 		for k in length / 7:
-			var along := rng.randi_range(0, length - 3)
-			var lane: int = [0, 1, 4, 5][rng.randi() % 4]
+			var along := from + rng.randi_range(0, length - 3)
+			var lane: int = [0, 1, wd - 2, wd - 1][rng.randi() % 4]
 			var c := Vector2i(along, r.position.y + lane) if rd.horizontal else Vector2i(r.position.x + lane, along)
 			_vehicle(w, c, rd.horizontal, rng, true)
 
@@ -622,8 +803,21 @@ static func _street_furniture(w: World, rng: RandomNumberGenerator) -> void:
 ## Park a car / taxi / tuk-tuk if its cells are free road.
 static func _vehicle(w: World, c: Vector2i, horizontal: bool, rng: RandomNumberGenerator, on_road: bool) -> void:
 	var roll := rng.randf()
-	var kind := "tuktuk" if roll < 0.18 and on_road else ("taxi" if roll < 0.42 and on_road else "car")
-	var cells := [c] if kind == "tuktuk" else ([c, c + Vector2i.RIGHT] if horizontal else [c, c + Vector2i.DOWN])
+	var kind := "car"
+	if on_road:
+		# What's left on Bangkok's streets: taxis and tuk-tuks, minivans, pickups,
+		# the red songthaews, and on the wide streets, the city buses.
+		var wide: bool = w.roads.any(func(rd): return rd.rect.has_point(c) and mini(rd.rect.size.x, rd.rect.size.y) >= 10)
+		for k in [["tuktuk", 0.12], ["taxi", 0.30], ["van", 0.42], ["pickup", 0.52], ["songthaew", 0.58], ["bus", 0.64 if wide else 0.58]]:
+			if roll < k[1]:
+				kind = k[0]
+				break
+	var length: int = VEHICLE_CELLS.get(kind, 2)
+	var cells := []
+	for i in length:
+		cells.append(c + (Vector2i.RIGHT if horizontal else Vector2i.DOWN) * i)
+	if kind == "tuktuk":
+		cells = [c]
 	for cell in cells:
 		if w.get_tile(cell) not in [World.ROAD, World.SOI] or w.blocked.has(cell) or w.in_intersection(cell):
 			return
@@ -635,7 +829,11 @@ static func _vehicle(w: World, c: Vector2i, horizontal: bool, rng: RandomNumberG
 		w.blocked[cell] = true
 	var last: Vector2i = cells[-1]
 	var color: Color = TAXI_COLORS[rng.randi() % TAXI_COLORS.size()] if kind == "taxi" \
-			else CAR_COLORS[rng.randi() % CAR_COLORS.size()]
+			else (BUS_COLORS[rng.randi() % BUS_COLORS.size()] if kind == "bus" else CAR_COLORS[rng.randi() % CAR_COLORS.size()])
+	if kind == "songthaew":
+		color = [Color("b8322a"), Color("2a5aa8")][rng.randi() % 2]
+	elif kind == "van":
+		color = [Color("e8e6e0"), Color("c8ccd0"), Color("e8e6e0")][rng.randi() % 3]
 	w.street_props.append({kind = kind, horizontal = horizontal or kind == "tuktuk",
 			pos = Vector2(c.x * World.TILE, (last.y + 1) * World.TILE), color = color, seed = rng.randi()})
 
@@ -651,11 +849,12 @@ static func _aftermath(w: World, rng: RandomNumberGenerator) -> void:
 	for it: Rect2i in w.intersections:
 		if w.to_pos(it.position).distance_to(spawn) < 160.0 or rng.randf() < 0.35:
 			continue
+		var jw := mini(it.size.x, it.size.y)
 		for k in rng.randi_range(2, 4):
 			var arm: Vector2i = World.DIRS[rng.randi() % 4]
-			var dist := rng.randi_range(ROAD_W + 1, ROAD_W + 7)
-			var lane := rng.randi_range(0, ROAD_W - 2)
-			var c := it.position + (arm * dist if arm.x + arm.y > 0 else arm * (dist - ROAD_W + 1))
+			var dist := rng.randi_range(jw + 1, jw + 7)
+			var lane := rng.randi_range(0, jw - 2)
+			var c := it.position + (arm * dist if arm.x + arm.y > 0 else arm * (dist - jw + 1))
 			c += Vector2i(lane, 0) if arm.x == 0 else Vector2i(0, lane)
 			_wreck(w, c, rng)
 	# Wrecks strung along the avenues.
@@ -664,8 +863,9 @@ static func _aftermath(w: World, rng: RandomNumberGenerator) -> void:
 		var length: int = r.size.x if rd.horizontal else r.size.y
 		for k in length / 22:
 			var along := rng.randi_range(0, length - 3)
-			var c := r.position + (Vector2i(along, rng.randi_range(0, ROAD_W - 1)) if rd.horizontal \
-					else Vector2i(rng.randi_range(0, ROAD_W - 1), along))
+			var rw: int = r.size.y if rd.horizontal else r.size.x
+			var c := r.position + (Vector2i(along, rng.randi_range(0, rw - 1)) if rd.horizontal \
+					else Vector2i(rng.randi_range(0, rw - 1), along))
 			_wreck(w, c, rng)
 	_checkpoint(w, rng, spawn)
 	# Things along pavements and sois.
@@ -798,12 +998,12 @@ static func _checkpoint(w: World, rng: RandomNumberGenerator, spawn: Vector2) ->
 	var y := it.end.y + 2
 	if w.get_tile(Vector2i(it.position.x, y)) != World.ROAD:
 		y = it.position.y - 3
-	for x in range(it.position.x - 2, it.position.x + ROAD_W - 2):
+	for x in range(it.position.x - 2, it.position.x + it.size.x - 2):
 		var cell := Vector2i(x, y)
 		if w.get_tile(cell) in [World.ROAD, World.SIDEWALK] and not w.blocked.has(cell):
 			w.blocked[cell] = true
 			w.street_props.append({kind = "sandbags", pos = w.to_pos(cell) + Vector2(0, 5), seed = rng.randi()})
-	var bar := Vector2i(it.position.x + ROAD_W - 2, y)
+	var bar := Vector2i(it.position.x + it.size.x - 2, y)
 	if w.get_tile(bar) == World.ROAD and not w.blocked.has(bar):
 		_prop(w, "barrier", w.to_pos(bar) + Vector2(0, 5), rng)
 	var truck := [Vector2i(it.position.x + 1, y + 2), Vector2i(it.position.x + 2, y + 2), Vector2i(it.position.x + 3, y + 2)]
@@ -865,7 +1065,7 @@ static func _zone_exits(w: World) -> void:
 		var keep := r.grow(2)
 		w.street_props = w.street_props.filter(func(p): return not keep.has_point(w.to_cell(p.pos)) or p.kind == "pole")
 		var to := Zones.name_of(e.to)
-		var label: String = {east = "ไป%s →", west = "← ไป%s", north = "↑ ไป%s", south = "↓ ไป%s"}.get(e.id, "ไป%s") % to
+		var label: String = {east = "ไป%s →", west = "← ไป%s", north = "↑ ไป%s", south = "↓ ไป%s"}.get(e.edge, "ไป%s") % to
 		w.street_props.append({kind = "zonesign", pos = w.to_pos(r.position + r.size / 2) + Vector2(0, 6), seed = 0, label = label})
 
 
@@ -919,7 +1119,7 @@ static func _size_vehicles(w: World) -> void:
 		var extra := []
 		var base := Vector2i((p.pos / World.TILE).floor())
 		match p.kind:
-			"car", "taxi":
+			"car", "taxi", "van", "pickup", "songthaew":
 				if p.horizontal:
 					extra = [Vector2i(base.x + 2, base.y - 1)]  # longer: one more cell ahead
 				else:
@@ -930,6 +1130,9 @@ static func _size_vehicles(w: World) -> void:
 				extra = [Vector2i(base.x + 2, base.y - 1)] if p.horizontal else [Vector2i(base.x, base.y - 3)]
 			"army":
 				extra = [Vector2i(base.x + 3, base.y - 1), Vector2i(base.x + 4, base.y - 1)]
+			"bus":
+				extra = [Vector2i(base.x + 7, base.y - 1), Vector2i(base.x + 8, base.y - 1)] if p.horizontal \
+						else [Vector2i(base.x, base.y - 8), Vector2i(base.x, base.y - 9)]
 		for c in extra:
 			if w.get_tile(c) in [World.ROAD, World.SOI] and not w.blocked.has(c) and not w.in_intersection(c) 					and not World.DIRS.any(func(d): return w.get_tile(c + d) == World.DOOR):
 				w.blocked[c] = true

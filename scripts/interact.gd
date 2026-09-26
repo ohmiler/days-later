@@ -188,7 +188,7 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 		"exit":
 			var ex: Array = w.exits.filter(func(e): return e.id == t.id)
 			if not ex.is_empty():
-				out.append(_act("travel", "เดินทางไป%s" % Zones.name_of(ex[0].to)))
+				out.append(_act("travel", "เดินทางไป%s" % Zones.name_of(ex[0].to), Zones.open(ex[0].to), "ยังไปไม่ได้ (ย่านนี้ยังไม่เปิด)"))
 		"car":
 			if p.on_car >= 0:
 				out.append(_act("jumpdown", "กระโดดลง (ทางที่หัน)"))

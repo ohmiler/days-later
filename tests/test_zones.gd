@@ -18,9 +18,13 @@ func run() -> void:
 	await host(9500)
 	var first := Zones.first()
 	check(main.zone == first and main.world.zone == first, "a new game starts in the first zone (%s)" % first)
-	check(World.W * World.H <= 400 * 300, "a zone is a manageable size (%d x %d)" % [World.W, World.H])
-	var east := _exit("east")
-	check(not east.is_empty() and east.to == "pratunam", "it has a way out east, to Pratunam")
+	check(World.W * World.H <= 400 * 320, "a zone is a manageable size (%d x %d)" % [World.W, World.H])
+	var east := _exit("ratchaprarop")
+	check(not east.is_empty() and east.to == "pratunam", "it has a way out down Ratchaprarop, to Pratunam")
+	var shut := _exit("north")
+	var tn := {kind = "exit", id = "north"}
+	check(not shut.is_empty() and not Interact.actions(main, me, tn).any(func(a): return a.verb == "travel" and a.ok),
+			"a way out to a zone not made yet has its sign, but no way through")
 
 	# Something changed here, to find again on the way back.
 	var door := -1
@@ -45,22 +49,22 @@ func run() -> void:
 	main.actions._do_action(me, t, "travel")
 	check(main.zone == "pratunam" and main.world.zone == "pratunam", "through it: now in Pratunam")
 	check(main.day == 3 and absf(main.time - 0.4) < 0.01, "at the same hour of the same day")
-	var west := _exit("west")
+	var west := _exit("north")
 	check(not west.is_empty() and me.position.distance_to(main.world.to_pos(west.rect.get_center())) < 120.0
-			and main.world.can_stand(me.position, Player.RADIUS), "coming in by its way in from the west")
+			and main.world.can_stand(me.position, Player.RADIUS), "coming in by its way in (from the north)")
 	check(me.world == main.world, "your body is in the new zone")
 	check(FileAccess.file_exists(SaveGame.dir() + "/zones/" + first + "/world.save"), "the zone left behind was saved")
 
 	# And back again: that zone as it was left.
 	me.position = main.world.to_pos(west.rect.position + west.rect.size / 2)
-	main.actions._do_action(me, {kind = "exit", id = "west"}, "travel")
-	check(main.zone == first, "back through the way out west")
+	main.actions._do_action(me, {kind = "exit", id = "north"}, "travel")
+	check(main.zone == first, "back the way you came")
 	check(main.world.doors[door].closed != was, "the zone is as it was left (the door still as you left it)")
-	check(me.position.distance_to(main.world.to_pos(_exit("east").rect.get_center())) < 120.0, "coming in by the east")
+	check(me.position.distance_to(main.world.to_pos(_exit("ratchaprarop").rect.get_center())) < 120.0, "coming in up Ratchaprarop")
 
 	# Go on again, save, reload: it carries on where you were.
-	me.position = main.world.to_pos(_exit("east").rect.get_center())
-	main.actions._do_action(me, {kind = "exit", id = "east"}, "travel")
+	me.position = main.world.to_pos(_exit("ratchaprarop").rect.get_center())
+	main.actions._do_action(me, {kind = "exit", id = "ratchaprarop"}, "travel")
 	var at := me.position
 	main._save_all()
 	await close_game()
