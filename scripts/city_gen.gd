@@ -25,21 +25,30 @@ const SIGN_LOOT := {
 	"อาหารตามสั่ง": "food", "โจ๊ก ข้าวต้ม": "food",
 	"ซ่อมมอเตอร์ไซค์": "tools", "ร้านวัสดุ": "tools", "ขายส่ง": "tools",
 	"ร้านทอง": "valuables", "โรงรับจำนำ": "valuables",
-	"ผ้าไหม": "clothes", "ร้านเสริมสวย": "clothes",
+	"ผ้าไหม": "clothes", "นวดแผนไทย": "clothes",
+	"ร้านตัดผม": "barber", "ร้านเสริมสวย": "barber", "ร้านโทรศัพท์": "phone",
 }
 
 
 ## Which city generator this is. Saves remember it: a city saved by an older
 ## generator cannot be rebuilt from its seed any more (see SaveGame).
 ## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
-const GEN := 3  # 3: motorbikes park at the kerb, not in front of the shops
+const GEN := 4  # 4: shops laid out for what they sell, shared party walls, rolling shutters
 const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
 const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
 const MAX_DEPTH := 15
-const PLAN_FURNITURE := {f = "fridge", c = "cabinet", s = "shelf", k = "counter", t = "table", x = "crate"}
+const PLAN_FURNITURE := {f = "fridge", c = "cabinet", s = "shelf", k = "counter", t = "table", x = "crate",
+		g = "glass", M = "mirror", X = "toolchest", H = "stall", Z = "safe", F = "pantry", K = "sink"}
 const PLAN_DECOR := {S = "stairs", m = "mattress", v = "tv", n = "fan", h = "shrine", o = "boxes", p = "pot",
-		r = "chairs", i = "tires", e = "bike", l = "oil"}
-const PLAN_OTHER := "WD.Bdw?bTR"
+		r = "chairs", i = "tires", e = "bike", l = "oil", A = "barberchair", G = "stove", J = "jar", O = "sofa",
+		a = "altar", y = "sacks", E = "mannequin", L = "recliner", V = "examcot", u = "washbasin", z = "bench",
+		q = "toilet", C = "curtain", j = "shoes", I = "hiphra"}
+## Dressing too big to walk through (the rest you step over or past).
+const DECOR_BLOCKS := ["barberchair", "stove", "jar", "sofa", "altar", "sacks", "mannequin", "recliner",
+		"examcot", "washbasin", "bench"]
+const PLAN_OTHER := "WD.BdwU?bTR"
+const SHOP_W := [6, 7]  # a shophouse plot, walls included (4-5 m inside); the wall between two is shared
+const STORE_W := 8
 
 ## name -> {kinds, rows (Strings), stretch (bools), width}
 static var PREFABS: Dictionary = _load_prefabs()
@@ -51,17 +60,30 @@ static func _load_prefabs() -> Dictionary:
 		if not file.ends_with(".txt") or file == "README.txt":
 			continue
 		var f := FileAccess.open(PREFAB_DIR.path_join(file), FileAccess.READ)
-		var p := {kinds = [], rows = [], stretch = [], width = 0}
+		var p := {kinds = [], signs = [], widen = -1, rows = [], stretch = [], upper = [], upper_stretch = [], width = 0}
+		var rows: Array = p.rows
+		var stretches: Array = p.stretch
 		while not f.eof_reached():
 			var line := f.get_line().strip_edges()
-			if line == "":
+			if line == "" or line.begins_with("#"):
 				continue
 			if line.begins_with("kinds:"):
 				p.kinds = Array(line.trim_prefix("kinds:").strip_edges().split(" ", false))
 				continue
+			if line.begins_with("signs:"):
+				for sg in line.trim_prefix("signs:").split(",", false):
+					p.signs.append(sg.strip_edges())
+				continue
+			if line.begins_with("widen:"):
+				p.widen = int(line.trim_prefix("widen:"))
+				continue
+			if line.begins_with("floor 2:"):
+				rows = p.upper
+				stretches = p.upper_stretch
+				continue
 			var stretch := line.begins_with("~")
-			p.rows.append(line.trim_prefix("~"))
-			p.stretch.append(stretch)
+			rows.append(line.trim_prefix("~"))
+			stretches.append(stretch)
 		if not p.rows.is_empty():
 			p.width = p.rows[0].length()
 			out[file.get_basename()] = p
@@ -79,9 +101,13 @@ static func prefab_problems() -> Array:
 			out.append("%s: %d rows deep, more than %d" % [name, p.rows.size(), MIN_DEPTH])
 		if not p.stretch.has(true):
 			out.append("%s: no ~ row to make it deeper" % name)
-		if p.rows[-1].count("D") != 1:
-			out.append("%s: the bottom row needs one front door D" % name)
-		for row in p.rows:
+		if p.rows[-1].count("D") != 1 and p.rows[-1].count("U") < 2:
+			out.append("%s: the bottom row needs one front door D or a shutter UU.." % name)
+		if not p.upper.is_empty() and (p.upper.size() != p.rows.size() or p.upper_stretch != p.stretch):
+			out.append("%s: floor 2 must have the same rows (and ~ rows) as the ground floor" % name)
+		if p.widen >= p.width:
+			out.append("%s: widen column %d is outside the plan" % [name, p.widen])
+		for row in p.rows + p.upper:
 			if row.length() != p.width:
 				out.append("%s: row '%s' is not %d wide" % [name, row, p.width])
 			for ch in row:
@@ -147,27 +173,54 @@ static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGen
 		"condo":
 			rec.floors = rng.randi_range(10, 14)
 	if kind in ["shop", "store"]:
-		var plans := PREFABS.keys().filter(func(n): return kind in PREFABS[n].kinds and PREFABS[n].width == r.size.x)
+		# A plan made for what this shop sells if there is one, else a plain one.
+		var fits := PREFABS.keys().filter(func(n): return kind in PREFABS[n].kinds and _fits_width(PREFABS[n], r.size.x))
+		var plans := fits.filter(func(n): return rec.sign in PREFABS[n].signs)
+		if plans.is_empty():
+			plans = fits.filter(func(n): return PREFABS[n].signs.is_empty())
 		plans.sort()
 		if not plans.is_empty():
 			_build_plan(w, rec, PREFABS[plans[rng.randi() % plans.size()]], rng)
 	w.buildings.append(rec)
 
 
+static func _fits_width(plan: Dictionary, width: int) -> bool:
+	return plan.width == width or (plan.widen >= 0 and width > plan.width and width - plan.width <= 2)
+
+
+## A plan's rows made `width` wide by repeating its widen column. What is
+## only ever one of (a door, the stairs, a bed) gets what is beside it instead
+## of a twin: more wall beside a door in a wall, more floor beside a doorway.
+const WIDEN_ONCE := "dBDSbTRqU"
+
+
+static func _widened(rows: Array, plan: Dictionary, width: int) -> Array:
+	if width == plan.width:
+		return rows
+	var out := []
+	for row: String in rows:
+		var ch: String = row[plan.widen]
+		if ch in WIDEN_ONCE and ch != "U":
+			ch = row[plan.widen - 1] if plan.widen > 0 and row[plan.widen - 1] in "W.wU" else "."
+		out.append(row.substr(0, plan.widen) + ch.repeat(width - plan.width) + row.substr(plan.widen))
+	return out
+
+
 ## Build the inside of a shop or home from its plan (see data/prefabs/README.txt).
 static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: RandomNumberGenerator) -> void:
 	var r: Rect2i = rec.rect
 	rec.table = "store" if rec.kind == "store" else SIGN_LOOT.get(rec.sign, "home")
+	var ground: Array = _widened(plan.rows, plan, r.size.x)
 	# Stretch the ~ rows to fill the plot's depth.
 	var extra: int = r.size.y - plan.rows.size()
 	var n_stretch: int = plan.stretch.count(true)
 	var rows := []
 	var k := 0
-	for i in plan.rows.size():
-		rows.append(plan.rows[i])
+	for i in ground.size():
+		rows.append(ground[i])
 		if plan.stretch[i]:
 			for j in extra / n_stretch + (1 if k < extra % n_stretch else 0):
-				rows.append(plan.rows[i])
+				rows.append(ground[i])
 			k += 1
 	w.fill(r, World.IWALL)
 	var furniture := []  # [cell, letter]
@@ -176,6 +229,7 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 	var front := Vector2i(-1, -1)
 	rec.taps = []
 	rec.radios = []
+	var shutter := []
 	for y in rows.size():
 		for x in r.size.x:
 			var ch: String = rows[y][x]
@@ -197,6 +251,9 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 				"w":
 					if rng.randf() < 0.6:
 						_add_opening(w, c, "window", rng)
+				"U":
+					_add_opening(w, c, "shutter", rng)
+					shutter.append(w.doors.size() - 1)
 				_:
 					w.fill(Rect2i(c, Vector2i.ONE), World.FLOOR)
 					if ch == "b":
@@ -210,6 +267,22 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 					elif ch == "R":
 						rec.radios.append(c)
 	rec.enter = true
+	if not shutter.is_empty():
+		# A rolling steel shutter across the whole shop front: all up or all
+		# down (padlocked from inside), now and then one slat prised up.
+		var down: bool = not rec.open
+		var pried := down and rng.randf() < 0.15
+		for i in shutter.size():
+			var d: Dictionary = w.doors[shutter[i]]
+			d.group = shutter
+			d.closed = down
+			d.broken = pried and i == shutter.size() / 2
+			if d.broken:
+				d.closed = false
+		var mid: Vector2i = w.doors[shutter[shutter.size() / 2]].cell
+		rec.door = mid.x - r.position.x
+		rec.shutter = true
+		front = mid + Vector2i.UP
 	# Rooms: floor joined up without passing a door.
 	var room_of := {}
 	var rooms := []
@@ -255,7 +328,7 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 			kind = "bed"
 			long = 2 if beds.has(c + Vector2i.DOWN) else 0
 		var table: String = rec.table if room_of[c] == shop_room or home_rooms.is_empty() else "home"
-		var data := {id = w.containers.size(), kind = kind, cell = c, table = table}
+		var data := {id = w.containers.size(), kind = kind, cell = c, table = table, sign = rec.sign}
 		if kind == "bed":
 			data.long = long
 			if long == 2:
@@ -264,6 +337,8 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 		w.containers.append(data)
 	for e in decor:
 		w.decor.append({kind = e[1], cell = e[0], seed = rng.randi(), building = rec})
+		if e[1] in DECOR_BLOCKS:
+			w.blocked[e[0]] = true
 		if e[1] == "stairs":
 			rec.stairs = e[0]
 			w.stairs[e[0]] = true
@@ -275,7 +350,9 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 static func _add_opening(w: World, cell: Vector2i, kind: String, rng: RandomNumberGenerator) -> void:
 	w.fill(Rect2i(cell, Vector2i.ONE), World.DOOR)
 	var d := {id = w.doors.size(), cell = cell, kind = kind, boards = 0}
-	if kind == "window":
+	if kind == "shutter":
+		d.merge({closed = true, hp = World.SHUTTER_HP, broken = false})  # (set for the whole front: see _build_plan)
+	elif kind == "window":
 		var smashed := rng.randf() < 0.3
 		d.merge({closed = not smashed, hp = World.WINDOW_HP, broken = smashed})
 	else:
@@ -321,24 +398,32 @@ static func _shophouse_block(w: World, b: Rect2i, rng: RandomNumberGenerator) ->
 					w.fill(Rect2i(xx, yy, 1, 1), World.DIRT)
 
 
+## A row of shophouses wall to wall, each sharing its side wall with the next
+## (as real ones do: one party wall, not two).
 static func _row(w: World, x0: int, x1: int, y: int, depth: int, rng: RandomNumberGenerator) -> void:
-	var x := x0
+	var x := x0  # the next free column
+	var shared := false  # the last building ends at x - 1, so the next can share that wall
 	while x < x1:
-		var left := x1 - x
-		if left < 5:
-			w.fill(Rect2i(x, y, left, depth), World.SOI)  # too narrow for a house: an alley
+		var start := x - 1 if shared else x
+		var left := x1 - start
+		if left < SHOP_W[0]:
+			if x < x1:
+				w.fill(Rect2i(x, y, x1 - x, depth), World.SOI)  # too narrow for a house: an alley
 			return
-		var bw := rng.randi_range(5, 7)
-		if left <= 7:
-			bw = left
-		elif left - bw < 5:
-			bw = 5
-		if rng.randf() < 0.07:
+		if rng.randf() < 0.07 and not shared:
 			w.fill(Rect2i(x, y, 2, depth), World.SOI)  # narrow walkway between buildings
 			x += 2
 			continue
-		add_building(w, Rect2i(x, y, bw, depth), "store" if bw == 7 and rng.randf() < 0.25 else "shop", rng)
-		x += bw
+		var kind := "shop"
+		var bw: int = SHOP_W[rng.randi() % SHOP_W.size()]
+		if left >= STORE_W and rng.randf() < 0.1:
+			kind = "store"
+			bw = STORE_W
+		if left - bw < SHOP_W[0] - 1:
+			bw = mini(left, STORE_W)  # the last one takes what's left
+		add_building(w, Rect2i(start, y, bw, depth), kind, rng)
+		x = start + bw
+		shared = true
 
 
 static func _temple_block(w: World, b: Rect2i, rng: RandomNumberGenerator) -> void:

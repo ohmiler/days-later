@@ -37,6 +37,16 @@ func run() -> void:
 		if Items.roll("med", "shelf", rng).any(func(id): return Items.category(id) == "medicine"):
 			meds += 1
 	check(meds > 700, "a pharmacy shelf mostly has medicine (%d%%)" % (meds / 10))
+	# Shops hold their own trade: a barber's station its blades, a phone shop's
+	# glass case phones and batteries, a gold shop's gold.
+	var trade := {"barber/mirror": ["scissors", "razor"], "phone/glass": ["phone", "battery", "powerbank"],
+			"valuables/glass": ["gold"], "food/stall": ["mama", "snack", "water", "energy"]}
+	for k in trade:
+		var hits := 0
+		for i in 500:
+			if Items.roll(k.get_slice("/", 0), k.get_slice("/", 1), rng).any(func(id): return id in trade[k]):
+				hits += 1
+		check(hits > 150, "%s turns up its trade (%d%%)" % [k, hits / 5])
 
 	# Rules go by tags, so a new blade works without code.
 	check(Items.has_tag("axe", "sever") and not Items.has_tag("bat", "blade"), "tags say what cuts")

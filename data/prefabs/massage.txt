@@ -1,0 +1,17 @@
+# A Thai massage shop: foot-massage chairs in front, mattresses behind curtains.
+kinds: shop
+signs: นวดแผนไทย
+widen: 3
+WWBWWW
+WT.WJW
+WG.dqW
+WK.WWW
+Wf..FW
+WWdWWW
+Wb.S.W
+Wb..cW
+W.m.CW
+~W.m.CW
+WLL.LW
+Wj..RW
+WUUUUW

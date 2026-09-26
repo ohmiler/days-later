@@ -1,0 +1,16 @@
+# A family's shophouse with no shop: sofa and TV, the Buddha shelf, the bike inside.
+kinds: shop
+widen: 3
+WWBWWW
+WT.WJW
+WG.dqW
+WK.WWW
+Wf..FW
+WWdWWW
+Wb.S.W
+Wb..cW
+Wt..IW
+~W....W
+WO..vW
+We.jRW
+WUUUUW

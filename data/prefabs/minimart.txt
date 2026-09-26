@@ -1,0 +1,13 @@
+kinds: store
+widen: 4
+WWWWBWWW
+Wx....SW
+Wx.T..cW
+WWWWdWWW
+Wfffff.W
+W......W
+Ws.ss.sW
+~Ws.ss.sW
+W......W
+Wk....sW
+WwwDwwwW

@@ -1,0 +1,17 @@
+# A doctor's clinic: waiting bench and reception in front, the couch behind a door.
+kinds: shop
+signs: คลินิก
+widen: 3
+WWBWWW
+WT.WJW
+WG.dqW
+WK.WWW
+Wf..FW
+WWdWWW
+WV.S.W
+Wc..sW
+WWWdWW
+Wz..sW
+~Wz..sW
+Wg...W
+WUUUUW

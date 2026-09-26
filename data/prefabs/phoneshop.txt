@@ -1,0 +1,17 @@
+# A phone shop: cases on the walls, phones in the glass, a repair counter.
+kinds: shop
+signs: ร้านโทรศัพท์
+widen: 3
+WWBWWW
+WT.WJW
+WG.dqW
+WK.WWW
+Wf..FW
+WWdWWW
+Wb.S.W
+Wb...W
+Ws..sW
+~Wg..gW
+Wg..kW
+W...RW
+WUUUUW

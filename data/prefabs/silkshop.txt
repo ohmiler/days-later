@@ -1,0 +1,17 @@
+# A silk and cloth shop: bolts on the shelves, dresses on stands, a cutting table.
+kinds: shop
+signs: ผ้าไหม
+widen: 3
+WWBWWW
+WT.WJW
+WG.dqW
+WK.WWW
+Wf..FW
+WWdWWW
+Wb.S.W
+Wb...W
+Ws..sW
+~Ws..sW
+WE.tEW
+Wk...W
+WUUUUW

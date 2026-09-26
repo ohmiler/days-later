@@ -11,6 +11,7 @@ const CHUNK := 16
 const BTS_H := 64.0  # how high the skytrain deck floats above the road
 const DOOR_HP := 60.0
 const WINDOW_HP := 15.0  # glass: one good hit
+const SHUTTER_HP := 150.0  # a rolling steel shutter, per section
 const WINDOW_SLOW := 0.35  # climbing through a smashed window
 const BOARD_HP := 60.0  # each board nailed across a door
 const MAX_BOARDS := 3
@@ -133,7 +134,7 @@ func _spawn_props() -> void:
 		n.position = Vector2(d.cell.x * TILE, (d.cell.y + 1) * TILE + 0.2)
 		if not World.BUILDS.has(d.kind):
 			# Drawn at the old height, stretched to the storey: a door a person walks through upright.
-			n.scale = Vector2(1, DoorProp.DOOR_STRETCH if d.kind == "door" else DoorProp.WINDOW_STRETCH)
+			n.scale = Vector2(1, DoorProp.DOOR_STRETCH if d.kind in ["door", "shutter"] else DoorProp.WINDOW_STRETCH)
 		n.z_index = 1
 		prop_parent.add_child(n)
 		door_nodes.append(n)
@@ -145,7 +146,7 @@ func _spawn_props() -> void:
 		var dp := DecorProp.new()
 		dp.data = rec
 		dp.position = to_pos(rec.cell) + Vector2(0, TILE * 0.45)
-		var flat: bool = rec.kind in ["oil", "litter", "mattress"]
+		var flat: bool = rec.kind in ["oil", "litter", "mattress", "toilet", "shoes"]
 		dp.z_index = 0 if flat else (3 if rec.kind == "bulb" else 1)
 		prop_parent.add_child(dp)
 		var b: BuildingProp = bnode.get(rec.building)
@@ -298,8 +299,8 @@ func slow_at(pos: Vector2) -> float:
 	var id: int = door_at.get(to_cell(pos), -1)
 	if id < 0 or doors[id].closed or doors[id].broken and is_built(id):
 		return 1.0
-	if is_window(id):
-		return WINDOW_SLOW
+	if is_window(id) or doors[id].kind == "shutter" and doors[id].broken:
+		return WINDOW_SLOW  # (ducking under a prised-up shutter too)
 	return WIRE_SLOW if doors[id].kind == "wire" else 1.0
 
 

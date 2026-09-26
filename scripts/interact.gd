@@ -60,11 +60,11 @@ static func _candidates(main: Node, p: Player) -> Array:
 	if door >= 0 and not w.is_built(door):
 		var d: Dictionary = w.doors[door]
 		var win := w.is_window(door)
-		var title := "ประตู"
+		var title := "ประตูเหล็กม้วน" if d.kind == "shutter" else "ประตู"
 		if win:
 			title = "หน้าต่างแตก · ปีนผ่านได้" if not d.closed else "หน้าต่าง"
 		elif d.broken:
-			title = "ประตูพัง"
+			title = "ประตูเหล็กถูกงัด · มุดผ่านได้" if d.kind == "shutter" else "ประตูพัง"
 		out.append({kind = "window" if win else "door", id = door, pos = w.to_pos(d.cell), title = title})
 	for v in w.vehicles:
 		if (v.rider == 0 or v.pillion == 0) and v.rider != p.peer_id and p.position.distance_to(v.pos) < Vehicles.REACH:
@@ -105,7 +105,10 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 			out.append(_act("take_trap", "เก็บ" + t.title + "คืน"))
 		"door":
 			var d: Dictionary = w.doors[t.id]
-			if d.broken:
+			if d.kind == "shutter":
+				if not d.broken:
+					out.append(_act("close", "ดึงประตูเหล็กลง (เสียงดัง)") if not d.closed else _act("open", "ดึงประตูเหล็กขึ้น (เสียงดัง)"))
+			elif d.broken:
 				out.append(_act("repair", "ซ่อมประตู (ไม้ 1 แผ่น)", has_wood(p), "ต้องมีไม้กระดาน", "R"))
 			else:
 				if d.closed:
@@ -179,7 +182,9 @@ static func has_wood(p: Player) -> bool:
 
 static func container_title(kind: String) -> String:
 	return {shelf = "ชั้นวางของ", fridge = "ตู้เย็น", counter = "เคาน์เตอร์", cabinet = "ตู้",
-			table = "โต๊ะ", crate = "ลัง", bed = "เตียง"}.get(kind, "ของ")
+			table = "โต๊ะ", crate = "ลัง", bed = "เตียง", glass = "ตู้กระจก", mirror = "โต๊ะกระจกตัดผม",
+			toolchest = "ตู้เครื่องมือ", stall = "รถเข็นหน้าร้าน", safe = "ตู้เซฟ", pantry = "ตู้กับข้าว",
+			sink = "ซิงค์ล้างจาน"}.get(kind, "ของ")
 
 
 # --- Finding things in reach ---------------------------------------------------

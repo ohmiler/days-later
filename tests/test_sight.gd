@@ -28,7 +28,8 @@ func run() -> void:
 	check(s.sees(s.eye + open_dir.orthogonal() * 12.0), "or beside you")
 
 	# Walls stop it: a room inside a shophouse, seen from the street through its
-	# front wall (not its door or glass shop window, which you can see through).
+	# front wall or pulled-down shutter (not an open door or glass shop window,
+	# which you can see through).
 	var inside := Vector2.INF
 	var out := Vector2.INF
 	for b in w.buildings:
@@ -37,7 +38,9 @@ func run() -> void:
 		var r: Rect2i = b.rect
 		var front := r.end.y - 1
 		for x in range(r.position.x + 1, r.end.x - 1):
-			if w.get_tile(Vector2i(x, front)) == World.IWALL and w.get_tile(Vector2i(x, front - 1)) == World.FLOOR 					and w.get_tile(Vector2i(x, front + 2)) in [World.SIDEWALK, World.ROAD, World.SOI]:
+			var fc := Vector2i(x, front)
+			var shut: bool = w.door_at.has(fc) and w.doors[w.door_at[fc]].kind == "shutter" and w.doors[w.door_at[fc]].closed
+			if (w.get_tile(fc) == World.IWALL or shut) and w.get_tile(Vector2i(x, front - 1)) == World.FLOOR 					and w.get_tile(Vector2i(x, front + 2)) in [World.SIDEWALK, World.ROAD, World.SOI]:
 				inside = w.to_pos(Vector2i(x, front - 1))
 				out = w.to_pos(Vector2i(x, front + 2))
 				break
