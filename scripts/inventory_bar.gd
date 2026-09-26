@@ -17,6 +17,7 @@ var hover := -1  # slot under the mouse: highlighted, and its details shown inst
 var hands := ""  # what's held, e.g. "มีดทำครัว + ค้อน" ("" empty-handed)
 var has_gun := false
 var label_t := 0.0  # seconds since what's held changed: its name shows for a moment
+var quiet := false  # riding: no label at all (the bike's dashboard is there)
 var _held := ""
 
 const LABEL_FOR := 2.5
@@ -132,6 +133,8 @@ func _draw() -> void:
 			_:
 				info = "ใช้ทำของ (Tab > ทำของ)" if cur.id == "magazine" else "เก็บไว้แลกของ"
 	var a := 1.0 if hover >= 0 else clampf((LABEL_FOR + 0.6 - label_t) / 0.6, 0.0, 1.0)
+	if quiet:
+		a = 0.0
 	if a <= 0.0:
 		return
 	draw_string_outline(UiTheme.medium(), Vector2(0, 26), name, HORIZONTAL_ALIGNMENT_CENTER, size.x, 22, 8, Color(0, 0, 0, 0.6 * a))

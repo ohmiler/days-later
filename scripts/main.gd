@@ -806,8 +806,8 @@ func _update_prompt(me: Player) -> void:
 	if me.alive() and me.sleeping:
 		_tag(tag, "หลับอยู่ · เดินเพื่อลุกขึ้น", true, false, "", me.position + Vector2(0, -34), "sleep", "")
 	elif me.alive() and me.riding >= 0:
-		_tag(tag, "ลงจากรถ", true, false, Vehicles.title_of(world.vehicles[me.riding]), me.position + Vector2(0, -34), "ride", "E")
-		tag.always_detail = true
+		_tag(tag, "ลงจากรถ", true, false, "", me.position + Vector2(0, -34), "ride", "E")
+		tag.verb = ""  # (the dashboard says it: nothing over the rider's head)
 	elif me.alive():
 		var t := Interact.target(self, me)
 		var list := Interact.actions(self, me, t)

@@ -100,6 +100,11 @@ var turn_t := 0.0
 var lean := 0.0
 var last_heading := 0.0
 var dust_t := 0.0
+var ride_spd := 0.0  # how fast the bike is going, as drawn (every peer), and its change
+var ride_acc := 0.0
+var wheel_turn := 0.0  # how far round the wheels have rolled
+var ride_t := 0.0  # a clock for the engine's shake
+var puff_t := 0.0
 const TURN_TIME := 0.16
 var sleep_safe := false  # server: that bed's building is shut tight (checked each second)
 var view := [Look.FRONT, false]
@@ -312,14 +317,24 @@ func _draw_riding(v: Dictionary) -> void:
 		if k < 0.5:
 			view = turn_from[0]
 			dir = turn_from[1]
-	var xf := Transform2D(lean, Vector2(squash, 1.0), 0.0, Vector2.ZERO)
+	# The engine shakes it a little standing, the road bobs it at speed.
+	var running: bool = v.fuel > 0.0 and v.hp > 0
+	var fast := clampf(ride_spd / 150.0, 0.0, 1.0)
+	var bob := Vector2(0, (sin(ride_t * 55.0) * 0.18 if running and fast < 0.2 else 0.0) + sin(ride_t * 9.0) * 0.35 * fast)
+	var xf := Transform2D(lean, Vector2(squash, 1.0), 0.0, bob)
 	var rv := Look.SIDE if view == "side" else (Look.FRONT if view == "front" else Look.BACK)
-	var st := {view = [rv, dir < 0.0], anchors = BikeArt.rider_anchors(v.model, view), shadow = false}
+	# The rider leans in on the throttle and back on the brakes.
+	var tilt := clampf(ride_acc / 900.0, -0.07, 0.1) if view == "side" else 0.0
+	var st := {view = [rv, dir < 0.0], anchors = BikeArt.rider_anchors(v.model, view), shadow = false, lean = tilt}
+	BikeArt.wheel_turn = wheel_turn
+	BikeArt.braking = ride_acc < -40.0 and ride_spd > 10.0
 	BikeArt.draw(self, v.seed, view, dir, "far", xf)
 	Look.body_xf = xf
 	Look.draw(self, st, look)
 	Look.body_xf = Transform2D.IDENTITY
 	BikeArt.draw(self, v.seed, view, dir, "near", xf)
+	BikeArt.wheel_turn = 0.0
+	BikeArt.braking = false
 
 
 ## Every machine, each frame: notice the bike turning, lean into bends, kick up dust.
@@ -339,6 +354,21 @@ func _ride_look(delta: float) -> void:
 	# Lean from how fast the heading is swinging round, and how fast we're going.
 	var vel := (position - last_pos_ride) / maxf(delta, 0.001)
 	last_pos_ride = position
+	# Speed and its change (smoothed: positions come in steps over the network).
+	var spd := vel.length() if vel.length() < 400.0 else ride_spd
+	ride_acc = lerpf(ride_acc, (spd - ride_spd) / maxf(delta, 0.001), minf(1.0, 6.0 * delta))
+	ride_spd = lerpf(ride_spd, spd, minf(1.0, 10.0 * delta))
+	wheel_turn += ride_spd * delta / 4.4
+	ride_t += delta
+	# Opening the throttle puffs smoke from the exhaust (not the electric one).
+	puff_t -= delta
+	var m: Dictionary = Vehicles.MODELS[v.model]
+	if ride_acc > 60.0 and not m.electric and v.fuel > 0.0 and puff_t <= 0.0:
+		puff_t = 0.12
+		var main := get_parent()
+		if main.get("dust") != null:
+			var back := -vel.normalized() * 12.0 if vel.length() > 5.0 else Vector2(-12.0 * v.dir, 0)
+			main.dust.append([position + back + Vector2(0, -3), 0.0])
 	var target := 0.0
 	if vel.length() > 20.0:
 		var h := vel.angle()
