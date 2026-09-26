@@ -54,7 +54,7 @@ static func setup(w: World) -> void:
 		var m: Dictionary = MODELS.get(model, MODELS.wave)
 		var h := World.hash01(rec.seed, 3, 17)
 		w.vehicles.append({id = w.vehicles.size(), model = model, seed = rec.seed, pos = rec.pos,
-				dir = 1.0 if rec.seed % 2 else -1.0, view = "side", fuel = m.fuel * h * 0.6, hp = m.hp,
+				dir = rec.get("dir", 1.0 if rec.seed % 2 else -1.0), view = rec.get("view", "side"), fuel = m.fuel * h * 0.6, hp = m.hp,
 				key = World.hash01(rec.seed, 5, 23) < KEY_CHANCE, upright = rec.seed % 7 != 3, rider = 0, rec = rec})
 		rec.vehicle = w.vehicles.size() - 1
 

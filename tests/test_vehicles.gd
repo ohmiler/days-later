@@ -40,6 +40,19 @@ func run() -> void:
 	main.spawn_timer = 1e9  # no stray zombies wandering into the road
 	var w: World = main.world
 	check(w.vehicles.size() > 20, "the city has bikes to ride (%d)" % w.vehicles.size())
+	# Parked at the kerb or against a wall, never across a shop front or a door.
+	var blocking := []
+	for rec in w.street_props:
+		if rec.kind != "motorbike":
+			continue
+		var c: Vector2i = w.to_cell(rec.pos)
+		if w.get_tile(c + Vector2i.UP) in [World.IWALL, World.BUILDING] or w.door_at.has(c + Vector2i.DOWN) or w.door_at.has(c + Vector2i.UP):
+			blocking.append(c)
+	check(blocking.is_empty(), "no parked bike blocks a shop front or a door (%s)" % [blocking.slice(0, 3)])
+	var kinds := {}
+	for v in w.vehicles:
+		kinds[v.model] = true
+	check(kinds.size() >= 8, "all sorts of bikes about (%d kinds)" % kinds.size())
 	var v: Dictionary = {}
 	for x in w.vehicles:
 		if x.model == "wave":

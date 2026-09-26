@@ -32,7 +32,7 @@ const SIGN_LOOT := {
 ## Which city generator this is. Saves remember it: a city saved by an older
 ## generator cannot be rebuilt from its seed any more (see SaveGame).
 ## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
-const GEN := 2
+const GEN := 3  # 3: motorbikes park at the kerb, not in front of the shops
 const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
 const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
 const MAX_DEPTH := 15
@@ -434,7 +434,8 @@ static func _street_furniture(w: World, rng: RandomNumberGenerator) -> void:
 			var c := Vector2i(along, r.position.y + lane) if rd.horizontal else Vector2i(r.position.x + lane, along)
 			_vehicle(w, c, rd.horizontal, rng, true)
 
-	# Food carts, parked motorbikes and rubbish around the shops.
+	# Food carts and rubbish around the shops, and motorbikes along the kerb of
+	# the avenues running up and down (those along the shop fronts: see below).
 	for i in 900:
 		var c := Vector2i(rng.randi_range(0, World.W - 1), rng.randi_range(1, World.H - 1))
 		var t := w.get_tile(c)
@@ -445,14 +446,16 @@ static func _street_furniture(w: World, rng: RandomNumberGenerator) -> void:
 		for d in World.DIRS:
 			if w.get_tile(c + d) == World.ROAD:
 				by_road = true
+		var road_side := -1 if w.get_tile(c + Vector2i.LEFT) == World.ROAD else (1 if w.get_tile(c + Vector2i.RIGHT) == World.ROAD else 0)
 		var roll := rng.randf()
 		if t == World.SIDEWALK and not by_road and roll < 0.08:
 			w.blocked[c] = true
 			w.street_props.append({kind = "cart", pos = w.to_pos(c) + Vector2(0, 5), seed = rng.randi()})
-		elif in_front and roll < 0.35:
-			var bike := {kind = "motorbike", pos = w.to_pos(c) + Vector2(rng.randf_range(-3, 3), 5), seed = rng.randi()}
-			if not _bike_near(w, bike.pos):
-				w.street_props.append(bike)
+		elif t == World.SIDEWALK and road_side != 0 and roll < 0.6:
+			# Nose to the road, side-on to us, in a row along the kerb.
+			if not w.in_intersection(c + Vector2i(road_side, 0)):
+				_park(w, {kind = "motorbike", pos = w.to_pos(c) + Vector2(0, rng.randf_range(-4, 4)), seed = rng.randi(),
+						view = "side", dir = float(road_side)})
 		elif in_front and roll < 0.55:
 			w.street_props.append({kind = "trash", pos = w.to_pos(c) + Vector2(rng.randf_range(-4, 4), 5),
 					seed = rng.randi()})
@@ -542,10 +545,21 @@ static func _aftermath(w: World, rng: RandomNumberGenerator) -> void:
 				w.blocked[c] = true
 				_prop(w, "spirit", w.to_pos(c) + Vector2(0, 5), rng)
 				continue
-			if w.get_tile(c) in [World.SIDEWALK, World.SOI] and not w.blocked.has(c) and rng.randf() < 0.28:
-				var bike := {kind = "motorbike", pos = w.to_pos(c) + Vector2(rng.randf_range(-3, 3), 3), seed = rng.randi()}
-				if not _bike_near(w, bike.pos):
-					w.street_props.append(bike)
+			# Motorbikes park at the kerb in front, nose to the road, never across the
+			# shop front itself (that strip is for walking in and out).
+			var kerb := c + Vector2i.DOWN
+			if w.get_tile(c) == World.SIDEWALK and w.get_tile(kerb) == World.SIDEWALK and w.get_tile(kerb + Vector2i.DOWN) == World.ROAD \
+					and not w.blocked.has(kerb) and not w.in_intersection(kerb + Vector2i.DOWN) and rng.randf() < 0.6:
+				_park(w, {kind = "motorbike", pos = w.to_pos(kerb) + Vector2(rng.randf_range(-3, 3), 4), seed = rng.randi(),
+						view = "front", dir = 1.0})
+			# Facing a soi: across it, nose to the wall at the back of the next row
+			# (not at its back door), leaving the middle of the soi to walk down.
+			var wall := c + Vector2i.DOWN * 3
+			if w.get_tile(c) == World.SOI and w.get_tile(wall - Vector2i.DOWN) == World.SOI \
+					and w.get_tile(wall) in [World.BUILDING, World.IWALL] and not w.door_at.has(wall) \
+					and not w.blocked.has(wall - Vector2i.DOWN) and rng.randf() < 0.55:
+				_park(w, {kind = "motorbike", pos = w.to_pos(wall - Vector2i.DOWN) + Vector2(rng.randf_range(-3, 3), 2), seed = rng.randi(),
+						view = "back", dir = 1.0})
 	# Long-tail boats left in the canal, some half sunk.
 	for x in range(4, World.W - 4, 9):
 		if rng.randf() < 0.5 and w.get_tile(Vector2i(x, CANAL_Y + 1)) == World.WATER:
@@ -558,11 +572,23 @@ static func _prop(w: World, kind: String, pos: Vector2, rng: RandomNumberGenerat
 
 ## Free ground that will not wall anyone in: nothing solid next to it, and not
 ## in front of a door.
-## Parked bikes need room: none closer than a bike's length and a bit.
+## Park a bike if it has room: bikes side by side in a row, none overlapping.
 ## (Only decides whether to keep one; draws no random numbers.)
-static func _bike_near(w: World, pos: Vector2) -> bool:
+static func _park(w: World, bike: Dictionary) -> void:
+	if not _bike_near(w, bike.pos, bike.get("view", "side")):
+		w.street_props.append(bike)
+
+
+## How much ground a parked bike takes: long side-on, narrow end-on.
+static func _bike_box(pos: Vector2, view: String) -> Rect2:
+	var half := Vector2(17, 4) if view == "side" else Vector2(6, 8)
+	return Rect2(pos - half, half * 2.0)
+
+
+static func _bike_near(w: World, pos: Vector2, view := "side") -> bool:
+	var box := _bike_box(pos, view)
 	for p in w.street_props:
-		if p.kind == "motorbike" and absf(p.pos.x - pos.x) < 40.0 and absf(p.pos.y - pos.y) < 10.0:
+		if p.kind == "motorbike" and box.intersects(_bike_box(p.pos, p.get("view", "side")).grow(1.0)):
 			return true
 	return false
 
