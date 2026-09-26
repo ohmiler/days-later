@@ -105,7 +105,7 @@ static func look_of(app: Dictionary) -> Dictionary:
 
 ## Old-style entry point, kept so existing callers work: packs the arguments into
 ## a pose and a look, then draws.
-static func draw_human(ci: CanvasItem, vf: Array, angle: float, phase: float, moving: bool,
+static func draw_human(ci, vf: Array, angle: float, phase: float, moving: bool,
 		skin: Color, shirt: Color, pants: Color, hair: Color, zombie: bool,
 		attack: int = NONE, ext: float = 0.0, _armed: bool = false, guard: bool = false,
 		recoil := Vector2.ZERO, weapon: Dictionary = {}, fall := 0.0, fall_dir := 1.0, girth := 1.0) -> void:
@@ -116,7 +116,7 @@ static func draw_human(ci: CanvasItem, vf: Array, angle: float, phase: float, mo
 
 ## Draw a character: `st` is what they are doing (see Rig.build), `lk` what they
 ## look like: {skin, shirt, pants, hair, shoes?, build?}.
-static func draw(ci: CanvasItem, st: Dictionary, lk: Dictionary) -> void:
+static func draw(ci, st: Dictionary, lk: Dictionary) -> void:
 	var r := Rig.build(st, lk)
 	if st.get("eyes_shut", false):
 		r.closed = true  # (asleep)
@@ -125,13 +125,13 @@ static func draw(ci: CanvasItem, st: Dictionary, lk: Dictionary) -> void:
 
 ## Draw, easing between poses (see Rig.build_eased). `mem` belongs to the
 ## character: an empty dictionary it keeps between frames.
-static func draw_eased(ci: CanvasItem, st: Dictionary, lk: Dictionary, mem: Dictionary) -> void:
+static func draw_eased(ci, st: Dictionary, lk: Dictionary, mem: Dictionary) -> void:
 	draw_rig(ci, Rig.build_eased(st, lk, mem, Time.get_ticks_msec() / 1000.0), lk)
 
 
 ## Paint a rig in layers, back to front: shadow, legs, far arms, torso, head,
 ## near arms (with whatever they hold), and a leg kicking at the camera.
-static func draw_rig(ci: CanvasItem, r: Dictionary, lk: Dictionary) -> void:
+static func draw_rig(ci, r: Dictionary, lk: Dictionary) -> void:
 	_base = r.base
 	_torso_xf = Transform2D.IDENTITY
 	if r.get("torso", 0.0) != 0.0:
@@ -219,20 +219,20 @@ static func _dress(lk: Dictionary, zombie: bool) -> Dictionary:
 
 
 ## Set the drawing transform for a body part, on top of the whole-body transform.
-static func _xf(ci: CanvasItem, pos: Vector2, scale: Vector2, upper := false) -> void:
+static func _xf(ci, pos: Vector2, scale: Vector2, upper := false) -> void:
 	_cur_xf = body_xf * Transform2D(0.0, lift) * _base * (_torso_xf if upper else Transform2D.IDENTITY) * Transform2D(0.0, scale, 0.0, pos)
 	ci.draw_set_transform_matrix(_cur_xf)
 
 
 ## Pool of blood spreading from a body lying toward `dir` (k grows 0..1 over time).
-static func draw_blood_pool(ci: CanvasItem, dir: float, k: float) -> void:
+static func draw_blood_pool(ci, dir: float, k: float) -> void:
 	ci.draw_set_transform(Vector2(dir * 12.0, -0.5), 0, Vector2(1.3, 0.45))
 	_dot(ci, Vector2.ZERO, 3.0 + 9.0 * k, Color(0.28, 0.02, 0.02, 0.75))
 	_dot(ci, Vector2(dir * 3.0, 0), 2.0 + 5.0 * k, Color(0.2, 0.01, 0.01, 0.8))
 	ci.draw_set_transform(Vector2.ZERO)
 
 
-static func _draw_leg(ci: CanvasItem, leg: Dictionary, lk: Dictionary) -> void:
+static func _draw_leg(ci, leg: Dictionary, lk: Dictionary) -> void:
 	var pants: Color = lk.pants
 	var shoe: Color = lk.shoes
 	var col := pants.darkened(0.18) if leg.far else pants
@@ -276,7 +276,7 @@ static func kick_pose(t: float) -> Vector2:
 
 
 ## Front kick toward the camera; the sole grows as it comes closer.
-static func _front_kick_leg(ci: CanvasItem, k: Dictionary, lk: Dictionary) -> void:
+static func _front_kick_leg(ci, k: Dictionary, lk: Dictionary) -> void:
 	var shoe: Color = lk.shoes
 	var foot: Vector2 = k.foot
 	var e: float = k.e
@@ -292,7 +292,7 @@ static func _front_kick_leg(ci: CanvasItem, k: Dictionary, lk: Dictionary) -> vo
 
 
 ## Front/back leg: straight down, lifted by `lift` mid-stride.
-static func _leg_rect(ci: CanvasItem, x: float, up: float, pants: Color, shoe: Color, shin: Color, boot: float) -> void:
+static func _leg_rect(ci, x: float, up: float, pants: Color, shoe: Color, shin: Color, boot: float) -> void:
 	_rect(ci, Rect2(x, -10.5, 2.8, 10.5 - up - 1.7), shin)
 	if shin != pants:
 		_rect(ci, Rect2(x - 0.1, -10.5, 3.0, 5.0 - up * 0.5), pants)  # shorts end above the knee
@@ -300,7 +300,7 @@ static func _leg_rect(ci: CanvasItem, x: float, up: float, pants: Color, shoe: C
 
 
 ## Side leg from hip to knee to foot; the shoe points forward.
-static func _leg_line(ci: CanvasItem, hip: Vector2, knee: Vector2, foot: Vector2, pants: Color, shoe: Color, shin: Color,
+static func _leg_line(ci, hip: Vector2, knee: Vector2, foot: Vector2, pants: Color, shoe: Color, shin: Color,
 		boot: float) -> void:
 	_line(ci, knee, foot + Vector2(0, -1.4), shin, 2.6 if shin == pants else 2.2)
 	_line(ci, hip, knee, pants, 2.9)
@@ -318,7 +318,13 @@ static func _leg_line(ci: CanvasItem, hip: Vector2, knee: Vector2, foot: Vector2
 static var _dot_tex: Texture2D
 
 
-static func _dot(ci: CanvasItem, c: Vector2, r: float, col: Color, just_load := false) -> void:
+## The round dot every character is drawn from (for a MeshCanvas batching one).
+static func dot_tex() -> Texture2D:
+	_dot(null, Vector2.ZERO, 0.0, Color.WHITE, true)
+	return _dot_tex
+
+
+static func _dot(ci, c: Vector2, r: float, col: Color, just_load := false) -> void:
 	if _dot_tex == null:
 		var img := Image.create(64, 64, false, Image.FORMAT_RGBA8)
 		for y in 64:
@@ -332,26 +338,26 @@ static func _dot(ci: CanvasItem, c: Vector2, r: float, col: Color, just_load := 
 
 ## A filled rectangle, drawn from the same texture as everything else so the
 ## renderer can batch a whole character into a few calls.
-static func _rect(ci: CanvasItem, r: Rect2, col: Color) -> void:
+static func _rect(ci, r: Rect2, col: Color) -> void:
 	_dot(ci, Vector2.ZERO, 0.0, col, true)
 	ci.draw_texture_rect_region(_dot_tex, r, Rect2(30, 30, 4, 4), col)
 
 
 ## A straight stroke as one textured quad (same texture, so it batches too).
-static func _line(ci: CanvasItem, a: Vector2, b: Vector2, col: Color, w := 1.0) -> void:
+static func _line(ci, a: Vector2, b: Vector2, col: Color, w := 1.0) -> void:
 	var n := (b - a).orthogonal().normalized() * w * 0.5
 	if n == Vector2.ZERO:
 		return
 	_poly(ci, PackedVector2Array([a + n, b + n, b - n, a - n]), col)
 
 
-static func _polyline(ci: CanvasItem, pts: PackedVector2Array, col: Color, w := 1.0) -> void:
+static func _polyline(ci, pts: PackedVector2Array, col: Color, w := 1.0) -> void:
 	for i in pts.size() - 1:
 		_line(ci, pts[i], pts[i + 1], col, w)
 
 
 ## A convex polygon, flat colour or one colour per point.
-static func _poly(ci: CanvasItem, pts: PackedVector2Array, col: Variant) -> void:
+static func _poly(ci, pts: PackedVector2Array, col: Variant) -> void:
 	var n := pts.size()
 	if n < 3:
 		return
@@ -378,7 +384,7 @@ static func _poly(ci: CanvasItem, pts: PackedVector2Array, col: Variant) -> void
 
 
 ## A tapered limb segment with round ends, like a capsule.
-static func _limb(ci: CanvasItem, a: Vector2, b: Vector2, wa: float, wb: float, col: Color) -> void:
+static func _limb(ci, a: Vector2, b: Vector2, wa: float, wb: float, col: Color) -> void:
 	var n := (b - a).orthogonal().normalized()
 	if n == Vector2.ZERO:
 		n = Vector2.RIGHT
@@ -389,7 +395,7 @@ static func _limb(ci: CanvasItem, a: Vector2, b: Vector2, wa: float, wb: float, 
 
 ## One arm: short sleeve over the shoulder, bare forearm, closed hand. A dark
 ## outline pass first keeps the arm readable against the body behind it.
-static func _arm(ci: CanvasItem, sh: Vector2, elbow: Vector2, hand: Vector2, sleeve: Color, skin: Color,
+static func _arm(ci, sh: Vector2, elbow: Vector2, hand: Vector2, sleeve: Color, skin: Color,
 		fist := false, long := false) -> void:
 	var line := skin.darkened(0.45)
 	var cuff := sh.lerp(elbow, 0.75)
@@ -410,7 +416,7 @@ static func _arm(ci: CanvasItem, sh: Vector2, elbow: Vector2, hand: Vector2, sle
 
 
 ## One arm from the rig, plus anything held in its hand.
-static func _draw_arm(ci: CanvasItem, a: Dictionary, lk: Dictionary) -> void:
+static func _draw_arm(ci, a: Dictionary, lk: Dictionary) -> void:
 	var dim: float = a.dim
 	var skin: Color = (lk.skin as Color).darkened(a.skin_dark).darkened(dim)
 	var sleeve: Color = (lk.shirt as Color).darkened(a.sleeve_dark).darkened(a.get("sleeve_dim", dim))
@@ -432,7 +438,7 @@ static func _draw_arm(ci: CanvasItem, a: Dictionary, lk: Dictionary) -> void:
 
 
 ## Shirt with rounded shoulders, lit from the top-left.
-static func _torso(ci: CanvasItem, view: int, shirt: Color, pants: Color, zombie: bool) -> void:
+static func _torso(ci, view: int, shirt: Color, pants: Color, zombie: bool) -> void:
 	var w := (3.0 if view == SIDE else 4.4) * _girth
 	var top := shirt.lightened(0.08)
 	var bot := shirt.darkened(0.25)
@@ -454,7 +460,7 @@ static func _torso(ci: CanvasItem, view: int, shirt: Color, pants: Color, zombie
 
 
 ## An arm, or what is left of it when it has been cut off.
-static func _draw_arm_or_stump(ci: CanvasItem, a: Dictionary, lk: Dictionary, missing: int) -> void:
+static func _draw_arm_or_stump(ci, a: Dictionary, lk: Dictionary, missing: int) -> void:
 	var bit := LOST_ARM_L if a.get("idx", 0) == 0 else LOST_ARM_R
 	if not missing & bit:
 		_draw_arm(ci, a, lk)
@@ -471,7 +477,7 @@ static func _draw_arm_or_stump(ci: CanvasItem, a: Dictionary, lk: Dictionary, mi
 
 
 ## Where the head was.
-static func _neck_stump(ci: CanvasItem, skin: Color) -> void:
+static func _neck_stump(ci, skin: Color) -> void:
 	_rect(ci, Rect2(-1.3, -21.4, 2.6, 2.2), skin.darkened(0.25))
 	_dot(ci, Vector2(0, -21.4), 1.9, BLOOD)
 	_dot(ci, Vector2(0, -21.5), 0.8, Color("d8d0c0"))  # spine
@@ -479,7 +485,7 @@ static func _neck_stump(ci: CanvasItem, skin: Color) -> void:
 
 
 ## Smashed in: the skull caves and blood runs out over it.
-static func _crushed(ci: CanvasItem, c: Vector2) -> void:
+static func _crushed(ci, c: Vector2) -> void:
 	_poly(ci, PackedVector2Array([c + Vector2(-4.4, -1.2), c + Vector2(-2.6, -4.6), c + Vector2(-0.4, -2.4),
 			c + Vector2(1.6, -4.8), c + Vector2(4.4, -1.6), c + Vector2(3.0, 0.8), c + Vector2(-3.2, 1.2)]), BLOOD)
 	_dot(ci, c + Vector2(-0.8, -1.8), 1.4, BLOOD_DARK)
@@ -489,7 +495,7 @@ static func _crushed(ci: CanvasItem, c: Vector2) -> void:
 
 
 ## Bites, gashes and an open ribcage, picked by `seed` so each zombie keeps its own.
-static func _wounds(ci: CanvasItem, view: int, seed: int) -> void:
+static func _wounds(ci, view: int, seed: int) -> void:
 	if view == BACK and seed % 3 != 0:
 		return
 	var w := (3.0 if view == SIDE else 4.4) * _girth
@@ -508,7 +514,7 @@ static func _wounds(ci: CanvasItem, view: int, seed: int) -> void:
 
 
 ## Blood pumping out of a fresh stump, in arcs that fall away.
-static func _spurt(ci: CanvasItem, r: Dictionary, missing: int, left: float, seed: int) -> void:
+static func _spurt(ci, r: Dictionary, missing: int, left: float, seed: int) -> void:
 	var from := Vector2(0, -21.4) if missing & LOST_HEAD else (Vector2(0.6, -18.3) if missing & LOST_ARM_R else Vector2(-0.6, -18.6))
 	var t := Time.get_ticks_msec() / 1000.0
 	for i in 9:
@@ -518,7 +524,7 @@ static func _spurt(ci: CanvasItem, r: Dictionary, missing: int, left: float, see
 		_dot(ci, p, (1.0 - k) * 1.1 + 0.3, Color(BLOOD, (1.0 - k) * minf(1.0, left * 2.0)))
 
 
-static func _head(ci: CanvasItem, view: int, c: Vector2, skin: Color, hair: Color, style: String,
+static func _head(ci, view: int, c: Vector2, skin: Color, hair: Color, style: String,
 		zombie: bool, closed := false, hat := {}, mouth := 0.0, neck := true, drip := false, face := {}) -> void:
 	if neck:
 		_rect(ci, Rect2(-1.2, -21, 2.4, 2), skin.darkened(0.25))  # neck
@@ -614,7 +620,7 @@ static func swing_angle(t: float) -> float:
 
 
 ## A melee weapon gripped at `hand`, pointing along `dv`.
-static func _draw_weapon(ci: CanvasItem, hand: Vector2, dv: Vector2, w: Dictionary) -> void:
+static func _draw_weapon(ci, hand: Vector2, dv: Vector2, w: Dictionary) -> void:
 	var L: float = w.len
 	var col: Color = w.col
 	var n := dv.orthogonal()
@@ -669,7 +675,7 @@ static func _draw_weapon(ci: CanvasItem, hand: Vector2, dv: Vector2, w: Dictiona
 					tip + dv * 1.3 + n * 2.6, tip + dv * 1.3 - n * 2.4]), col)
 
 
-static func draw_hp(ci: CanvasItem, frac: float) -> void:
+static func draw_hp(ci, frac: float) -> void:
 	if frac >= 1.0:
 		return
 	_rect(ci, Rect2(-6, -33, 12, 2), Color(0.3, 0, 0, 0.8))

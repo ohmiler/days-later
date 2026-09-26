@@ -193,27 +193,31 @@ func run() -> void:
 	main.zombies.erase(zl.zid)
 	main.vehicles.dismount(me)
 
-	# Into a wall: a dent, and hard enough, a bruise.
+	# Into a wall: a dent, and hard enough, a bruise. (Any side: in some
+	# districts every shop front faces one way.)
 	var wall_cell := Vector2i(-1, -1)
-	for y in range(4, World.H - 4):
-		for x in range(4, World.W - 4):
-			var c := Vector2i(x, y)
-			if w.get_tile(c) == World.SIDEWALK and w.get_tile(c + Vector2i.UP) in [World.BUILDING, World.IWALL, World.WALL] \
-					and w.get_tile(c + Vector2i.DOWN) in [World.SIDEWALK, World.ROAD] and w.get_tile(c + Vector2i(0, 2)) in [World.SIDEWALK, World.ROAD] \
-					and not w.blocked.has(c) and not w.blocked.has(c + Vector2i.DOWN) and not w.door_at.has(c + Vector2i.UP):
-				wall_cell = c
+	var into := Vector2i.UP
+	for dir: Vector2i in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+		for y in range(4, World.H - 4):
+			for x in range(4, World.W - 4):
+				var c := Vector2i(x, y)
+				if w.get_tile(c) == World.SIDEWALK and w.get_tile(c + dir) in [World.BUILDING, World.IWALL, World.WALL] 						and w.get_tile(c - dir) in [World.SIDEWALK, World.ROAD] and w.get_tile(c - dir * 2) in [World.SIDEWALK, World.ROAD] 						and not w.blocked.has(c) and not w.blocked.has(c - dir) and not w.door_at.has(c + dir):
+					wall_cell = c
+					into = dir
+					break
+			if wall_cell.x >= 0:
 				break
 		if wall_cell.x >= 0:
 			break
 	check(wall_cell.x >= 0, "found a wall to ride into")
-	v.pos = w.to_pos(wall_cell + Vector2i(0, 2))
+	v.pos = w.to_pos(wall_cell - into * 2)
 	Vehicles._place(v)
 	me.position = v.pos
 	main.vehicles.mount(me, v.id)
 	var hp_was: int = v.hp
 	var wounds_was: int = me.wounds.size()
-	me.ride_vel = Vector2(0, -170)
-	me.move = Vector2.UP
+	me.ride_vel = Vector2(into) * 170.0
+	me.move = Vector2(into)
 	simulate(0.4)
 	check(v.hp < hp_was, "a bike into a wall gets dented (%d -> %d)" % [hp_was, v.hp])
 	check(me.wounds.size() > wounds_was and me.wounds[-1].kind == "bruise", "and a hard crash bruises the rider")
@@ -228,19 +232,25 @@ func run() -> void:
 
 	# No riding into buildings.
 	var door_cell := Vector2i(-1, -1)
+	var toward := Vector2i.UP  # from the street to the door
 	for d in w.doors:
-		if d.kind in ["door", "shutter"] and not d.broken and w.get_tile(d.cell + Vector2i.DOWN) == World.SIDEWALK:
-			door_cell = d.cell
+		for dir: Vector2i in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+			if d.kind in ["door", "shutter"] and not d.broken and w.get_tile(d.cell - dir) == World.SIDEWALK 					and w.get_tile(d.cell - dir * 2) in [World.SIDEWALK, World.ROAD]:
+				door_cell = d.cell
+				toward = dir
+				break
+		if door_cell.x >= 0:
 			break
+	check(door_cell.x >= 0, "found a door onto the street")
 	var v2: Dictionary = w.vehicles[(v.id + 1) % w.vehicles.size()]
 	v2.key = true
 	v2.fuel = 2.0
-	v2.pos = w.to_pos(door_cell + Vector2i(0, 2))
+	v2.pos = w.to_pos(door_cell - toward * 2)
 	Vehicles._place(v2)
 	w.set_door(w.door_at[door_cell], false, 60.0, 0, false)
-	me.position = v2.pos + Vector2(0, 8)
+	me.position = v2.pos - Vector2(toward) * 8.0
 	main.vehicles.mount(me, v2.id)
-	me.move = Vector2.UP
+	me.move = Vector2(toward)
 	simulate(1.5)
 	check(w.get_tile(w.to_cell(me.position)) not in [World.FLOOR, World.DOOR], "a bike can't go in through a door")
 	main.vehicles.dismount(me)

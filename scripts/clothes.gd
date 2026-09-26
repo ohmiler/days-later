@@ -63,7 +63,7 @@ static func parts(d: Dictionary) -> Array:
 
 
 ## Everything worn that draws at `layer`, in slot order.
-static func draw_layer(ci: CanvasItem, layer: String, r: Dictionary, lk: Dictionary) -> void:
+static func draw_layer(ci, layer: String, r: Dictionary, lk: Dictionary) -> void:
 	var wear: Dictionary = lk.get("wear", {})
 	if wear.is_empty():
 		return
@@ -76,7 +76,7 @@ static func draw_layer(ci: CanvasItem, layer: String, r: Dictionary, lk: Diction
 				_draw(ci, layer, shape, p, r, lk)
 
 
-static func _draw(ci: CanvasItem, layer: String, shape: String, p: Dictionary, r: Dictionary, lk: Dictionary) -> void:
+static func _draw(ci, layer: String, shape: String, p: Dictionary, r: Dictionary, lk: Dictionary) -> void:
 	var view: int = r.view
 	match [shape, layer]:
 		["hoodie", "behind_head"], ["hood", "behind_head"]:
@@ -129,7 +129,7 @@ static func _hood_col(shape: String, p: Dictionary, lk: Dictionary) -> Color:
 # --- On the head (called by Look._head) ---------------------------------------------
 
 ## Hats and helmets, over the hair.
-static func hat(ci: CanvasItem, view: int, c: Vector2, h: Dictionary) -> void:
+static func hat(ci, view: int, c: Vector2, h: Dictionary) -> void:
 	for p in parts(h):
 		var col: Color = p.col
 		match p.get("shape", ""):
@@ -169,7 +169,7 @@ static func hat(ci: CanvasItem, view: int, c: Vector2, h: Dictionary) -> void:
 
 
 ## Masks and glasses, on the face (under any hat).
-static func face(ci: CanvasItem, view: int, c: Vector2, f: Dictionary) -> void:
+static func face(ci, view: int, c: Vector2, f: Dictionary) -> void:
 	for p in parts(f):
 		var col: Color = p.col
 		match p.get("shape", ""):
@@ -205,7 +205,7 @@ static func face(ci: CanvasItem, view: int, c: Vector2, f: Dictionary) -> void:
 
 
 ## An arm guard wrapped round the forearm (drawn by Look._draw_arm).
-static func arm_guard(ci: CanvasItem, elbow: Vector2, hand: Vector2, g: Dictionary) -> void:
+static func arm_guard(ci, elbow: Vector2, hand: Vector2, g: Dictionary) -> void:
 	for p in parts(g):
 		if p.get("shape", "") == "armguards":
 			var col: Color = p.col
@@ -219,7 +219,7 @@ static func arm_guard(ci: CanvasItem, elbow: Vector2, hand: Vector2, g: Dictiona
 
 
 ## A glove over the hand (drawn by Look._draw_arm).
-static func glove(ci: CanvasItem, hand: Vector2, fist: bool, g: Dictionary) -> void:
+static func glove(ci, hand: Vector2, fist: bool, g: Dictionary) -> void:
 	for p in parts(g):
 		if p.get("shape", "") == "gloves":
 			var col: Color = p.col
@@ -230,7 +230,7 @@ static func glove(ci: CanvasItem, hand: Vector2, fist: bool, g: Dictionary) -> v
 # --- Body pieces (moved here from Look unchanged) -----------------------------------
 
 ## Armour vest (or a hi-vis rider's vest) over the shirt: panel front and back.
-static func _vest(ci: CanvasItem, view: int, v: Dictionary) -> void:
+static func _vest(ci, view: int, v: Dictionary) -> void:
 	var w := (3.2 if view == Look.SIDE else 4.5) * Look._girth
 	var col: Color = v.col
 	var pts := PackedVector2Array([Vector2(-w + 1.6, -19.8), Vector2(-w * 0.35, -19.8), Vector2(-w * 0.2, -18.2),
@@ -254,7 +254,7 @@ static func _vest(ci: CanvasItem, view: int, v: Dictionary) -> void:
 
 
 ## Backpack seen from the front (only the straps) or from behind (the whole bag).
-static func _pack(ci: CanvasItem, view: int, p: Dictionary) -> void:
+static func _pack(ci, view: int, p: Dictionary) -> void:
 	var col: Color = p.col
 	var big: bool = p.get("big", false)
 	var g := Look._girth
@@ -275,7 +275,7 @@ static func _pack(ci: CanvasItem, view: int, p: Dictionary) -> void:
 
 
 ## Side view: the bag sits against the back, the strap crosses the shoulder.
-static func _pack_side(ci: CanvasItem, p: Dictionary) -> void:
+static func _pack_side(ci, p: Dictionary) -> void:
 	var col: Color = p.col
 	var big: bool = p.get("big", false)
 	var h := 9.5 if big else 7.0
@@ -291,7 +291,7 @@ static func _pack_side(ci: CanvasItem, p: Dictionary) -> void:
 
 ## A shoulder bag: the strap runs from the right shoulder to the left hip,
 ## where the bag hangs. Side-on it hangs at the hip nearest us, or behind.
-static func _satchel_strap(ci: CanvasItem, view: int, p: Dictionary) -> void:
+static func _satchel_strap(ci, view: int, p: Dictionary) -> void:
 	var col: Color = (p.col as Color).darkened(0.3)
 	var g := Look._girth
 	match view:
@@ -303,7 +303,7 @@ static func _satchel_strap(ci: CanvasItem, view: int, p: Dictionary) -> void:
 			Look._line(ci, Vector2(0.4, -19.4), Vector2(-0.6, -11.4), col, 0.9)
 
 
-static func _satchel_bag(ci: CanvasItem, view: int, p: Dictionary, behind: bool) -> void:
+static func _satchel_bag(ci, view: int, p: Dictionary, behind: bool) -> void:
 	var col: Color = p.col
 	var g := Look._girth
 	# From the front the bag is at our left hip; from behind, at our right. Side-on it's at the hip.
@@ -317,7 +317,7 @@ static func _satchel_bag(ci: CanvasItem, view: int, p: Dictionary, behind: bool)
 
 ## A long coat: the skirt from the hips to the knees, over the trousers, split
 ## at the back so the legs move (a raincoat's tails, a lab coat).
-static func _coat(ci: CanvasItem, view: int, r: Dictionary, p: Dictionary) -> void:
+static func _coat(ci, view: int, r: Dictionary, p: Dictionary) -> void:
 	# (Drawn with the upper body, so it bobs and sits with it.)
 	var col: Color = p.col
 	var w := (3.1 if view == Look.SIDE else 4.0) * Look._girth

@@ -14,10 +14,16 @@ var colors := PackedColorArray()
 var xf := Transform2D.IDENTITY
 var plain := true  # xf is the identity: points go in as they are (most drawing; faster)
 var target: CanvasItem  # the node drawn into (it must be in its _draw)
+# With a texture (Look's round dot), textured quads and primitives go in the
+# same batch; everything else samples the texture's middle, which must be solid.
+var tex: Texture2D
+var uvs := PackedVector2Array()
+const SOLID := Vector2(0.5, 0.5)
 
 
-func _init(to: CanvasItem = null) -> void:
+func _init(to: CanvasItem = null, texture: Texture2D = null) -> void:
 	target = to
+	tex = texture
 
 
 func draw_set_transform(pos: Vector2, rotation := 0.0, scale := Vector2.ONE) -> void:
@@ -130,9 +136,66 @@ func _flush(ci: CanvasItem) -> void:
 	if points.is_empty():
 		return
 	# (No indices: the points are taken three at a time.)
-	RenderingServer.canvas_item_add_triangle_array(ci.get_canvas_item(), PackedInt32Array(), points, colors)
+	if tex:
+		_pad_uvs()
+		RenderingServer.canvas_item_add_triangle_array(ci.get_canvas_item(), PackedInt32Array(), points, colors, uvs,
+				PackedInt32Array(), PackedFloat32Array(), tex.get_rid())
+	else:
+		RenderingServer.canvas_item_add_triangle_array(ci.get_canvas_item(), PackedInt32Array(), points, colors)
 	points = PackedVector2Array()
 	colors = PackedColorArray()
+	uvs = PackedVector2Array()
+
+
+## Untextured points drawn so far sample the solid middle.
+func _pad_uvs() -> void:
+	var n := points.size() - uvs.size()
+	if n > 0:
+		var fill := PackedVector2Array()
+		fill.resize(n)
+		fill.fill(SOLID)
+		uvs.append_array(fill)
+
+
+## The textured calls (only with `tex`, and only that texture).
+func draw_texture_rect(_t: Texture2D, r: Rect2, _tile := false, modulate := Color(1, 1, 1)) -> void:
+	_tex_quad(r, Rect2(0, 0, 1, 1), modulate)
+
+
+func draw_texture_rect_region(t: Texture2D, r: Rect2, src: Rect2, modulate := Color(1, 1, 1), _transpose := false,
+		_clip_uv := true) -> void:
+	var size := t.get_size()
+	_tex_quad(r, Rect2(src.position / size, src.size / size), modulate)
+
+
+func _tex_quad(r: Rect2, uv: Rect2, col: Color) -> void:
+	_pad_uvs()
+	var a := r.position
+	var b := Vector2(r.end.x, r.position.y)
+	var c := r.end
+	var d := Vector2(r.position.x, r.end.y)
+	if not plain:
+		a = xf * a
+		b = xf * b
+		c = xf * c
+		d = xf * d
+	points.append_array(PackedVector2Array([a, b, c, a, c, d]))
+	colors.append_array(PackedColorArray([col, col, col, col, col, col]))
+	var ua := uv.position
+	var uc := uv.end
+	var ub := Vector2(uc.x, ua.y)
+	var ud := Vector2(ua.x, uc.y)
+	uvs.append_array(PackedVector2Array([ua, ub, uc, ua, uc, ud]))
+
+
+## Three or four points (a quad is split in two), flat or one colour each.
+func draw_primitive(pts: PackedVector2Array, cols: PackedColorArray, puv: PackedVector2Array, _t: Texture2D = null) -> void:
+	_pad_uvs()
+	var idx := [0, 1, 2] if pts.size() == 3 else [0, 1, 2, 0, 2, 3]
+	for i: int in idx:
+		points.append(pts[i] if plain else xf * pts[i])
+		colors.append(cols[i] if cols.size() > 1 else cols[0])
+		uvs.append(puv[i] if i < puv.size() else SOLID)
 
 
 ## Hand everything drawn so far to `ci` (by default the target; call from its
