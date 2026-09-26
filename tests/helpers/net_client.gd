@@ -33,7 +33,9 @@ func _process(d: float) -> bool:
 				step = 2
 				main.ui.chat_sent.emit("hello from the client")
 		2:
-			if t > 4.5:
+			# Report once the host has answered and opened the cupboard (or given up waiting).
+			var answered: bool = main.players.values().any(func(p): return p.say == "hello from the host")
+			if t > 4.5 and ((answered and main.ui.gear.box_id >= 0) or t > 10.0):
 				var me: Player = main.players.get(main.multiplayer.get_unique_id())
 				lines.append("players %d" % main.players.size())
 				lines.append("zombies %d" % main.zombies.size())

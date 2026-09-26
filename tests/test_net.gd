@@ -27,7 +27,12 @@ func run() -> void:
 	var want := Look.pack({skin = 2, hair = 3, style = 1, shirt = 4, pants = 2, build = 2})
 	check(joined.app_code == want, "its chosen look arrived (%d)" % joined.app_code)
 	# Say something back, and open a cupboard for it.
-	await wait(2.2)
+	# (Waiting for it rather than a fixed time: how long the client takes to
+	# build its city depends on the machine.)
+	for i in 60:
+		if joined.say == "hello from the client":
+			break
+		await wait(0.1)
 	main.net.req_chat("hello from the host")
 	check(joined.say == "hello from the client", "its chat arrived here")
 	var f: FurnitureProp = main.world.container_nodes[0]
