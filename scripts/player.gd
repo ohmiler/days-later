@@ -56,6 +56,9 @@ var lift := 0.0  # current drawn height above the street (eases between roofs)
 var _pose := {}  # what the body last showed, for easing between poses (Rig.build_eased)
 var _ghost: Node2D  # your own outline over whatever hides you (under a bus), on your screen only
 var _ghost_on := false  # it was drawn last frame (so it's wiped the frame you come out)
+var _crawl_way := 0  # crawling: 0 side-on, -1 up the screen (away), 1 down it (toward you)
+var _crawl_turn := 0.0  # seconds since that changed (the body squashes thin as it turns)
+var _crawl_top := {}  # crawling up or down: the TopRig pose last drawn (for the ghost)
 var step_t := 0.0  # server: time to the next footstep noise
 var bitten := false  # server: set by a zombie bite, handled by main
 var turned := false  # died of the infection and got back up as a zombie
@@ -792,7 +795,8 @@ func _draw_rest() -> void:
 	else:
 		# Flat on your back along the floor, head away from us (or towards us),
 		# seen from above.
-		_draw_lying_top(rest_face == 2)
+		var breath := sin(Time.get_ticks_msec() * 0.0022 + get_instance_id()) * 0.35 if sleeping else 0.0
+		TopRig.draw(self, TopRig.supine(rest_face == 2, breath, shut), look, lift)  # (seen from above, what's worn and all)
 		if in_long_bed():
 			# Under the blanket, head on the pillow.
 			draw_rect(Rect2(-7, -19 - lift, 14, 17), Color("6a7a94"))
@@ -802,64 +806,6 @@ func _draw_rest() -> void:
 		var t := fmod(Time.get_ticks_msec() / 1000.0, 3.0)
 		draw_string(UiTheme.heading(), Vector2(4 + t * 3, -20 - t * 5 - lift), "z", HORIZONTAL_ALIGNMENT_LEFT, -1, 9,
 				Color(0.9, 0.9, 1.0, 0.8 * (1.0 - t / 3.0)))
-
-
-## Someone on their back lying up the screen (head away) or down it, as seen
-## from above: the top of the head, shoulders, arms along the sides, legs,
-## the soles of the shoes. Feet at the origin.
-func _draw_lying_top(head_up: bool) -> void:
-	# Drawn head-up with the feet at the origin, then flipped for head-down
-	# (towards us: the face upside down, as it would be).
-	var dl := Look._dress(look, false)
-	var top: Color = dl.shirt
-	var legs: Color = dl.pants
-	var shoe: Color = dl.shoes
-	var gw: float = look.get("build", 1.0)  # (heavier builds lie wider)
-	draw_set_transform(Vector2(0, -lift), 0, Vector2(gw, 1.0 if head_up else -1.0))
-	var breath := sin(Time.get_ticks_msec() * 0.0022 + get_instance_id()) * 0.35 if sleeping else 0.0
-	# The shadow all along it.
-	draw_colored_polygon(PackedVector2Array([Vector2(-5, 1), Vector2(5, 1), Vector2(8, -14), Vector2(7, -24), Vector2(0, -30),
-			Vector2(-7, -24), Vector2(-8, -14)]), Color(0, 0, 0, 0.22))
-	# Legs, a little apart, knees shaded; shorts show the skin below.
-	for sx in [-1.0, 1.0]:
-		var x: float = sx * 2.2
-		draw_colored_polygon(PackedVector2Array([Vector2(x - 1.7, -2.5), Vector2(x + 1.7, -2.5), Vector2(x + 2.0, -13.5), Vector2(x - 1.9, -13.5)]),
-				legs)
-		if dl.get("shorts", false):
-			draw_rect(Rect2(x - 1.6, -8.5, 3.2, 6.0), skin)
-		draw_rect(Rect2(x - 1.6, -8.2, 3.2, 0.8), legs.darkened(0.25))  # the knee
-		# Shoes seen from their soles, the tread across them.
-		draw_rect(Rect2(x - 1.9, -3.2, 3.8, 3.0), shoe)
-		draw_rect(Rect2(x - 1.6, -2.7, 3.2, 0.6), shoe.lightened(0.25))
-		draw_rect(Rect2(x - 1.6, -1.5, 3.2, 0.6), shoe.lightened(0.25))
-	draw_rect(Rect2(-4.4, -14.6, 8.8, 1.6), legs.darkened(0.35))  # belt
-	# The body: shoulders wider than the waist, a collar, a fold of the shirt.
-	var chest := -22.5 - breath
-	draw_colored_polygon(PackedVector2Array([Vector2(-4.4, -13.5), Vector2(4.4, -13.5), Vector2(5.8, chest + 1.0), Vector2(4.8, chest - 0.5),
-			Vector2(-4.8, chest - 0.5), Vector2(-5.8, chest + 1.0)]), top)
-	draw_line(Vector2(-2.0, -15.5), Vector2(-1.2, chest + 3.0), top.darkened(0.12), 0.6)
-	draw_colored_polygon(PackedVector2Array([Vector2(-1.8, chest - 0.3), Vector2(1.8, chest - 0.3), Vector2(0, chest + 2.4)]), skin.darkened(0.08))
-	# Arms by the sides, sleeves to the elbow (or all the way), hands open.
-	for sx in [-1.0, 1.0]:
-		var a := Vector2(sx * 5.9, chest + 1.2)
-		var e := Vector2(sx * 6.7, -17.0)
-		var h := Vector2(sx * 6.4, -12.2)
-		draw_line(a, e, top.darkened(0.06), 2.6)
-		draw_line(e, h, top.darkened(0.06) if dl.get("long_sleeves", false) else skin, 2.2)
-		draw_circle(h + Vector2(0, 0.6), 1.3, skin)
-	# The head, the face up to the sky, eyes shut; the hair spread under it.
-	var hc := Vector2(0, chest - 3.6)
-	draw_circle(hc + Vector2(0, -0.8), 3.9, hair)
-	draw_circle(hc, 3.2, skin)
-	draw_circle(hc + Vector2(-3.1, 0.2), 0.9, skin.darkened(0.08))  # ears
-	draw_circle(hc + Vector2(3.1, 0.2), 0.9, skin.darkened(0.08))
-	draw_rect(Rect2(hc.x - 3.0, hc.y - 3.4, 6.0, 1.4), hair)  # the fringe
-	var shut := Color(0.12, 0.08, 0.06, 0.9)
-	draw_line(hc + Vector2(-1.9, -0.4), hc + Vector2(-0.7, -0.2), shut, 0.5)
-	draw_line(hc + Vector2(0.7, -0.2), hc + Vector2(1.9, -0.4), shut, 0.5)
-	draw_rect(Rect2(hc.x - 0.3, hc.y + 0.2, 0.6, 0.9), skin.darkened(0.15))  # nose
-	draw_line(hc + Vector2(-0.8, 1.7), hc + Vector2(0.8, 1.7), skin.darkened(0.3), 0.5)
-	draw_set_transform(Vector2.ZERO)
 
 
 ## How high each kind of seat is (the hips sit this far up).
@@ -959,16 +905,37 @@ func _pant() -> float:
 ## knees under the hips, each hand and knee reaching forward in turn as you
 ## go; from the front or back, low down between the hands.
 func _draw_crawl() -> void:
-	# Always side-on (the game's figures are drawn from the side; a body flat
-	# on the ground seen head-on doesn't read), facing left or right.
+	# Side-on crawling left or right; up or down the screen a body flat on
+	# the ground is drawn from above (TopRig). Which, with a little give so it
+	# doesn't flicker on the diagonal; turning, it squashes thin and back.
 	var a := sin(phase * 1.3) if moving else 0.0
-	Look.draw_eased(self, {view = [Look.SIDE, face().x < 0.0], anchors = crawl_anchors(a), lean = CRAWL_LEAN, ease = 0.35}, look, _pose)
+	var f := face()
+	var way := _crawl_way
+	if absf(f.y) > absf(f.x) * 1.3:
+		way = 1 if f.y > 0.0 else -1
+	elif absf(f.x) > absf(f.y) * 1.3:
+		way = 0
+	if way != _crawl_way:
+		_crawl_way = way
+		_crawl_turn = 0.0
+	_crawl_turn += get_process_delta_time()
+	var squash := maxf(0.25, smoothstep(0.0, CRAWL_TURN, _crawl_turn))
+	if way == 0:
+		_crawl_top = {}
+		Look.body_xf = Transform2D(0.0, Vector2(squash, 1.0), 0.0, Vector2.ZERO)
+		Look.draw_eased(self, {view = [Look.SIDE, f.x < 0.0], anchors = crawl_anchors(a), lean = CRAWL_LEAN, ease = 0.35}, look, _pose)
+		Look.body_xf = Transform2D.IDENTITY
+	else:
+		_pose.clear()
+		_crawl_top = TopRig.prone(way > 0, a)
+		TopRig.draw(self, _crawl_top, look, lift, squash)
 
 
 ## A low crawl side-on, `a` (-1..1) through the stride: flat to the ground,
 ## head up, forearms out ahead (one reaching as the other pulls back) and the
 ## knee on the other side drawn up to push.
 const CRAWL_LEAN := 1.26
+const CRAWL_TURN := 0.14  # seconds to turn over between side-on and up/down the screen
 static func crawl_anchors(a: float) -> Dictionary:
 	return {seat = Vector2(-5.5, -3.6 + absf(a) * 0.25), head = Vector2(-3.5, 1.5),  # (head up, eyes ahead)
 			hands = [Vector2(12.0 + a * 2.4, -0.5), Vector2(12.0 - a * 2.4, -0.5)],
@@ -1037,8 +1004,13 @@ static func leap_keys(side: bool) -> Array:
 ## Under a bus or a truck: your own body, see-through, drawn over it so you
 ## can tell where you are and which way you face (no one else sees it).
 func _draw_ghost() -> void:
-	if not (is_local and under_vehicle()) or not _pose.has("shown"):
+	if not (is_local and under_vehicle()):
 		return  # (and a ghost drawn before is wiped: nothing drawn this time)
+	if not _crawl_top.is_empty():
+		TopRig.draw(_ghost, _crawl_top, look)
+		return
+	if not _pose.has("shown"):
+		return
 	var r: Dictionary = _pose.shown.duplicate()
 	r.shadow = false
 	Look.lift = Vector2.ZERO
