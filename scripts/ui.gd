@@ -32,6 +32,7 @@ var clock: Clock
 var tut: TutorialCard
 var feed: VBoxContainer
 var hotbar: InventoryBar
+var prompt_tag: PromptTag  # "E  open" over whatever is in reach
 var help: Control
 var gear: BagScreen
 var fs_button: Button
@@ -536,6 +537,8 @@ func _build_hud() -> void:
 	hud.set_anchors_preset(Control.PRESET_FULL_RECT)
 	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(hud)
+	prompt_tag = PromptTag.new()
+	hud.add_child(prompt_tag)
 
 	vitals = Vitals.new()
 	vitals.anchor_top = 1.0
@@ -1084,6 +1087,10 @@ class Clock extends Control:
 	var day := 1
 	var time := 0.3
 	var online := 1
+	var _warn_kind := ""  # which warning is up; its full sentence shows for a while, then a short form
+	var _warn_since := 0.0
+
+	const WARN_FULL := 8.0  # seconds a warning is spelled out before it shrinks
 
 	func _horde_now() -> bool:
 		return (day % 3 == 0 and time > 0.764) or (day % 3 == 1 and day > 1 and time < 0.036)
@@ -1116,19 +1123,36 @@ class Clock extends Control:
 			draw_circle(ic + Vector2(3, -2), 6, Color(0.1, 0.1, 0.12))
 		else:
 			draw_circle(ic, 6, Color("ffb35c"))
+		# [kind, the full sentence, the short form it shrinks to ("" to go)]
 		var warn := ""
 		var wc := Color("ffb35c")
+		var kind := ""
+		var short := ""
 		if _horde_now():
+			kind = "horde"
 			warn = "ฝูงซอมบี้กำลังบุก! อยู่ในที่ปลอดภัย"
+			short = "ฝูงซอมบี้บุก!"
 			wc = Color("ff5a4a")
 		elif day % 3 == 0 and time < 0.764:
+			kind = "tonight"
 			warn = "คืนนี้: ฝูงซอมบี้จะบุก"
+			short = "คืนนี้ฝูงบุก"
 			wc = Color("ff7a5a")
 		elif time >= 0.70 and time < 0.764:
-			warn = "อีก %d นาทีจะมืด ซอมบี้จะออกมามากขึ้น" % ceili((0.764 - time) * 24.0 * 60.0)
+			kind = "dusk"
+			var mins := ceili((0.764 - time) * 24.0 * 60.0)
+			warn = "อีก %d นาทีจะมืด ซอมบี้จะออกมามากขึ้น" % mins
+			short = "มืดใน %d นาที" % mins
 		elif night:
+			kind = "night"
 			warn = "มืดแล้ว · ซอมบี้เห็นเราแค่ใกล้ ๆ เว้นแต่ยืนใต้ไฟ"
 			wc = Color("ff8a7a")
+		var now := Time.get_ticks_msec() / 1000.0
+		if kind != _warn_kind:
+			_warn_kind = kind
+			_warn_since = now
+		if now - _warn_since > WARN_FULL:
+			warn = short
 		if warn != "":
 			draw_string_outline(UiTheme.body_bold(), Vector2(0, 88), warn, HORIZONTAL_ALIGNMENT_RIGHT, w, 15, 5, Color(0, 0, 0, 0.55))
 			draw_string(UiTheme.body_bold(), Vector2(0, 88), warn, HORIZONTAL_ALIGNMENT_RIGHT, w, 15, wc)

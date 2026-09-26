@@ -75,8 +75,10 @@ var next_pickup := 1
 var search_until := 0.0  # client: progress bar for our own search
 var search_total := 1.0
 var hidden_building: BuildingProp  # the roof we lifted off because we are inside
-var prompt := ""  # "press E" hint drawn above whatever is in reach
+var prompt := ""  # what E would do right now ("" nothing in reach); shown by ui.prompt_tag
 var prompt_pos := Vector2.ZERO
+var _prompt_key := ""  # the target the tag is on, to know how long you've stayed on it
+var _prompt_since := 0.0
 var last_target := {}  # what E points at right now (client), for the hold-E wheel
 var last_actions: Array = []
 var e_down_at := -1.0  # when E went down; held long enough opens the wheel
@@ -788,39 +790,69 @@ func _update_inside(me: Player) -> void:
 			b.visible = false
 
 
+## What E would do, for the tag over it: just the verb ("E  ต่อสายตรง"); what
+## the thing is and why something can't be done fade in underneath when you
+## stay on it (see PromptTag).
 func _update_prompt(me: Player) -> void:
 	prompt = ""
 	last_target = {}
 	last_actions = []
+	var tag := ui.prompt_tag
+	tag.verb = ""
+	tag.second = ""
+	tag.always_detail = false
 	for f: FurnitureProp in world.container_nodes:
 		f.set_highlight(false)
-	if not me.alive():
-		return
-	if me.sleeping:
-		prompt = "หลับอยู่ · เดินเพื่อลุกขึ้น"
-		return
-	if me.riding >= 0:
-		prompt = "[E] ลงจากรถ · " + Vehicles.title_of(world.vehicles[me.riding])
-		prompt_pos = me.position + Vector2(0, -34)  # over the rider's head
-		return
-	var t := Interact.target(self, me)
-	var list := Interact.actions(self, me, t)
-	if list.is_empty():
-		return
-	var a := Interact.primary(list)
-	prompt = ("[E] " + a.label) if a.ok else "%s · %s" % [t.title, a.why]
-	if a.verb != "board":
-		var board := Interact.find_action(list, "board")
-		if not board.is_empty() and board.ok:
-			prompt += "  [R] ตอกไม้"
-	if list.size() > 1:
-		prompt += "  · ค้าง [E]"
-	var up := {stairs = -26.0, edge = -40.0, pickup = -10.0, trap = -14.0, door = -22.0, window = -22.0, container = -26.0}
-	prompt_pos = t.pos + Vector2(0, up.get(t.kind, -22.0) - me.lift)
-	if t.kind == "container":
-		world.container_nodes[t.id].set_highlight(true)
-	last_target = t
-	last_actions = list
+	if me.alive() and me.sleeping:
+		_tag(tag, "หลับอยู่ · เดินเพื่อลุกขึ้น", true, false, "", me.position + Vector2(0, -34), "sleep", "")
+	elif me.alive() and me.riding >= 0:
+		_tag(tag, "ลงจากรถ", true, false, Vehicles.title_of(world.vehicles[me.riding]), me.position + Vector2(0, -34), "ride", "E")
+		tag.always_detail = true
+	elif me.alive():
+		var t := Interact.target(self, me)
+		var list := Interact.actions(self, me, t)
+		if not list.is_empty():
+			var a := Interact.primary(list)
+			# The verb alone on the tag; anything in brackets ("(เสียงดัง)") and what it is go underneath.
+			var verb: String = a.label.get_slice(" (", 0)
+			var extra: String = a.label.substr(verb.length() + 2).trim_suffix(")") if " (" in a.label else ""
+			var detail := PackedStringArray()
+			if not t.title in verb:
+				detail.append(t.title)
+			if extra != "":
+				detail.append(extra)
+			if not a.ok:
+				verb = "%s · %s" % [verb, a.why.get_slice(" · ", 0)]
+				if " · " in a.why:
+					detail.append(a.why.get_slice(" · ", 1))
+			var up := {stairs = -26.0, edge = -40.0, pickup = -10.0, trap = -14.0, door = -22.0, window = -22.0, container = -26.0}
+			_tag(tag, verb, a.ok, list.size() > 1, " · ".join(detail), t.pos + Vector2(0, up.get(t.kind, -22.0) - me.lift),
+					"%s%s" % [t.kind, t.id], "R" if a.get("key", "") == "R" else "E")
+			if a.verb != "board":
+				var board := Interact.find_action(list, "board")
+				if not board.is_empty() and board.ok:
+					tag.second = "R ตอกไม้"
+			if t.kind == "container":
+				world.container_nodes[t.id].set_highlight(true)
+			last_target = t
+			last_actions = list
+	tag.queue_redraw()
+
+
+func _tag(tag: PromptTag, verb: String, ok: bool, more: bool, detail: String, at: Vector2, id: String, key: String) -> void:
+	prompt = verb
+	prompt_pos = at
+	var now := Time.get_ticks_msec() / 1000.0
+	if id != _prompt_key:
+		_prompt_key = id
+		_prompt_since = now
+	tag.verb = verb
+	tag.key = key if key != "" else "E"
+	tag.ok = ok
+	tag.more = more
+	tag.detail = detail
+	tag.world_pos = at
+	tag.dwell = now - _prompt_since
 
 
 ## Anything standing in front of the local player turns see-through so you
@@ -855,10 +887,11 @@ func _draw_fx() -> void:
 	var local: Player = players.get(multiplayer.get_unique_id())
 	for p: Player in players.values():
 		if p.alive() and p.pname != "":
-			var w := font.get_string_size(p.pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 5).x + 6
-			var r := Rect2(p.position + Vector2(-w / 2, -41 - p.lift), Vector2(w, 7))
-			fx.draw_rect(r, Color(0, 0, 0, 0.45))
-			fx.draw_string(font, r.position + Vector2(0, 5.6), p.pname, HORIZONTAL_ALIGNMENT_CENTER, w, 5, UiTheme.PAPER)
+			if p != local:  # (your own name is on your panel)
+				var w := font.get_string_size(p.pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 5).x + 6
+				var r := Rect2(p.position + Vector2(-w / 2, -41 - p.lift), Vector2(w, 7))
+				fx.draw_rect(r, Color(0, 0, 0, 0.45 * p.sight_k))
+				fx.draw_string(font, r.position + Vector2(0, 5.6), p.pname, HORIZONTAL_ALIGNMENT_CENTER, w, 5, Color(UiTheme.PAPER, p.sight_k))
 			if p.say_t > 0.0:
 				# What they just said, in a bubble that fades at the end.
 				var a := clampf(p.say_t / 0.6, 0.0, 1.0)
@@ -877,12 +910,6 @@ func _draw_fx() -> void:
 		fx.draw_string(font, pos - Vector2(20, 0), "-" + dn[1], HORIZONTAL_ALIGNMENT_CENTER, 40, size, col)
 	if local:
 		_draw_roof_guides(local, font)
-	if prompt != "" and not ui.wheel.visible:
-		var sz := 5
-		var tw := UiTheme.draw_rich(fx, Vector2.ZERO, prompt, font, sz, UiTheme.PAPER, true)
-		var origin := prompt_pos + Vector2(-tw / 2 - 3, 0)
-		fx.draw_style_box(UiTheme.box(UiTheme.CARD, 4, UiTheme.LINE, 0), Rect2(origin + Vector2(-3, -7.5), Vector2(tw + 12, 10)))
-		UiTheme.draw_rich(fx, origin + Vector2(3, 0), prompt, font, sz, UiTheme.PAPER)
 	var now := Time.get_ticks_msec() / 1000.0
 	var me: Player = players.get(multiplayer.get_unique_id())
 	if me and now < search_until:
