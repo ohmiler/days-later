@@ -27,6 +27,7 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | `test_body` | Bites leave wounds where they land (bruises under armour), bleeding until bandaged, one bandage per wound, open bites festering, healing (faster asleep), sprains stop running, wounds saved |
 | `test_city` | The building plans (data/prefabs) are drawn correctly, the city from a seed is exactly the same as before (saved cities depend on it), every door and cupboard can be walked to |
 | `test_combat` | Punch/kick/weapon hits, a weapon in each hand swinging in turn, two-handed weapons taking both hands, clicking the body, knock-downs, cut-off arms, weapon wear, death styles, a click while busy still lands, the 1-2 restarts after a pause, hitstop, your own swing shows on the click |
+| `test_sight` | What your character sees: the way you face, not behind you (except right up close), not through walls; the grid line of sight; up on the roofs you see everything |
 | `test_things` | Taps run dry, radios draw zombies, vending machines break open; only changes are saved, they survive a reload, joiners get them |
 | `test_vehicles` | Every bike model has ride data; riding is fast, burns fuel, is loud, knocks zombies down, can't go indoors; hotwiring, refuelling, and bikes stay where left after a reload |
 | `test_zombie` | The telegraphed bite, interrupting it, where bites land (arms face to face, neck from behind, legs from the ground) and what guards each part, chasing, getting back up |

@@ -59,6 +59,7 @@ var last_death_pos := Vector2.ZERO
 var shoot_cd := 0.0
 var punch_buf := 0.0  # a click that came while still busy: acted on when ready (see set_attack_input)
 var kick_buf := 0.0
+var sight_k := 1.0  # someone else, on your screen: 0 when out of your character's sight (see Sight)
 var hitstop := 0.0  # the attack animation holds still this long when a blow lands
 var local_cd := 0.0  # client, local player: its own guess at shoot_cd, to swing on the click
 var predicted := 0  # client, local player: swings shown early, still to be confirmed by the server
@@ -494,6 +495,7 @@ func _process(delta: float) -> void:
 		death_t += delta
 	night_eyes.energy = move_toward(night_eyes.energy, 0.55 if world.is_night and alive() and is_local else 0.0, delta * 0.5)
 	night_eyes.visible = night_eyes.energy > 0.01
+	modulate.a = sight_k
 	queue_redraw()
 
 

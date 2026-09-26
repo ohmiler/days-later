@@ -465,6 +465,38 @@ func ray_length(from: Vector2, dir: Vector2, max_len: float) -> float:
 	return max_len
 
 
+## How far you can see from `from` along `dir` (unit) before a wall, a
+## building or a closed door, up to `max_len`. Walks the tiles the line crosses
+## one by one, so it is quick enough to cast a hundred times a frame (see
+## Sight). Trees don't block it: you see past a trunk. Returns [distance,
+## the tile that stopped it or (-1, -1)].
+func sight_ray(from: Vector2, dir: Vector2, max_len: float) -> Array:
+	var c := to_cell(from)
+	var step := Vector2i(1 if dir.x > 0 else -1, 1 if dir.y > 0 else -1)
+	var inv := Vector2(1.0 / dir.x if absf(dir.x) > 0.00001 else INF, 1.0 / dir.y if absf(dir.y) > 0.00001 else INF)
+	var next := Vector2((c.x + (1 if step.x > 0 else 0)) * TILE, (c.y + (1 if step.y > 0 else 0)) * TILE)
+	var t_max := Vector2((next.x - from.x) * inv.x if inv.x != INF else INF, (next.y - from.y) * inv.y if inv.y != INF else INF)
+	var t_delta := Vector2(absf(TILE * inv.x), absf(TILE * inv.y))
+	var t := 0.0
+	while t < max_len:
+		if t_max.x < t_max.y:
+			t = t_max.x
+			t_max.x += t_delta.x
+			c.x += step.x
+		else:
+			t = t_max.y
+			t_max.y += t_delta.y
+			c.y += step.y
+		if t >= max_len:
+			break
+		if not in_bounds(c):
+			return [t, c]
+		var k := tiles[c.y * W + c.x]
+		if k == WALL or k == BUILDING or k == IWALL or (door_at.has(c) and _blocks_sight(c)):
+			return [t, c]
+	return [max_len, Vector2i(-1, -1)]
+
+
 ## Closed doors and boarded windows block the view; bare glass doesn't.
 func _blocks_sight(c: Vector2i) -> bool:
 	var id: int = door_at.get(c, -1)
