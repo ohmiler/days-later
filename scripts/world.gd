@@ -199,6 +199,8 @@ func _spawn_props() -> void:
 		tp.z_index = 1
 		_stream(tp, tp.position)
 		thing_nodes.append(tp)
+	for i in street_props.size():
+		street_props[i].id = i  # (a car you stand on is known by this)
 	for rec in street_props:
 		if rec.kind == "pole" and rec.get("lamp", Vector2.ZERO) != Vector2.ZERO:
 			light_spots.append([rec.pos + Vector2(rec.lamp.x, 0), LAMP_LIGHT])  # (the pool it throws on the street below)

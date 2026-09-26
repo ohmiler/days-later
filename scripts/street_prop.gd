@@ -9,6 +9,35 @@ static var _glow_tex: Texture2D
 ## longer than a person is tall (see CityGen._size_vehicles for what they block).
 const VEHICLE_SCALE := 1.6
 const VEHICLES := ["car", "taxi", "tuktuk", "wreck", "army"]  # drawn bigger (a motorbike is drawn to size)
+const CLIMB := ["car", "taxi", "wreck", "army"]  # vehicles you can climb up on (not a tuk-tuk's canvas roof)
+
+
+## On a car's roof: where you stand (on the ground, just in front of it, so
+## you're drawn over it) and how high up the roof is drawn. From the drawings
+## (_car_side, _car_end, _army) at VEHICLE_SCALE.
+static func roof_spot(rec: Dictionary) -> Array:
+	var k := VEHICLE_SCALE
+	var pos: Vector2 = rec.pos
+	match rec.kind:
+		"army":
+			return [pos + Vector2(18 * k, 0.5), 12.0 * k]
+		"wreck":
+			var low: float = 0.65 if rec.get("pose", "") == "flipped" else 1.0
+			if rec.get("horizontal", true):
+				return [pos + Vector2(15.5 * k, 0.5), 15.0 * k * low]
+			return [pos + Vector2(8 * k, 0.5), 18.0 * k * low]
+		_:
+			if rec.get("horizontal", true):
+				return [pos + Vector2(15.5 * k, 0.5), 16.0 * k]
+			return [pos + Vector2(8 * k, 0.5), 18.5 * k]
+
+
+## The middle of a vehicle, as drawn: to tell how near someone is to it.
+static func middle(rec: Dictionary) -> Vector2:
+	var k := VEHICLE_SCALE
+	if rec.kind == "army":
+		return rec.pos + Vector2(24 * k, -5 * k)
+	return rec.pos + (Vector2(16 * k, -6 * k) if rec.get("horizontal", true) else Vector2(8 * k, -15 * k))
 
 var data: Dictionary
 

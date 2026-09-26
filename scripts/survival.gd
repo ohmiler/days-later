@@ -165,6 +165,7 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 	if not p.alive():
 		p.sleeping = false
 		p.sitting = -1
+		p.on_car = -1
 		return
 	var delta := real_delta * time_speed()
 	if p.sleeping:
@@ -192,6 +193,8 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 		var regen := 16.0 if p.hunger > 20.0 and p.thirst > 20.0 else 6.0
 		if p.sitting != -1:
 			regen *= 2.2  # sat down, you get your breath back
+		elif p.on_car >= 0:
+			regen *= 1.6  # up out of reach, a moment to breathe
 		if Body.fevered(p.wounds):
 			regen *= 0.6  # a fever wears you out
 		p.stamina = minf(100.0, p.stamina + regen * real_delta)

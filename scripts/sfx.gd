@@ -188,6 +188,15 @@ static func _build(name: String) -> AudioStreamWAV:
 				samples[i] = (y * 0.7 + ring) * exp(-slat * 9.0) * env * 0.6
 			for i in int(0.15 * RATE):  # and it hits the ground (or the top of the box)
 				samples[n - int(0.15 * RATE) + i] += sin(TAU * 60.0 * i / RATE) * exp(-float(i) / RATE * 25.0) * 0.8
+		"alarm":  # a car alarm: two tones, back and forth
+			var n := int(0.95 * RATE)
+			samples.resize(n)
+			var phase := 0.0
+			for i in n:
+				var t := float(i) / RATE
+				var f := 1250.0 if int(t * 8.0) % 2 == 0 else 880.0
+				phase += TAU * f / RATE
+				samples[i] = (1.0 if sin(phase) > 0.0 else -1.0) * 0.22 * clampf((0.95 - t) / 0.05, 0.0, 1.0)
 		"door":  # fist and shoulder against wood
 			samples = _thump(rng, 0.22, 120.0, 70.0, 0.8)
 		"break":

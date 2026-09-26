@@ -409,6 +409,7 @@ func _server_tick(delta: float) -> void:
 	_separate()
 	doors._tick_traps(delta)
 
+	actions.tick_alarms(delta)
 	survival._tick_horde()
 	var horde := survival.is_horde(day, time)
 	spawn_timer -= delta
@@ -427,7 +428,7 @@ func _server_tick(delta: float) -> void:
 		var ps := []
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0, p.aiming, p.seat, p.up, p.sitting, p.rest_face],
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0, p.aiming, p.seat, p.up, p.sitting, p.rest_face, p.on_car],
 					p.app_code, p.wear_ids])
 		var zs := []
 		for z: Zombie in zombies.values():
@@ -464,7 +465,7 @@ func _separate() -> void:
 		for p: Player in players.values():
 			var v := a.position - p.position
 			var dist := v.length()
-			if p.alive() and not p.on_roof and p.up == a.up and dist < 10.0 and dist > 0.01:
+			if p.alive() and not p.on_roof and p.on_car < 0 and p.up == a.up and dist < 10.0 and dist > 0.01:
 				a.position = world.slide(a.position, v / dist * (10.0 - dist), Zombie.RADIUS, false, false, a.up)
 
 
@@ -690,7 +691,7 @@ func _process(delta: float) -> void:
 			if me.riding >= 0 and me.seat == 0 and me.alive():
 				if Vehicles.step(me, world.vehicles[me.riding], move, delta, world) > Vehicles.BUMP:
 					shake = maxf(shake, 2.5)  # (felt at once; the server says how bad)
-			elif me.alive() and not me.sleeping and me.sitting == -1 and me.rest_k < 0.05:
+			elif me.alive() and not me.sleeping and me.sitting == -1 and me.rest_k < 0.05 and me.on_car < 0:
 				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof, false, me.up)
 		# On a bike the camera looks ahead of where you're going, to see what's coming.
 		var lead := Vector2.ZERO

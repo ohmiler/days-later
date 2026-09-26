@@ -95,6 +95,8 @@ var sleep_bed := -1  # the bed slept in now (-1: the floor)
 var sitting := -1  # -1 on your feet; -2 sat on the floor; else the World.decor you sit on (a sofa, a stool...)
 var rest_face := 0  # which way you lay down or sat: 0 right, 1 left, 2 down (towards us), 3 up (away)
 var getup_t := 0.0  # server: still getting to your feet, not moving yet
+var on_car := -1  # standing on this vehicle's roof (World.street_props id): zombies can't reach, but gather
+var car_t := 0.0  # server: how long you've been up there (a moment before a step jumps you down)
 var rest_k := 0.0  # drawn, every machine: 0 standing .. 1 all the way down (lying or sat)
 var _rest_lying := false  # (what the last rest was, to get up out of the right pose)
 const LIE_TIME := 0.9  # seconds to lie down (and to get up again)
@@ -221,6 +223,7 @@ func server_tick(delta: float) -> void:
 			position = home_spawn()
 			up = bed >= 0 and bed < world.container_nodes.size() and world.container_nodes[bed].data.get("up", false)
 			on_roof = false
+			on_car = -1
 		return
 	if sleeping or sitting != -1:
 		if move.length() > 0.1 or punching or kicking:
@@ -228,6 +231,11 @@ func server_tick(delta: float) -> void:
 		return
 	if getup_t > 0.0:
 		getup_t -= delta  # getting to your feet first
+		return
+	if on_car >= 0:
+		car_t += delta
+		if move.length() > 0.1 and car_t > 0.4:
+			get_parent().actions.jump_off_car(self, move)  # a step off the roof is a jump
 		return
 	if riding >= 0:
 		return  # the bike moves them (Vehicles.server_tick)
@@ -638,7 +646,10 @@ func _process(delta: float) -> void:
 	phase = phase + step * 0.3 if moving else 0.0  # longer strides
 	if moving and floor(phase / PI) != floor(before / PI) and alive() and get_parent().get("in_game"):
 		_footstep()
-	lift = lerpf(lift, world.roof_height(position) if on_roof else (BuildingProp.GROUND_H if up else 0.0), minf(1.0, 12.0 * delta))
+	var want_lift: float = world.roof_height(position) if on_roof else (BuildingProp.GROUND_H if up else 0.0)
+	if on_car >= 0 and on_car < world.street_props.size():
+		want_lift = StreetProp.roof_spot(world.street_props[on_car])[1]
+	lift = lerpf(lift, want_lift, minf(1.0, 12.0 * delta))
 	night_eyes.position = Look.CHEST + Vector2(0, -lift)
 	z_index = 2 if on_roof or lift > 1.0 else 1  # above the buildings while up there
 	view = Look.pick_view(aim.angle(), view)
@@ -775,13 +786,30 @@ func _draw() -> void:
 	# Sneaking: crouched low, a slow creep.
 	Look.lift = Vector2(0, -lift)
 	Look.muzzle = null
-	Look.draw_eased(self, {view = view, angle = aim.angle(), phase = phase * (0.6 if sneak else 1.0), moving = moving and ext == 0.0,
-			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = anim != Look.NONE and anim_t < 1.2,
-			crouch = 3.0 if sneak else 0.0, weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = aiming,
-			breath = Time.get_ticks_msec() * 0.0016 + get_instance_id() % 7}, look, _pose)
+	if _winded() and ext == 0.0 and wdef.get("draw", {}).is_empty() and ldef.get("draw", {}).is_empty():
+		# Out of breath and standing still: bent over, hands on the knees, panting.
+		var side: bool = view[0] == Look.SIDE
+		var pant := sin(Time.get_ticks_msec() * 0.012) * 0.5
+		var hands := [Vector2(2.4, -7.6), Vector2(3.2, -7.6)] if side else [Vector2(-2.8, -6.8), Vector2(2.8, -6.8)]
+		Look.draw(self, {view = view, anchors = {seat = Vector2(0, Rig.HIP_Y + 0.8 + pant), hands = hands},
+				lean = 0.12 + pant * 0.05}, look)
+	else:
+		_draw_standing(ext, wdef, ldef)
 	Look.lift = Vector2.ZERO
 	if Look.muzzle != null:
 		muzzle = Look.muzzle  # (the flash of a shot comes from here)
 	draw_set_transform(Vector2(0, -lift))
 	Look.draw_hp(self, hp / MAX_HP)
 	draw_set_transform(Vector2.ZERO)
+
+
+## Out of breath (nearly spent, or spent) and standing about.
+func _winded() -> bool:
+	return alive() and not moving and not aiming and riding < 0 and (exhausted or stamina < 22.0) 			and (anim == Look.NONE or anim_t > 1.2)
+
+
+func _draw_standing(ext: float, wdef: Dictionary, ldef: Dictionary) -> void:
+	Look.draw_eased(self, {view = view, angle = aim.angle(), phase = phase * (0.6 if sneak else 1.0), moving = moving and ext == 0.0,
+			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = anim != Look.NONE and anim_t < 1.2,
+			crouch = 3.0 if sneak else 0.0, weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = aiming,
+			breath = Time.get_ticks_msec() * 0.0016 + get_instance_id() % 7}, look, _pose)

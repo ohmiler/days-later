@@ -42,6 +42,80 @@ func req_act(kind: String, id: Variant, verb: String) -> void:
 		main._toast(p, a.why)
 
 
+const CLIMB_TIME := 0.8
+const JUMP_COST := 8.0  # stamina, jumping down off a car
+
+
+## Up on the roof of a car, after climbing (see Crafting: the "climb" job).
+func finish_climb(p: Player, id: int) -> void:
+	var rec: Dictionary = main.world.street_props[id]
+	if p.position.distance_to(StreetProp.middle(rec)) > Interact.CAR_REACH + 8.0:
+		return
+	p.on_car = id
+	p.car_t = 0.0
+	p.position = StreetProp.roof_spot(rec)[0]
+	main.fx_sound.rpc("door", p.position)
+	main._toast(p, "ขึ้นมาบนหลังคารถ · ซอมบี้ปีนตามไม่ได้ แต่จะมารุม · เดินเพื่อกระโดดลง")
+
+
+const ALARM_CHANCE := 0.25  # a car banged on sets its alarm off (once)
+const ALARM_TIME := 14.0
+const NOISE_ALARM := 380.0
+var alarms := {}  # street_props id -> [seconds left, seconds to the next wail]
+
+
+## A zombie pounds on a car someone is standing on: a thud the street hears,
+## and a car might still have the battery to set its alarm off.
+func bang_car(id: int, at: Vector2) -> void:
+	var rec: Dictionary = main.world.street_props[id]
+	main.fx_sound.rpc("door", at)
+	main._make_noise(at, main.NOISE_HIT)
+	if rec.kind in ["car", "taxi"] and not rec.get("alarm_used", false) and randf() < ALARM_CHANCE:
+		rec.alarm_used = true
+		alarms[id] = [ALARM_TIME, 0.0]
+
+
+## Server, every tick: car alarms wail on, drawing zombies from all round.
+func tick_alarms(delta: float) -> void:
+	for id in alarms.keys():
+		var a: Array = alarms[id]
+		a[0] -= delta
+		a[1] -= delta
+		if a[0] <= 0.0:
+			alarms.erase(id)
+		elif a[1] <= 0.0:
+			a[1] = 1.0
+			var at := StreetProp.middle(main.world.street_props[id])
+			main.fx_sound.rpc("alarm", at)
+			main._make_noise(at, NOISE_ALARM)
+
+
+## Jump down off a car the way `dir` points, landing clear of it.
+func jump_off_car(p: Player, dir: Vector2) -> void:
+	if p.on_car < 0:
+		return
+	var rec: Dictionary = main.world.street_props[p.on_car]
+	var from := StreetProp.middle(rec)
+	var d := dir.normalized() if dir.length() > 0.1 else Vector2.DOWN
+	var land := Vector2.INF
+	for turn in [0.0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, PI]:
+		for dist in [34.0, 42.0, 50.0]:
+			var at: Vector2 = from + d.rotated(turn) * dist
+			if main.world.can_stand(at, Player.RADIUS):
+				land = at
+				break
+		if land != Vector2.INF:
+			break
+	if land == Vector2.INF:
+		return
+	p.on_car = -1
+	p.position = land
+	p.stamina = maxf(0.0, p.stamina - JUMP_COST)
+	p.getup_t = 0.25  # (landing)
+	main.fx_sound.rpc("kick", land)
+	main._make_noise(land, main.NOISE_RUN)
+
+
 ## X: sit down where you are (or get up again). Sat, you get your breath back
 ## faster and are harder to spot.
 @rpc("any_peer", "call_remote", "reliable")
@@ -147,6 +221,10 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			p.kills += 1
 		"sleep":
 			main.survival.start_sleep(p, t.id)
+		"climb":
+			main.crafting._start(p, {kind = "climb", id = t.id}, CLIMB_TIME)
+		"jumpdown":
+			jump_off_car(p, p.aim)
 		"sit":
 			var d: Dictionary = main.world.decor[t.id]
 			p.sleeping = false
