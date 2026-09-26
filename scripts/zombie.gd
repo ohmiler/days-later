@@ -34,8 +34,10 @@ var hit_t := 0.0  # > 0 while flinching from a hit (visual, every peer)
 var hit_dir := Vector2.ZERO
 var freeze := 0.0  # client: the flinch holds still this long when struck (hitstop)
 var groan_t := randf_range(2.0, 10.0)
-const SIGHT_DAY := 120.0
-const SIGHT_NIGHT := 180.0
+const SIGHT_DAY := 120.0  # how far it sees you in daylight, or at night when you're in the light
+const SIGHT_DARK := 55.0  # at night, in the dark: little more than a shape moving close by
+const SIGHT_CONE := 0.5  # cos of half its field of view (120 degrees): eyes look ahead
+const SENSE := 22.0  # this close it knows you're there whichever way it faces
 var investigate := Vector2.ZERO  # server: where it heard something
 var investigate_t := 0.0
 var state := 0  # 0 idle, 1 heard something, 2 sees a player (sent to clients)
@@ -105,7 +107,7 @@ func server_tick(delta: float) -> void:
 		return
 	if repath <= 0:
 		repath = randf_range(0.4, 0.7)  # spread out, so they do not all think on the same frame
-		target = _nearest_player(SIGHT_NIGHT if world.is_night else SIGHT_DAY)
+		target = _nearest_player()
 		var goal := Vector2.INF
 		if target:
 			goal = target.position
@@ -231,17 +233,25 @@ func _move(dir: Vector2, delta: float) -> void:
 	position = world.slide(position, dir * speed * world.slow_at(position) * delta, RADIUS)
 
 
-## Closest player it can actually see: sneaking halves the range, walls block
-## the view (except right up close, where it smells you).
-func _nearest_player(max_dist: float) -> Player:
+## Closest player it can actually see. By day, or when you stand in the light
+## at night, it sees you a long way off; in the dark only close by. It looks
+## the way it faces (a 120 degree view), so you can creep up from behind;
+## sneaking halves the range, and walls block the view (except right up close).
+func _nearest_player() -> Player:
 	var best: Player = null
 	var best_d := INF
 	for p: Player in players.values():
 		if not p.alive() or p.on_roof:
 			continue
 		var d := position.distance_to(p.position)
-		var reach := max_dist * (0.5 if p.sneak else 1.0)
+		var reach := SIGHT_DAY if world.is_lit(p.position) else SIGHT_DARK
+		if p.sneak:
+			reach *= 0.5
 		if d > reach or d > best_d:
+			continue
+		# Eyes look ahead; right up close it senses you any way round. Once it
+		# has you it keeps turning after you.
+		if d > SENSE and p != target and Vector2.from_angle(facing).dot((p.position - position) / d) < SIGHT_CONE:
 			continue
 		if d > 28.0:
 			var eye := position + Vector2(0, -15)
@@ -279,6 +289,7 @@ func _ready() -> void:
 	gait = r2.randf_range(0.85, 1.2)
 	gore = r2.randi() % 30
 	hair_style = ["short", "short", "long", "buzz", "bald", "ponytail"][r2.randi() % 6]
+	facing = RandomNumberGenerator.new().randf_range(-PI, PI) if zid == 0 else float(zid * 2654435761 % 6283) / 1000.0 - PI  # standing about, facing anywhere
 	if outfit.is_empty() and r2.randf() < 0.07:
 		missing = Look.LOST_ARM_L if r2.randf() < 0.5 else Look.LOST_ARM_R  # lost an arm before it turned
 

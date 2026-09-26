@@ -104,7 +104,7 @@ var sleep_safe := false  # server: that bed's building is shut tight (checked ea
 var view := [Look.FRONT, false]
 var moving := false
 var last_pos := Vector2.ZERO
-var flashlight: PointLight2D
+var night_eyes: PointLight2D  # local player only: at night you make out a few metres around you
 
 
 func _init() -> void:
@@ -444,13 +444,15 @@ func _ready() -> void:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = peer_id
 		set_appearance(Look.pack(Look.random_appearance(rng)))
-	flashlight = PointLight2D.new()
-	flashlight.texture = Look.cone_texture()
-	flashlight.texture_scale = 1.6
-	flashlight.color = Color("fff1c8")
-	flashlight.position = Look.CHEST
-	flashlight.energy = 0.0
-	add_child(flashlight)
+	# No torch: in the dark you only make out what is right around you (eyes
+	# get used to it), unless a street lamp or a lit window lights the way.
+	night_eyes = PointLight2D.new()
+	night_eyes.texture = StreetProp._lamp_texture()
+	night_eyes.texture_scale = 0.75
+	night_eyes.color = Color("9aa6c4")  # moonlight blue
+	night_eyes.position = Look.CHEST
+	night_eyes.energy = 0.0
+	add_child(night_eyes)
 
 
 func _process(delta: float) -> void:
@@ -471,9 +473,8 @@ func _process(delta: float) -> void:
 	phase = phase + step * 0.3 if moving else 0.0  # longer strides
 	if moving and floor(phase / PI) != floor(before / PI) and alive() and get_parent().get("in_game"):
 		_footstep()
-	flashlight.rotation = aim.angle()
 	lift = lerpf(lift, world.roof_height(position) if on_roof else 0.0, minf(1.0, 12.0 * delta))
-	flashlight.position = Look.CHEST + Vector2(0, -lift)
+	night_eyes.position = Look.CHEST + Vector2(0, -lift)
 	z_index = 2 if on_roof or lift > 1.0 else 1  # above the buildings while up there
 	view = Look.pick_view(aim.angle(), view)
 	if hitstop > 0.0:
@@ -491,8 +492,8 @@ func _process(delta: float) -> void:
 			fall_dir = -1.0 if aim.x > 0 else 1.0  # topple backwards, away from where we faced
 			last_death_pos = position
 		death_t += delta
-	flashlight.energy = move_toward(flashlight.energy, 1.1 if world.is_night and alive() else 0.0, delta)
-	flashlight.visible = flashlight.energy > 0.01
+	night_eyes.energy = move_toward(night_eyes.energy, 0.55 if world.is_night and alive() and is_local else 0.0, delta * 0.5)
+	night_eyes.visible = night_eyes.energy > 0.01
 	queue_redraw()
 
 
