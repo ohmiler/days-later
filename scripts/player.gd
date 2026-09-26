@@ -92,6 +92,14 @@ var sleeping := false  # lying on a bed: can't move, heals, the night goes faste
 var bed := -1  # the bed (container id) this survivor calls home: where they wake after dying
 var sleep_check := 0.0  # server: time to the next look around while asleep
 var sleep_bed := -1  # the bed slept in now (-1: the floor)
+var sitting := -1  # -1 on your feet; -2 sat on the floor; else the World.decor you sit on (a sofa, a stool...)
+var rest_face := 0  # which way you lay down or sat: 0 right, 1 left, 2 down (towards us), 3 up (away)
+var getup_t := 0.0  # server: still getting to your feet, not moving yet
+var rest_k := 0.0  # drawn, every machine: 0 standing .. 1 all the way down (lying or sat)
+var _rest_lying := false  # (what the last rest was, to get up out of the right pose)
+const LIE_TIME := 0.9  # seconds to lie down (and to get up again)
+const SIT_TIME := 0.5
+
 var riding := -1  # the bike (World.vehicles id) being ridden, or -1
 var seat := 0  # on a bike: 0 riding it, 1 on the back (pillion: the rider steers, you can fight)
 var ride_vel := Vector2.ZERO  # a rider's speed and heading (server, and the rider's own machine)
@@ -153,7 +161,8 @@ func take_damage(amount: float) -> void:
 	if not alive():
 		return
 	hp -= amount
-	sleeping = false  # pain wakes you
+	if sleeping or sitting != -1:
+		stand_up()  # pain wakes you (and gets you up)
 	if hp <= 0:
 		hp = 0
 		respawn = RESPAWN_TIME
@@ -213,11 +222,13 @@ func server_tick(delta: float) -> void:
 			up = bed >= 0 and bed < world.container_nodes.size() and world.container_nodes[bed].data.get("up", false)
 			on_roof = false
 		return
-	if sleeping:
+	if sleeping or sitting != -1:
 		if move.length() > 0.1 or punching or kicking:
-			sleeping = false  # getting up
-		else:
-			return
+			stand_up()
+		return
+	if getup_t > 0.0:
+		getup_t -= delta  # getting to your feet first
+		return
 	if riding >= 0:
 		return  # the bike moves them (Vehicles.server_tick)
 	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof, false, up)
@@ -473,6 +484,22 @@ var last_pos_ride := Vector2.ZERO
 
 
 ## Where this survivor comes back: beside their bed if they have one, else anywhere.
+## Which way a body lies or sits, from where it faces: see rest_face.
+static func face_of(dir: Vector2) -> int:
+	if absf(dir.x) >= absf(dir.y):
+		return 0 if dir.x >= 0.0 else 1
+	return 2 if dir.y > 0.0 else 3
+
+
+## Server: off the floor, the bed or the chair, taking a moment about it.
+func stand_up() -> void:
+	if not sleeping and sitting == -1:
+		return
+	getup_t = LIE_TIME if sleeping else SIT_TIME
+	sleeping = false
+	sitting = -1
+
+
 ## Is `other` (a player or zombie) on the same floor as you: both upstairs or
 ## both down (the roof is its own place again: see on_roof)?
 func same_floor(other) -> bool:
@@ -590,6 +617,11 @@ func _process(delta: float) -> void:
 			net_pos = d.position
 	_ride_look(delta)
 	_engine_and_lamp(delta)
+	# Lying down, sitting, getting up: eased here, drawn in _draw_rest.
+	var down := sleeping or sitting != -1
+	if down:
+		_rest_lying = sleeping
+	rest_k = move_toward(rest_k, 1.0 if down else 0.0, delta / (LIE_TIME if _rest_lying else SIT_TIME))
 	if not multiplayer.is_server():
 		if is_local:
 			# Trust local prediction, but drift toward the server and snap on big errors.
@@ -631,6 +663,86 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+## Lying down, sat, or on the way down or back up (rest_k), facing rest_face.
+## Side-on: the getting-up-off-the-ground motion (Rig rise) played backwards,
+## stopping sat on the floor or going on down onto your back, head behind you.
+## Towards us or away: squat, then down; sat, cross-legged; on a chair, sat on it.
+func _draw_rest() -> void:
+	var k := smoothstep(0.0, 1.0, rest_k)
+	var lying := _rest_lying
+	var shut := lying and sleeping and rest_k >= 0.99
+	Look.lift = Vector2(0, -lift)
+	var on_seat := sitting >= 0 and sitting < world.decor.size()
+	if on_seat:
+		var seat_h: float = SEAT_HEIGHT.get(world.decor[sitting].kind, 6.0)
+		_draw_sat(lerpf(Rig.HIP_Y, -seat_h, k), k, 2, false)
+	elif rest_face <= 1:
+		var fd := -1.0 if rest_face == 0 else 1.0  # (legs out in front, head going down behind you)
+		var u := 1.0 - k if lying else 1.0 - 0.6 * k
+		Look.draw(self, {view = [Look.SIDE, rest_face == 1], rise = u, fall_dir = fd, eyes_shut = shut}, look)
+	elif not lying or k < 0.5:
+		# Down on your backside (and, lying down, on the way to your back).
+		_draw_sat(lerpf(Rig.HIP_Y, -2.5, minf(1.0, k * (2.0 if lying else 1.0))), k, rest_face, true)
+	else:
+		# Flat on your back along the floor, head away from us (or towards us),
+		# seen from above.
+		_draw_lying_top(rest_face == 2)
+		if in_long_bed():
+			# Under the blanket, head on the pillow.
+			draw_rect(Rect2(-7, -19 - lift, 14, 17), Color("6a7a94"))
+			draw_rect(Rect2(-4.5, -18 - lift, 9, 15), Color("75869f"))
+	Look.lift = Vector2.ZERO
+	if shut:
+		var t := fmod(Time.get_ticks_msec() / 1000.0, 3.0)
+		draw_string(UiTheme.heading(), Vector2(4 + t * 3, -20 - t * 5 - lift), "z", HORIZONTAL_ALIGNMENT_LEFT, -1, 9,
+				Color(0.9, 0.9, 1.0, 0.8 * (1.0 - t / 3.0)))
+
+
+## Someone on their back lying up the screen (head away) or down it, as seen
+## from above: the top of the head, shoulders, arms along the sides, legs,
+## the soles of the shoes. Feet at the origin.
+func _draw_lying_top(head_up: bool) -> void:
+	var f := -1.0 if head_up else 1.0  # (which way from the feet the head is)
+	var y := func(v: float) -> float: return f * v - lift
+	var shoe := Color("2a2622")
+	var worn_body: Dictionary = look.get("wear", {}).get("body", {})
+	var top: Color = worn_body.get("col", shirt) if worn_body is Dictionary else shirt
+	draw_set_transform(Vector2(0, y.call(13.0)), 0, Vector2(0.62, 1.7))
+	draw_circle(Vector2.ZERO, 8.0, Color(0, 0, 0, 0.25))
+	draw_set_transform(Vector2.ZERO)
+	for sx in [-1.0, 1.0]:
+		draw_rect(Rect2(Vector2(sx * 2.3 - 1.6, minf(y.call(1.0), y.call(3.0))), Vector2(3.2, 2.0)), shoe)  # soles up
+		draw_rect(Rect2(Vector2(sx * 2.3 - 1.7, minf(y.call(3.0), y.call(13.0))), Vector2(3.4, 10.0)), pants)
+		draw_rect(Rect2(Vector2(sx * 5.6 - 1.2, minf(y.call(12.0), y.call(20.5))), Vector2(2.4, 8.5)), top.darkened(0.08))  # arms by the sides
+		draw_rect(Rect2(Vector2(sx * 5.6 - 1.1, minf(y.call(11.0), y.call(13.0))), Vector2(2.2, 2.0)), skin)  # hands
+	draw_rect(Rect2(Vector2(-4.4, minf(y.call(12.5), y.call(22.0))), Vector2(8.8, 9.5)), top)
+	draw_circle(Vector2(0, y.call(25.0)), 3.5, skin)
+	# The face is turned up to the sky, the hair spread under the head.
+	draw_circle(Vector2(0, y.call(26.3)), 3.3, hair)
+	draw_circle(Vector2(0, y.call(24.6)), 2.6, skin)
+
+
+## How high each kind of seat is (the hips sit this far up).
+const SEAT_HEIGHT := {sofa = 8.0, bench = 7.5, chairs = 5.0, barberchair = 9.0, recliner = 8.0, examcot = 9.0}
+
+
+## Sat: hips at `hip_y`, from the front (2) or back (3). On the floor the legs
+## fold cross-legged and the hands rest on the knees; on a seat the feet stay
+## on the floor.
+func _draw_sat(hip_y: float, k: float, face: int, floor_sit: bool) -> void:
+	var hip := Vector2(0, hip_y)
+	var feet: Array
+	var hands: Array
+	if floor_sit:
+		feet = [Vector2(-1.7, 0).lerp(Vector2(-4.2, -0.5), k), Vector2(1.7, 0).lerp(Vector2(4.2, -0.5), k)]
+		hands = [Vector2(-3.5, -8).lerp(Vector2(-3.8, hip_y + 0.5), k), Vector2(3.5, -8).lerp(Vector2(3.8, hip_y + 0.5), k)]
+	else:
+		feet = [Vector2(-2.2, 0), Vector2(2.2, 0)]
+		hands = [Vector2(-3.5, -8).lerp(Vector2(-2.5, hip_y - 1.0), k), Vector2(3.5, -8).lerp(Vector2(2.5, hip_y - 1.0), k)]
+	Look.draw(self, {view = [Look.FRONT if face == 2 else Look.BACK, false],
+			anchors = {seat = hip, hands = hands, feet = feet}}, look)
+
+
 func _draw() -> void:
 	if not alive():
 		if turned:
@@ -638,21 +750,8 @@ func _draw() -> void:
 		Look.draw_blood_pool(self, fall_dir, clampf((death_t - 0.5) / 3.0, 0.0, 1.0))
 		Look.draw(self, {view = [Look.SIDE, fall_dir > 0], fall = clampf(death_t / 0.75, 0.001, 1.0), fall_dir = fall_dir}, look)
 		return
-	if sleeping:  # lying down, as on the ground but breathing
-		if in_long_bed():
-			# Down the room, seen from above: head on the pillow, the rest under a blanket.
-			draw_circle(Vector2(0, -25), 3.6, skin)
-			draw_circle(Vector2(0, -26.2), 3.4, hair)
-			draw_rect(Rect2(-5.5, -22, 11, 3), shirt)
-			draw_rect(Rect2(-7, -20, 14, 17), Color("6a7a94"))
-			draw_rect(Rect2(-4.5, -19, 9, 15), Color("75869f"))  # the body's shape under it
-		else:
-			Look.lift = Vector2(30, -3)  # head on the pillow, body along the bed
-			Look.draw(self, {view = [Look.SIDE, false], fall = 1.0, fall_dir = -1.0}, look)
-			Look.lift = Vector2.ZERO
-		var t := fmod(Time.get_ticks_msec() / 1000.0, 3.0)
-		draw_string(UiTheme.heading(), Vector2(4 + t * 3, -14 - t * 5), "z", HORIZONTAL_ALIGNMENT_LEFT, -1, 9,
-				Color(0.9, 0.9, 1.0, 0.8 * (1.0 - t / 3.0)))
+	if rest_k > 0.001 and riding < 0:
+		_draw_rest()
 		queue_redraw()
 		return
 	if riding >= 0 and riding < world.vehicles.size():

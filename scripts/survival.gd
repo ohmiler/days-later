@@ -109,11 +109,18 @@ func can_sleep(p: Player) -> String:
 
 ## Lie down: on a bed (container id) or, with bed -1, right where you stand.
 func start_sleep(p: Player, bed: int) -> void:
+	p.sitting = -1
 	p.sleeping = true
+	p.rest_face = Player.face_of(p.aim)  # (on the floor: the way you face, head behind you)
 	if bed >= 0:
 		var f: FurnitureProp = main.world.container_nodes[bed]
 		p.up = f.data.get("up", false)
-		p.position = f.position + (Vector2(0, 0.1) if f.data.get("long", 0) == 2 else Vector2(f.bed_left() + 8.0, 0))  # head on the pillow
+		if f.data.get("long", 0) == 2:
+			p.rest_face = 2  # down the room: feet at the foot end, head on the pillow up the room
+			p.position = f.position + Vector2(0, 0.1)
+		else:
+			p.rest_face = 0  # along it: feet at the far end, head back on the pillow
+			p.position = f.position + Vector2(f.bed_left() + (28.0 if f.data.get("long", 0) != 0 else 14.0), 0.1)
 	p.sleep_check = 0.0
 	p.sleep_bed = bed
 	var where := "บนเตียง" if bed >= 0 else "บนพื้น"
@@ -130,7 +137,7 @@ func _tick_sleep(p: Player, delta: float) -> void:
 	if p.sleep_check <= 0.0:
 		p.sleep_check = 1.0
 		if _nearest_zombie(p.position) < SLEEP_WAKE:
-			p.sleeping = false
+			p.stand_up()
 			main._toast(p, "สะดุ้งตื่น! มีอะไรอยู่ใกล้ๆ")
 			return
 		p.sleep_safe = spot_safe(p.position)
@@ -157,6 +164,7 @@ func body_sync(wounds: Array) -> void:
 func _tick_needs(p: Player, real_delta: float) -> void:
 	if not p.alive():
 		p.sleeping = false
+		p.sitting = -1
 		return
 	var delta := real_delta * time_speed()
 	if p.sleeping:
@@ -182,6 +190,8 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 			main._toast(p, "หมดแรง! ต้องพักก่อนวิ่งต่อ")
 	else:
 		var regen := 16.0 if p.hunger > 20.0 and p.thirst > 20.0 else 6.0
+		if p.sitting != -1:
+			regen *= 2.2  # sat down, you get your breath back
 		if Body.fevered(p.wounds):
 			regen *= 0.6  # a fever wears you out
 		p.stamina = minf(100.0, p.stamina + regen * real_delta)

@@ -117,7 +117,10 @@ static func draw_human(ci: CanvasItem, vf: Array, angle: float, phase: float, mo
 ## Draw a character: `st` is what they are doing (see Rig.build), `lk` what they
 ## look like: {skin, shirt, pants, hair, shoes?, build?}.
 static func draw(ci: CanvasItem, st: Dictionary, lk: Dictionary) -> void:
-	draw_rig(ci, Rig.build(st, lk), lk)
+	var r := Rig.build(st, lk)
+	if st.get("eyes_shut", false):
+		r.closed = true  # (asleep)
+	draw_rig(ci, r, lk)
 
 
 ## Draw, easing between poses (see Rig.build_eased). `mem` belongs to the

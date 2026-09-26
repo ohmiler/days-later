@@ -42,6 +42,22 @@ func req_act(kind: String, id: Variant, verb: String) -> void:
 		main._toast(p, a.why)
 
 
+## X: sit down where you are (or get up again). Sat, you get your breath back
+## faster and are harder to spot.
+@rpc("any_peer", "call_remote", "reliable")
+func req_sit() -> void:
+	var p := main._sender()
+	if p == null or not p.alive() or p.riding >= 0:
+		return
+	if p.sitting != -1 or p.sleeping:
+		p.stand_up()
+		return
+	if p.getup_t > 0.0:
+		return
+	p.sitting = -2
+	p.rest_face = Player.face_of(p.aim)
+
+
 ## Z: lie down where you are (or get up again).
 @rpc("any_peer", "call_remote", "reliable")
 func req_sleep() -> void:
@@ -49,7 +65,7 @@ func req_sleep() -> void:
 	if p == null or not p.alive():
 		return
 	if p.sleeping:
-		p.sleeping = false
+		p.stand_up()
 		return
 	var why: String = main.survival.can_sleep(p)
 	if why != "":
@@ -131,6 +147,12 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			p.kills += 1
 		"sleep":
 			main.survival.start_sleep(p, t.id)
+		"sit":
+			var d: Dictionary = main.world.decor[t.id]
+			p.sleeping = false
+			p.sitting = t.id
+			p.rest_face = 2
+			p.position = main.world.to_pos(d.cell) + Vector2(0, World.TILE * 0.45 + 0.5)  # (in front of it, so drawn over it)
 		"ride":
 			main.vehicles.mount(p, t.id)
 		"pillion":

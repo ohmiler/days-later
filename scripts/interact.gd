@@ -87,6 +87,10 @@ static func _candidates(main: Node, p: Player) -> Array:
 		var at := w.to_pos(th.cell)
 		if p.position.distance_to(at) < Things.REACH and w.building_at.get(th.cell) == here:
 			out.append({kind = "thing", id = th.id, pos = at, title = Things.title_of(th)})
+	for d in w.near(p.position):
+		if d is DecorProp and d.data.kind in SEATS and d.data.get("up", false) == p.up and p.position.distance_to(d.position) < CONTAINER_REACH \
+				and w.building_at.get(d.data.cell) == here:
+			out.append({kind = "seat", id = d.data.id, pos = d.position, title = SEATS[d.data.kind]})
 	for f in w.near(p.position):
 		# Furniture in the same building as you: no reaching through walls.
 		if f is FurnitureProp and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here and not f.data.get("up", false):
@@ -167,6 +171,9 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 					out.append(_act("claim", "ตั้งเป็นเตียงประจำ (ตายแล้วตื่นที่นี่)"))
 		"zombie":
 			out.append(_act("stomp", "เหยียบหัวให้ตาย"))
+		"seat":
+			var taken: bool = main.players.values().any(func(q): return q != p and q.sitting == t.id)
+			out.append(_act("sit", "นั่งพัก", not taken, "มีคนนั่งอยู่"))
 		"vehicle":
 			out.append_array(main.vehicles.actions_for(p, t.id))
 	return out
@@ -199,6 +206,11 @@ static func _board(p: Player, d: Dictionary) -> Dictionary:
 
 static func has_wood(p: Player) -> bool:
 	return p.inv.any(func(it): return it != null and it.id == "wood")
+
+
+## What you can sit on, and what it's called.
+const SEATS := {sofa = "โซฟาไม้", bench = "ม้านั่ง", chairs = "เก้าอี้พลาสติก", barberchair = "เก้าอี้ตัดผม",
+		recliner = "เก้าอี้นวดเท้า"}
 
 
 static func container_title(kind: String) -> String:

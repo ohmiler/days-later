@@ -97,6 +97,51 @@ func run() -> void:
 	check(floor_gain > 0.0 and floor_gain < shut_gain, "the floor heals too, less than a bed (%.0f vs %.0f)" % [floor_gain, shut_gain])
 	main.actions.req_sleep()
 	check(not me.sleeping, "Z again gets you up")
+	# Getting up takes a moment; you lie the way you faced.
+	var at := me.position
+	me.move = Vector2.RIGHT
+	simulate(0.3)
+	check(me.position == at and me.getup_t > 0.0, "getting up off the floor takes a moment")
+	simulate(1.0)
+	check(me.position != at, "then you're off")
+	me.move = Vector2.ZERO
+	simulate(0.2)
+	me.aim = Vector2.LEFT * 30.0
+	main.actions.req_sleep()
+	check(me.sleeping and me.rest_face == 1, "you lie down the way you face (left)")
+	main.actions.req_sleep()
+	simulate(1.0)
+
+	# X sits you down on the spot: you get your breath back faster.
+	me.stamina = 20.0
+	simulate(1.0)
+	var standing_gain := me.stamina - 20.0
+	main.actions.req_sit()
+	check(me.sitting == -2, "X sits you down on the floor")
+	me.stamina = 20.0
+	simulate(1.0)
+	check(me.stamina - 20.0 > standing_gain * 1.5, "sat, you get your breath back faster (%.0f vs %.0f)" % [me.stamina - 20.0, standing_gain])
+	main.actions.req_sit()
+	check(me.sitting == -1, "X again gets you up")
+	simulate(1.0)
+
+	# A sofa, a bench, a stool: E sits you on it.
+	var seat := {}
+	for d in main.world.decor:
+		if d.kind in Interact.SEATS and not d.get("up", false):
+			seat = d
+			break
+	check(not seat.is_empty(), "the city has things to sit on")
+	me.up = false
+	me.position = main.world.to_pos(seat.cell) + Vector2(0, 12)
+	var st := {kind = "seat", id = seat.id, pos = me.position}
+	check(Interact.actions(main, me, st).any(func(x): return x.verb == "sit"), "E on a %s offers a seat" % seat.kind)
+	main.actions._do_action(me, st, "sit")
+	check(me.sitting == seat.id, "and sits you on it")
+	me.move = Vector2.DOWN
+	simulate(1.2)
+	check(me.sitting == -1, "walking gets you up off it")
+	me.move = Vector2.ZERO
 
 	# Claimed: dying brings the next survivor back to it, even after a reload.
 	_stand_by(bed)

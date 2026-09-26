@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 12  # 12: upstairs (a floor in the snapshot, zombies' flags)
+const PROTOCOL := 13  # 13: sitting and which way you lie (in the snapshot)
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -231,6 +231,8 @@ func snapshot(ps: Array, zs: Array, t: float, d: int, rain := false) -> void:
 			p.aiming = n[14]
 		var seat: int = n[15]
 		p.up = n[16]
+		p.sitting = n[17]
+		p.rest_face = n[18]
 		if (n[12] != p.riding or seat != p.seat) and not (p.is_local and n[12] >= 0 and p.riding >= 0 and seat == p.seat):
 			if p.riding >= 0:  # got off: the bike is drawn where it stands again
 				var old: Dictionary = main.world.vehicles[p.riding]

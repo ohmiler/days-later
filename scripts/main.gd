@@ -427,7 +427,7 @@ func _server_tick(delta: float) -> void:
 		var ps := []
 		for p: Player in players.values():
 			ps.append([p.peer_id, p.position, p.aim, p.hp, p.kills, p.weapon_id, p.pname,
-					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0, p.aiming, p.seat, p.up],
+					[int(p.hunger), int(p.thirst), int(p.infection), p.bleeding, int(p.stamina), p.exhausted, p.sprint, p.sneak, p.on_roof, p.sleeping, p.bed, p.sleep_bed, p.riding, world.vehicles[p.riding].fuel if p.riding >= 0 else 0.0, p.aiming, p.seat, p.up, p.sitting, p.rest_face],
 					p.app_code, p.wear_ids])
 		var zs := []
 		for z: Zombie in zombies.values():
@@ -690,7 +690,7 @@ func _process(delta: float) -> void:
 			if me.riding >= 0 and me.seat == 0 and me.alive():
 				if Vehicles.step(me, world.vehicles[me.riding], move, delta, world) > Vehicles.BUMP:
 					shake = maxf(shake, 2.5)  # (felt at once; the server says how bad)
-			elif me.alive() and not me.sleeping:
+			elif me.alive() and not me.sleeping and me.sitting == -1 and me.rest_k < 0.05:
 				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof, false, me.up)
 		# On a bike the camera looks ahead of where you're going, to see what's coming.
 		var lead := Vector2.ZERO
@@ -860,7 +860,9 @@ func _update_prompt(me: Player) -> void:
 		if f is FurnitureProp:
 			f.set_highlight(false)
 	if me.alive() and me.sleeping:
-		_tag(tag, "หลับอยู่ · เดินเพื่อลุกขึ้น", true, false, "", me.position + Vector2(0, -34), "sleep", "")
+		_tag(tag, "หลับอยู่ · เดินเพื่อลุกขึ้น", true, false, "", me.position + Vector2(0, -34 - me.lift), "sleep", "")
+	elif me.alive() and me.sitting != -1:
+		_tag(tag, "นั่งพัก · เหนื่อยหายเร็ว · เดินเพื่อลุก", true, false, "", me.position + Vector2(0, -30 - me.lift), "sleep", "")
 	elif me.alive() and me.riding >= 0:
 		_tag(tag, "ลงจากรถ", true, false, "", me.position + Vector2(0, -40), "ride", "E")
 		if me.seat == 0:
@@ -1112,6 +1114,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			ui.toggle_map()
 		elif k == KEY_Z:
 			_request(&"req_sleep", [])
+		elif k == KEY_X:
+			_request(&"req_sit", [])
 		elif k == KEY_F2 and (multiplayer.is_server() or "--admin" in OS.get_cmdline_user_args()):
 			ui.admin.visible = not ui.admin.visible  # developer tools (see Admin)
 		elif k == KEY_C:
