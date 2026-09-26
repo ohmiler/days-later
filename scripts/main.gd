@@ -63,7 +63,7 @@ var spawn_timer := 0.0
 var snap_timer := 0.0
 var tracers: Array = []  # [from, to, ttl]
 var decals: Node2D
-var sight: Sight  # what your character can see; the rest is shaded (local only)
+var sight: Sight  # what your character can see: who is out of view fades away (local only)
 var blood: Array = []  # [pos, radius, colour] - stays on the ground
 var sparks: Array = []  # [pos, ttl, strong]
 var _muffled := false  # the local player's helmet dulls the sound
@@ -286,12 +286,8 @@ func _make_world(seed_val: int) -> void:
 	decals.draw.connect(_draw_decals)
 	add_child(decals)
 	move_child(decals, 1)
-	if sight:
-		sight.queue_free()
 	sight = Sight.new()
 	sight.world = world
-	sight.z_index = 8  # over the city and everyone in it, under the HUD
-	add_child(sight)
 
 
 func _add_player(id: int) -> Player:
@@ -754,7 +750,7 @@ func _update_roof_view(me: Player, delta: float) -> void:
 		p.modulate = Color(up, up, up, p.modulate.a)
 
 
-## Shade what your character can't see, and don't show who is there.
+## Don't show who is out of your character's sight.
 func _update_sight(me: Player, delta: float) -> void:
 	var r := get_viewport().get_visible_rect().size.length() * 0.5 / camera.zoom.x + 32.0
 	sight.update(me, delta, r)

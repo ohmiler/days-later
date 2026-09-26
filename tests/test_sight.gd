@@ -1,6 +1,7 @@
 extends "res://tests/test_base.gd"
 ## What your character can see (Sight): the way you face, not through walls,
-## and close by all round; the grid line of sight it's built on.
+## and close by all round; the grid line of sight it's built on. (Who is out
+## of sight fades away; the city is always shown.)
 
 
 func run() -> void:
@@ -21,7 +22,6 @@ func run() -> void:
 	s.update(me, 0.016, 400.0)
 	s.eye = me.position + Vector2(0, -2)
 	s.facing = open_dir.angle()
-	s._cast()
 	check(s.sees(s.eye + open_dir * 100.0), "you see down the street the way you face")
 	check(not s.sees(s.eye - open_dir * 50.0), "but not what is behind you")
 	check(s.sees(s.eye - open_dir * 15.0), "right behind you, you know it's there")
@@ -59,5 +59,5 @@ func run() -> void:
 	me.on_roof = true
 	for i in 30:
 		s.update(me, 0.05, 400.0)
-	check(s.on == 0.0 and s.sees(s.eye - open_dir * 200.0), "up on the roofs you see over everything")
+	check(s.on == 0.0 and s.sees(s.eye - open_dir * 200.0), "up on the roofs you see everyone")
 	me.on_roof = false
