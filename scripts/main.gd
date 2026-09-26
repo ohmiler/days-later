@@ -63,6 +63,7 @@ var spawn_timer := 0.0
 var snap_timer := 0.0
 var tracers: Array = []  # [from, to, ttl]
 var decals: Node2D
+var sight: Sight  # what your character can see; the rest is shaded (local only)
 var blood: Array = []  # [pos, radius, colour] - stays on the ground
 var sparks: Array = []  # [pos, ttl, strong]
 var _muffled := false  # the local player's helmet dulls the sound
@@ -285,6 +286,12 @@ func _make_world(seed_val: int) -> void:
 	decals.draw.connect(_draw_decals)
 	add_child(decals)
 	move_child(decals, 1)
+	if sight:
+		sight.queue_free()
+	sight = Sight.new()
+	sight.world = world
+	sight.z_index = 8  # over the city and everyone in it, under the HUD
+	add_child(sight)
 
 
 func _add_player(id: int) -> Player:
@@ -666,6 +673,7 @@ func _process(delta: float) -> void:
 			_muffled = me.muffled()
 			Sfx.set_muffled(_muffled)
 		_update_inside(me)
+		_update_sight(me, delta)
 		_update_prompt(me)
 		if me.moving:
 			ui.tutorial("move")
@@ -743,7 +751,19 @@ func _update_roof_view(me: Player, delta: float) -> void:
 		b.modulate = Color(up, up, up, b.modulate.a)
 	for p: Player in players.values():
 		var up := lift_col if p.on_roof else 1.0
-		p.modulate = Color(up, up, up)
+		p.modulate = Color(up, up, up, p.modulate.a)
+
+
+## Shade what your character can't see, and don't show who is there.
+func _update_sight(me: Player, delta: float) -> void:
+	var r := get_viewport().get_visible_rect().size.length() * 0.5 / camera.zoom.x + 32.0
+	sight.update(me, delta, r)
+	var k := delta * 6.0
+	for z: Zombie in zombies.values():
+		z.sight_k = move_toward(z.sight_k, 1.0 if sight.sees(z.position + Vector2(0, -8)) else 0.0, k)
+	for p: Player in players.values():
+		if p != me:
+			p.sight_k = move_toward(p.sight_k, 1.0 if sight.sees(p.position + Vector2(0, -8)) else 0.0, k)
 
 
 ## Colour drains to red, the camera leans in on the body, and a message fades up.

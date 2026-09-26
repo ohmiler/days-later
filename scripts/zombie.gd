@@ -32,6 +32,7 @@ var wander := Vector2.ZERO
 var stun := 0.0  # staggered after being hit
 var hit_t := 0.0  # > 0 while flinching from a hit (visual, every peer)
 var hit_dir := Vector2.ZERO
+var sight_k := 1.0  # client: 0 when out of your character's sight (see Sight), fading
 var freeze := 0.0  # client: the flinch holds still this long when struck (hitstop)
 var groan_t := randf_range(2.0, 10.0)
 const SIGHT_DAY := 120.0  # how far it sees you in daylight, or at night when you're in the light
@@ -385,6 +386,7 @@ func _process(delta: float) -> void:
 			Sfx.play(get_parent(), "groan", position, -8.0, randf_range(0.85, 1.15))
 	# Flash bright for an instant when struck.
 	modulate = Color(1, 1, 1).lerp(Color(2.2, 1.6, 1.5), clampf(hit_t / 0.25, 0, 1) ** 2)
+	modulate.a = sight_k
 	_maybe_redraw(delta)
 
 
@@ -400,7 +402,7 @@ func _maybe_redraw(delta: float) -> void:
 	var vp := get_viewport()
 	var at := get_global_transform_with_canvas().origin
 	var screen := vp.get_visible_rect()
-	var on := screen.grow(90.0).has_point(at)
+	var on := screen.grow(90.0).has_point(at) and sight_k > 0.01  # (nothing to draw out of sight)
 	if visible != on:
 		visible = on
 		_drawn_still = false
