@@ -10,7 +10,9 @@ var rain_t := 120.0  # server: time until the weather next changes
 # Survival tuning, per second. A full stomach lasts about two in-game days.
 const HUNGER_RATE := 100.0 / 480.0
 const THIRST_RATE := 100.0 / 330.0  # Bangkok heat: water runs out faster
-const INFECTION_RATE := 0.35
+const INFECTION_RATE := 0.2  # a bite's infection runs its course in about two days untreated
+const REST_HEAL := 0.05  # health a second while awake, fed, watered and whole...
+const REST_HEAL_UP_TO := 60.0  # ...back up to this much (the rest takes sleep or medicine)
 const STARVE_DAMAGE := 0.6
 const BLEED_DAMAGE := 0.8
 const BITE_INFECT_CHANCE := 0.2
@@ -149,17 +151,19 @@ func body_sync(wounds: Array) -> void:
 		me.wounds = wounds
 
 
-## Hunger, thirst, infection, bleeding and stamina (server).
-func _tick_needs(p: Player, delta: float) -> void:
+## Hunger, thirst, infection, bleeding and stamina (server). The body runs on
+## game time: when everyone is asleep and the night goes faster, so does it.
+func _tick_needs(p: Player, real_delta: float) -> void:
 	if not p.alive():
 		p.sleeping = false
 		return
+	var delta := real_delta * time_speed()
 	if p.sleeping:
 		_tick_sleep(p, delta)
 	var running := p.sprint and not p.sneak and p.move.length() > 0.1 and not p.exhausted and p.stamina > 0.0 and p.riding < 0 \
 			and not Body.sprained(p.wounds)
 	# Footsteps: quiet walking, loud running, silent sneaking.
-	p.step_t -= delta
+	p.step_t -= real_delta
 	if p.move.length() > 0.1 and not p.sneak and p.step_t <= 0.0 and p.riding < 0:  # (a bike makes its own noise)
 		p.step_t = 0.5
 		main._make_noise(p.position, main.NOISE_RUN if running else main.NOISE_WALK)
@@ -171,13 +175,15 @@ func _tick_needs(p: Player, delta: float) -> void:
 	if p.sleeping:
 		pass  # (rested in _tick_sleep)
 	elif running:
-		p.stamina = maxf(0.0, p.stamina - 22.0 * delta / p.load_speed() * (1.0 + p.heat() * 0.5))  # heavier and hotter tires you faster
+		p.stamina = maxf(0.0, p.stamina - 22.0 * real_delta / p.load_speed() * (1.0 + p.heat() * 0.5))  # heavier and hotter tires you faster
 		if p.stamina <= 0.0:
 			p.exhausted = true
 			main._toast(p, "หมดแรง! ต้องพักก่อนวิ่งต่อ")
 	else:
 		var regen := 16.0 if p.hunger > 20.0 and p.thirst > 20.0 else 6.0
-		p.stamina = minf(100.0, p.stamina + regen * delta)
+		if Body.fevered(p.wounds):
+			regen *= 0.6  # a fever wears you out
+		p.stamina = minf(100.0, p.stamina + regen * real_delta)
 		if p.exhausted and p.stamina > 35.0:
 			p.exhausted = false
 	if p.bitten:
@@ -234,8 +240,12 @@ func _tick_needs(p: Player, delta: float) -> void:
 		dmg += STARVE_DAMAGE
 	if p.bleeding:
 		dmg += BLEED_DAMAGE
+	if Body.fevered(p.wounds):
+		dmg += Body.FEVER_DAMAGE
 	if dmg > 0:
 		p.take_damage(dmg * delta)
+	elif not p.sleeping and p.hp < REST_HEAL_UP_TO and p.hunger > 40.0 and p.thirst > 40.0 and p.infection <= 0.0:
+		p.hp = minf(REST_HEAL_UP_TO, p.hp + REST_HEAL * delta)  # fed and whole: it mends slowly
 	_warn(p, "hungry", p.hunger < 25.0, "หิวแล้ว หาอะไรกิน")
 	_warn(p, "starving", p.hunger <= 0.0, "หิวจนเลือดลด!")
 	_warn(p, "thirsty", p.thirst < 25.0, "กระหายน้ำ หาน้ำดื่ม")

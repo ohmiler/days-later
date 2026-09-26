@@ -425,6 +425,8 @@ func _use_selected(p: Player) -> void:
 	p.hunger = clampf(p.hunger + d.get("food", 0.0), 0.0, 100.0)
 	p.thirst = clampf(p.thirst + d.get("drink", 0.0), 0.0, 100.0)
 	p.stamina = minf(100.0, p.stamina + d.get("stamina", 0.0))
+	if d.get("cure", 0.0) > 0.0 and Body.clear_fever(p):
+		main._toast(p, "แผลหายอักเสบแล้ว")
 	if d.get("cure", 0.0) > 0.0 and p.infection > 0.0:
 		p.infection = maxf(0.0, p.infection - d.cure)
 		if p.infection <= 0.0:

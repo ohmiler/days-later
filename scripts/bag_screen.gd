@@ -751,7 +751,7 @@ func _body_rows() -> Array:
 					sub = "พันแผลแล้ว · " + Body.heal_text(w)
 					level = 0
 				else:
-					sub = ("เลือดออก · " if w.bleeding else "") + ("ยังไม่พันแผล · ไม่หายเองถ้าไม่พัน · เสี่ยงติดเชื้อ" if w.kind == "bite" 							else "ยังไม่พันแผล · " + Body.heal_text(w) + " (พันแล้วเร็วขึ้น)")
+					sub = ("เลือดออก · " if w.bleeding else "") + ("อักเสบ มีไข้ · " if w.get("festering", false) else "") + ("ยังไม่พันแผล · ไม่หายเองถ้าไม่พัน · เสี่ยงอักเสบ" if w.kind == "bite" 							else "ยังไม่พันแผล · " + Body.heal_text(w) + " (พันแล้วเร็วขึ้น)")
 					level = 2 if w.kind == "bite" or w.bleeding else 1
 					button = "treat" if has_bandage else ""
 			"sprain":
@@ -761,14 +761,18 @@ func _body_rows() -> Array:
 				level = 0
 		out.append({i = out.size(), wound = k, icon = "bandaged" if w.bandaged else w.kind, level = level, title = Body.title(w),
 				sub = sub, button = button, slot = -1, healing = Body.progress(w)})
+	var slot := -1
+	for k in inv.size():
+		if inv[k] != null and inv[k].id == "antibiotic":
+			slot = k
+	if Body.fevered(me.wounds):
+		out.append({i = out.size(), wound = -1, icon = "fever", level = 1, title = "แผลอักเสบ มีไข้",
+				sub = "อ่อนแรง เลือดลดช้า ๆ" + (" · มียาปฏิชีวนะในกระเป๋า" if slot >= 0 else " · ต้องใช้ยาปฏิชีวนะ หาได้ที่ร้านขายยา"),
+				button = "cure" if slot >= 0 else "", slot = slot})
 	if me.infection > 0.0:
 		var stage := Body.infection_stage(me.infection)
-		var slot := -1
-		for k in inv.size():
-			if inv[k] != null and inv[k].id == "antibiotic":
-				slot = k
 		out.append({i = out.size(), wound = -1, icon = "fever", level = 2 if stage >= 2 else 1,
-				title = "ติดเชื้อ · ระยะ %d จาก 4: %s" % [stage + 1, Body.STAGES[stage][1]],
+				title = "ติดเชื้อซอมบี้ · ระยะ %d จาก 4: %s" % [stage + 1, Body.STAGES[stage][1]],
 				sub = Body.STAGES[stage][2] + (" · มียาปฏิชีวนะในกระเป๋า" if slot >= 0 else " · ต้องใช้ยาปฏิชีวนะ หาได้ที่ร้านขายยา"),
 				button = "cure" if slot >= 0 else "", slot = slot, infection = me.infection})
 	return out

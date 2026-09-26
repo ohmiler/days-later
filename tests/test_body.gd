@@ -1,8 +1,10 @@
 extends "res://tests/test_base.gd"
 ## Wounds: a bite leaves one where it landed (a bruise if clothes stopped it),
-## it bleeds until bandaged, an open bite can turn bad later, bandages go on one
-## wound at a time, things heal (faster asleep), a sprain stops you running,
-## and wounds are saved.
+## it bleeds until bandaged (or stops on its own after a while), an open bite
+## can fester later (a fever, not the zombie infection; antibiotics clear it),
+## bandages go on one wound at a time, things heal (faster asleep), a bitten
+## arm swings slower and a bitten leg walks slower, a sprain stops you
+## running, you mend slowly when fed, and wounds are saved.
 
 
 func _bandage_slot() -> void:
@@ -44,16 +46,56 @@ func run() -> void:
 	main.inventory.req_treat(me.wounds.find(w2))
 	check(w2.bandaged and count(me, "bandage") == 0, "the body screen can bandage a chosen wound")
 
-	# An open bite can turn bad long after it happened.
+	# An open bite can fester long after it happened: a fever, not the zombie infection.
 	me.wounds.clear()
 	me.infection = 0.0
-	Body.add(me, "bite", "hands")
+	var sore := Body.add(me, "bite", "hands")
 	seed(7)
 	for i in 1200:
 		Body.tick(me, 1.0)
-		if me.infection > 0.0:
+		if sore.get("festering", false):
 			break
-	check(me.infection > 0.0, "an open bite left alone gets infected in the end")
+	check(sore.get("festering", false), "an open bite left alone festers in the end")
+	check(me.infection == 0.0, "that's a fever, not the zombie infection (you won't turn from it)")
+	check(Body.statuses(me).any(func(st): return st.icon == "fever"), "and shows as a fever")
+	var hp0 := me.hp
+	simulate(5.0)
+	check(me.hp < hp0, "a fever slowly costs health")
+	me.inv.fill(null)
+	main.inventory._give(me, "antibiotic")
+	me.sel = 0
+	main.inventory._use_selected(me)
+	check(not Body.fevered(me.wounds), "antibiotics clear it")
+
+	# A bleeding bite left alone stops in the end.
+	me.wounds.clear()
+	var gush := Body.add(me, "bite", "legs", true)
+	for i in int(Body.CLOT) + 2:
+		Body.tick(me, 1.0)
+	check(not gush.bleeding and not me.bleeding and me.wounds.has(gush), "a bleeding bite stops on its own after a while (the wound stays open)")
+
+	# Where a bite is matters: an arm swings slower, a leg walks slower.
+	me.wounds.clear()
+	var cd0: float = Combat.next_swing(me).stats[2]
+	var walk0 := me.speed_mult()
+	Body.add(me, "bite", "arms")
+	Body.add(me, "bite", "legs")
+	check(Combat.next_swing(me).stats[2] > cd0 * 1.1, "a bitten arm swings slower (%.2f -> %.2f)" % [cd0, Combat.next_swing(me).stats[2]])
+	check(me.speed_mult() < walk0 * 0.95, "a bitten leg walks slower")
+	for w in me.wounds:
+		w.bandaged = true
+	check(Combat.next_swing(me).stats[2] < cd0 * 1.15, "less so once bandaged")
+
+	# Fed, watered and whole, you mend slowly while awake (up to a point).
+	me.wounds.clear()
+	me.bleeding = false
+	me.infection = 0.0
+	me.hunger = 90.0
+	me.thirst = 90.0
+	me.hp = 30.0
+	simulate(20.0)
+	check(me.hp > 30.5 and me.hp <= Survival.REST_HEAL_UP_TO, "you mend slowly when fed and whole (%.1f)" % me.hp)
+	me.hp = 100.0
 
 	# Healing: bandaged heals, open bites don't close, sleep speeds it up.
 	me.infection = 0.0
