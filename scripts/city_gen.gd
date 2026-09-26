@@ -157,6 +157,7 @@ static func build(w: World, rng: RandomNumberGenerator) -> void:
 	Things.place_all(w, rng)
 	_size_vehicles(w)
 	_size_beds(w)
+	_shop_fronts(w)
 
 
 static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGenerator) -> void:
@@ -738,6 +739,45 @@ static func _checkpoint(w: World, rng: RandomNumberGenerator, spawn: Vector2) ->
 			w.blocked[cell] = true
 		w.street_props.append({kind = "army", pos = Vector2(truck[0].x * World.TILE, (y + 3) * World.TILE), seed = rng.randi()})
 	w.checkpoint = it
+
+
+## What each trade puts out on the pavement, so you can tell the shop from
+## the street: [kind, where] with where 0 = by the left wall, 1 = middle,
+## 2 = by the right wall (see DecorProp). Nothing out here blocks the way.
+const FRONTS := {
+	"ร้านตัดผม": [["plants", 0], ["lightbox", 2]], "ร้านเสริมสวย": [["lightbox", 0], ["plants", 2]],
+	"ร้านขายยา": [["lightbox", 2]], "คลินิก": [["lightbox", 2], ["plants", 0]],
+	"ซ่อมมอเตอร์ไซค์": [["tires", 0], ["bike", 1], ["oil", 1], ["flag", 2]],
+	"ก๋วยเตี๋ยวเรือ": [["pot", 0], ["chairs", 1], ["menu", 2]], "โจ๊ก ข้าวต้ม": [["pot", 0], ["chairs", 1]],
+	"ข้าวมันไก่": [["chairs", 1], ["menu", 2]], "อาหารตามสั่ง": [["chairs", 1], ["menu", 0]],
+	"ส้มตำ ไก่ย่าง": [["grill", 0], ["chairs", 1], ["menu", 2]], "กาแฟโบราณ": [["chairs", 1], ["menu", 0]],
+	"ร้านโทรศัพท์": [["flag", 0], ["lightbox", 2]], "ร้านวัสดุ": [["sacks", 0], ["pipes", 2]],
+	"ขายส่ง": [["sacks", 0], ["boxes", 1], ["pipes", 2]], "นวดแผนไทย": [["lightbox", 0], ["shoes", 1], ["plants", 2]],
+	"ผ้าไหม": [["mannequin", 0], ["mannequin", 2]], "ร้านทอง": [["plants", 2]], "โรงรับจำนำ": [["plants", 0]],
+	"": [["plants", 0], ["shoes", 1]],
+}
+
+
+## Dress the pavement in front of every shop for its trade. Last in the
+## build and from each building's own seed, so the rest of the city (and the
+## saves that depend on it) come out exactly as before.
+static func _shop_fronts(w: World) -> void:
+	for rec in w.buildings:
+		if rec.kind != "shop" or not rec.get("enter", false):
+			continue
+		var list: Array = FRONTS.get(rec.sign, [])
+		var rng := RandomNumberGenerator.new()
+		rng.seed = rec.seed * 17 + 5
+		var r: Rect2i = rec.rect
+		var y := r.end.y
+		for e in list:
+			if rec.sign == "" and rng.randf() < 0.5:
+				continue  # (not every home has pots out)
+			var x: int = [r.position.x + 1, r.position.x + r.size.x / 2, r.end.x - 2][e[1]]
+			var c := Vector2i(x, y)
+			if w.get_tile(c) not in [World.SIDEWALK, World.SOI] or w.blocked.has(c) or w.door_at.has(c):
+				continue
+			w.decor.append({kind = e[0], cell = c, seed = rng.randi(), building = rec, outside = true})
 
 
 static func _size_beds(w: World) -> void:

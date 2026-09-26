@@ -229,7 +229,7 @@ func run() -> void:
 	# No riding into buildings.
 	var door_cell := Vector2i(-1, -1)
 	for d in w.doors:
-		if d.kind == "door" and w.get_tile(d.cell + Vector2i.DOWN) == World.SIDEWALK:
+		if d.kind in ["door", "shutter"] and not d.broken and w.get_tile(d.cell + Vector2i.DOWN) == World.SIDEWALK:
 			door_cell = d.cell
 			break
 	var v2: Dictionary = w.vehicles[(v.id + 1) % w.vehicles.size()]

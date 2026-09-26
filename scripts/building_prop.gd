@@ -19,6 +19,11 @@ var extra := RandomNumberGenerator.new()  # details added later; separate so the
 const SIGN_COLORS := {"ร้านทอง": Color("b8201c"), "โรงรับจำนำ": Color("1c3a78"), "ร้านขายยา": Color("1a8a4a"),
 		"คลินิก": Color("2a6ab8")}
 const SIGN_TEXT := {"ร้านทอง": Color("f0c840")}
+## Awnings in the trade's colours (the rest are any colour).
+const TRADE_AWNING := {"ร้านขายยา": Color("2a9a5a"), "คลินิก": Color("3a7ac8"), "ร้านทอง": Color("c8201c"),
+		"ร้านตัดผม": Color("2a4ab8"), "ก๋วยเตี๋ยวเรือ": Color("d83a2a"), "ข้าวมันไก่": Color("e08a2a")}
+## Trades that also hang a tall sign board down the front, old Chinese style.
+const TALL_SIGNS := ["ร้านทอง", "ร้านขายยา", "ร้านวัสดุ", "ขายส่ง", "ก๋วยเตี๋ยวเรือ", "โจ๊ก ข้าวต้ม", "โรงรับจำนำ"]
 const GRAFFITI := ["ช่วยด้วย", "มีคนรอด", "อย่าเข้า", "หนีไปวัด", "ติดเชื้อ", "SOS", "ไม่มีของแล้ว"]
 
 
@@ -255,8 +260,14 @@ func _draw_shop() -> void:
 		c.draw_rect(Rect2(2, -GROUND_H + 1, w - 4, GROUND_H - 1), Color("231f1a"))
 		c.draw_rect(Rect2(1, -GROUND_H - 1, w - 2, 4), Color("7a7c7e"))
 		c.draw_rect(Rect2(1, -GROUND_H + 2.5, w - 2, 0.8), Color("5a5c5e"))
+		if data.sign in ["ร้านทอง", "โรงรับจำนำ"]:
+			# Gold shops: red and gold all round the front, like every one on Yaowarat.
+			var band := Color("a81c18")
+			c.draw_rect(Rect2(0, -GROUND_H, 2.5, GROUND_H), band)
+			c.draw_rect(Rect2(w - 2.5, -GROUND_H, 2.5, GROUND_H), band)
+			c.draw_rect(Rect2(0, -GROUND_H - 1, w, 1.2), Color("e0b840"))
 		if data.open:
-			var sa := Color.from_hsv(rng.randf(), 0.5, 0.65)
+			var sa: Color = TRADE_AWNING.get(data.sign, Color.from_hsv(rng.randf(), 0.5, 0.65))
 			for i in int(w / 6) + 1:
 				var x1 := i * 6.0
 				c.draw_colored_polygon(PackedVector2Array([Vector2(x1, -GROUND_H + 3), Vector2(minf(x1 + 6, w), -GROUND_H + 3),
@@ -292,6 +303,17 @@ func _draw_shop() -> void:
 
 ## What hangs outside some trades: a barber's pole, a pharmacy's green cross.
 func _shop_marks() -> void:
+	if data.sign in TALL_SIGNS and data.floors >= 2:
+		var t := RandomNumberGenerator.new()
+		t.seed = data.seed + 7
+		var board := Rect2(2.5, -GROUND_H - FLOOR_H + 1, 6, FLOOR_H - 3)
+		var bc: Color = SIGN_COLORS.get(data.sign, [Color("b8201c"), Color("1a3a6a"), Color("e8e0c8")][t.randi() % 3])
+		c.draw_rect(board, bc)
+		c.draw_rect(board, bc.darkened(0.4), false, 0.5)
+		for i in 3:
+			var g := Rect2(board.position + Vector2(1.5, 2.5 + i * 6.5), Vector2(3, 4))
+			c.draw_rect(g, Color("f0c840") if bc.get_luminance() < 0.5 else Color("8a1a14"))
+			c.draw_rect(Rect2(g.position + Vector2(0.8, 1), Vector2(1.4, 2)), bc)
 	match data.sign:
 		"ร้านตัดผม", "ร้านเสริมสวย":
 			var x := w - 5.0
