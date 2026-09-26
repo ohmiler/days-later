@@ -327,3 +327,114 @@ static func _coat(ci, view: int, r: Dictionary, p: Dictionary) -> void:
 	if view == Look.FRONT:
 		Look._line(ci, Vector2(0, top), Vector2(0, bot), col.darkened(0.3), 0.4)  # where it buttons
 	Look._line(ci, Vector2(-w * 1.08, bot), Vector2(w * 1.08, bot), col.darkened(0.25), 0.5)  # hem
+
+
+# --- Seen from above (TopRig: a body lying flat along the screen) ------------------
+
+## template -> the TopRig layers it draws at. Every template in TEMPLATES
+## needs its entry here too, so what's worn shows on a body lying down
+## (tests/test_clothes.gd checks). TopRig calls top() at each layer:
+##   under  beneath the body (a backpack someone lies on)
+##   knee   on the legs      back   on the back / chest   front  the shoulders turned to you
+##   arms   gloves and arm guards: drawn with the arms themselves, the same
+##          Clothes.glove and arm_guard as standing (nothing to do here)
+##   neck   at the neck, before the head
+##   head   hats and what's on the face: drawn with the head itself, the same
+##          Look._head as standing up (so nothing to do here)
+const TOP_TEMPLATES := {
+	hoodie = ["neck"],
+	hood = ["neck"],
+	vest = ["back", "front"],
+	pack = ["under", "back"],
+	satchel = ["back"],
+	coat = ["back"],
+	helmet = ["head"],
+	cap = ["head"],
+	fullface = ["head"],
+	mask = ["head"],
+	glasses = ["head"],
+	gloves = ["arms"],
+	armguards = ["arms"],
+	kneepads = ["knee"],
+	shinguards = ["knee"],
+	scarf = ["neck"],
+}
+
+
+## Everything worn that draws at TopRig layer `layer`, in slot order.
+static func top(ci: CanvasItem, layer: String, r: Dictionary, lk: Dictionary) -> void:
+	var wear: Dictionary = lk.get("wear", {})
+	for slot in Items.SLOTS:
+		if not wear.has(slot):
+			continue
+		for p in parts(wear[slot]):
+			var shape: String = p.get("shape", "")
+			if layer in TOP_TEMPLATES.get(shape, []):
+				_top(ci, layer, shape, p, r, lk)
+
+
+static func _top(ci: CanvasItem, layer: String, shape: String, p: Dictionary, r: Dictionary, lk: Dictionary) -> void:
+	var col: Color = p.get("col", Color.GRAY)
+	var hc: Vector2 = r.head
+	var n: Vector2 = r.neck
+	var w: Vector2 = r.waist
+	var face: bool = r.face  # (the face is turned up or toward you)
+	var prone: bool = r.mode == "prone"
+	var mid := w.lerp(n, 0.6)  # the middle of the upper back (or chest)
+	var dn := 1.0 if n.y > w.y else -1.0  # which way the shoulders lie from the waist
+	match [shape, layer]:
+		["hoodie", "neck"], ["hood", "neck"]:
+			var hood := ((lk.shirt as Color) if shape == "hoodie" else col).darkened(0.18)
+			if prone and not r.toward:
+				Look._poly(ci, _half(n + Vector2(0, 0.6), 3.8, false), hood)  # lying on the back of the neck
+			else:
+				Look._dot(ci, hc + Vector2(0, -1.6), 4.3, hood)  # behind the head
+		["scarf", "neck"]:
+			Look._rect(ci, Rect2(n.x - 3.4, n.y - 1.2, 6.8, 2.4), col)
+			Look._rect(ci, Rect2(n.x - 3.4, n.y - 1.2, 6.8, 0.7), col.lightened(0.15))
+		["vest", "back"]:
+			Look._poly(ci, PackedVector2Array([w + Vector2(-3.9, 0.3 * dn), w + Vector2(3.9, 0.3 * dn), n + Vector2(5.0, -0.4 * dn), n + Vector2(-5.0, -0.4 * dn)]), col)
+			if p.get("plate", false):
+				Look._rect(ci, Rect2(mid.x - 2.6, mid.y - 2.2, 5.2, 4.4), col.darkened(0.2))
+		["vest", "front"]:
+			Look._poly(ci, PackedVector2Array([n + Vector2(-5.2, -0.6), n + Vector2(5.2, -0.6), n + Vector2(4.6, 1.4), n + Vector2(-4.6, 1.4)]), col.darkened(0.2))
+		["pack", "under"]:
+			if not prone:
+				var hw := 5.4 if p.get("big", false) else 4.6
+				Look._rect(ci, Rect2(mid.x - hw - 1.4, mid.y - 3.0, (hw + 1.4) * 2.0, 6.0), col.darkened(0.25))  # peeking out either side
+		["pack", "back"]:
+			if prone:
+				var big: bool = p.get("big", false)
+				var hw := 3.8 if big else 3.2
+				var hh := 4.6 if big else 3.6
+				var c := n.lerp(w, 0.42)
+				for s in [-1.0, 1.0]:
+					Look._line(ci, c + Vector2(s * hw * 0.7, -hh * dn), n + Vector2(s * 3.4, 0), col.darkened(0.3), 0.9)  # straps
+				Look._rect(ci, Rect2(c.x - hw, c.y - hh, hw * 2.0, hh * 2.0), col)
+				Look._rect(ci, Rect2(c.x - hw, c.y - hh * dn - (1.4 if dn > 0 else 0.0), hw * 2.0, 1.4), col.lightened(0.18))  # the flap
+				if big:
+					Look._rect(ci, Rect2(c.x - hw + 1.0, c.y + (hh - 2.6) * dn - (1.6 if dn < 0 else 0.0), hw * 2.0 - 2.0, 1.6), col.darkened(0.15))  # a pocket
+		["satchel", "back"]:
+			var a: Vector2 = r.sh[0]
+			Look._line(ci, a, w + Vector2(3.6, 0), col.darkened(0.2), 1.0)
+			Look._rect(ci, Rect2(w.x + 2.6, w.y - 1.8, 3.2, 3.6), col)
+		["coat", "back"]:
+			# The tails over the seat, a little down the legs.
+			Look._poly(ci, PackedVector2Array([w + Vector2(-4.6, 0), w + Vector2(4.6, 0), w + Vector2(4.8, -4.0 * dn), w + Vector2(-4.8, -4.0 * dn)]),
+					(lk.shirt as Color).darkened(0.1) if p.get("covers", false) else col)
+		["kneepads", "knee"]:
+			for k in r.knee:  # (as standing: the pad and its light edge)
+				Look._rect(ci, Rect2(k + Vector2(-1.6, -1.2), Vector2(3.2, 2.2)), col)
+				Look._rect(ci, Rect2(k + Vector2(-1.2, -1.0), Vector2(2.4, 0.6)), col.lightened(0.25))
+		["shinguards", "knee"]:
+			for i in 2:
+				TopRig._limb(ci, (r.knee[i] as Vector2).lerp(r.foot[i], 0.15), (r.knee[i] as Vector2).lerp(r.foot[i], 0.75), 3.0, col)
+
+
+## Half a disc: the top half (up the screen), or with `top` false the bottom.
+static func _half(c: Vector2, rad: float, top := true) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in 9:
+		var t := PI + PI * i / 8.0
+		pts.append(c + Vector2(cos(t), sin(t) if top else -sin(t)) * rad)
+	return pts

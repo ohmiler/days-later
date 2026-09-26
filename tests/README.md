@@ -27,6 +27,7 @@ Only some: add `-- name`, e.g. `... -s res://tests/run_all.gd -- inventory`.
 | `test_body` | Bites leave wounds where they land (bruises under armour), bleeding until bandaged or it stops on its own, open bites festering into a fever (not the zombie infection; antibiotics clear it), bitten arms swing slower and legs walk slower, mending slowly when fed, healing (faster asleep), sprains stop running, wounds saved |
 | `test_carroof` | E climbs onto a car (takes a moment); zombies can't bite you up there but come and bang on it, which can set its alarm off and draw more; you get your breath back; a step jumps you down clear of it |
 | `test_city` | The building plans (data/prefabs) are drawn correctly, the city from a seed is exactly the same as before (saved cities depend on it), every door and cupboard can be walked to |
+| `test_clothes` | Every garment is drawn by a template that exists; every template also draws seen from above (TopRig: crawling up/down, asleep); the lookbook wears every garment |
 | `test_combat` | Punch/kick/weapon hits, a weapon in each hand swinging in turn, two-handed weapons taking both hands, clicking the body, knock-downs, cut-off arms, weapon wear, death styles, a click while busy still lands, the 1-2 restarts after a pause, hitstop, your own swing shows on the click |
 | `test_sight` | What your character sees: the way you face, not behind you (except right up close), not through walls; the grid line of sight; up on the roofs you see everyone |
 | `test_things` | Taps run dry, radios draw zombies, vending machines break open; only changes are saved, they survive a reload, joiners get them |
@@ -83,3 +84,5 @@ func run() -> void:
 
 `test_base.gd` has the helpers: `host`, `close_game`, `zombie_at`, `simulate`,
 `wait`, `frames`, `check`, `bag`, `count`.
+
+`tests/lookbook.gd` (windowed, not in run_all): every outfit in every pose on one picture, to look over after adding a pose or a garment: `godot --path . -s res://tests/lookbook.gd -- --out=lookbook.png`
