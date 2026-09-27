@@ -14,7 +14,7 @@ func _verbs(t: Dictionary) -> Dictionary:
 ## A shophouse with a floor upstairs and stairs.
 func _upper_building(w: World) -> Dictionary:
 	for rec in w.buildings:
-		if rec.get("upper", false) and rec.has("stairs"):
+		if rec.get("upper", false) and rec.has("stairs") and rec.kind == "shop":  # (a shophouse: two floors)
 			return rec
 	return {}
 

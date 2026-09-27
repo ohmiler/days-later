@@ -53,7 +53,7 @@ const SIGN_LOOT := {
 ## Which city generator this is. Saves remember it: a city saved by an older
 ## generator cannot be rebuilt from its seed any more (see SaveGame).
 ## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
-const GEN := 8  # 8: zones drawn by hand (Victory Monument)
+const GEN := 9  # 9: big buildings (hospitals, flats, offices, the mall, the market); 8: zones drawn by hand (Victory Monument)
 const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
 const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
 const MAX_DEPTH := 15
@@ -62,11 +62,11 @@ const PLAN_FURNITURE := {f = "fridge", c = "cabinet", s = "shelf", k = "counter"
 const PLAN_DECOR := {S = "stairs", m = "mattress", v = "tv", n = "fan", h = "shrine", o = "boxes", p = "pot",
 		r = "chairs", i = "tires", e = "bike", l = "oil", A = "barberchair", G = "stove", J = "jar", O = "sofa",
 		a = "altar", y = "sacks", E = "mannequin", L = "recliner", V = "examcot", u = "washbasin", z = "bench",
-		q = "toilet", C = "curtain", j = "shoes", I = "hiphra"}
+		q = "toilet", C = "curtain", j = "shoes", I = "hiphra", P = "plants", N = "wheelchair", Y = "lift"}
 ## Dressing too big to walk through (the rest you step over or past).
 const DECOR_BLOCKS := ["barberchair", "stove", "jar", "sofa", "altar", "sacks", "mannequin", "recliner",
-		"examcot", "washbasin", "bench"]
-const PLAN_OTHER := "WD.BdwU?bTR"
+		"examcot", "washbasin", "bench", "lift"]
+const PLAN_OTHER := "WD.BdwU?bTRQ"
 const SHOP_W := [6, 7]  # a shophouse plot, walls included (4-5 m inside); the wall between two is shared
 const STORE_W := 8
 
@@ -106,6 +106,7 @@ static func _load_prefabs() -> Dictionary:
 			stretches.append(stretch)
 		if not p.rows.is_empty():
 			p.width = p.rows[0].length()
+			p.storeys = [] if p.upper.is_empty() else [p.upper]  # (the floors above, from the first up)
 			out[file.get_basename()] = p
 	return out
 
@@ -213,7 +214,10 @@ static func _layout_plan(w: World, plan: Dictionary, rng: RandomNumberGenerator)
 	for b in plan.get("blocks", []):
 		var br := Rect2i(b.rect[0], b.rect[1], b.rect[2], b.rect[3])
 		w.blocks.append({rect = br, use = b.get("use", "shophouses"), name = b.get("name", "")})
-		_shophouse_block(w, br, rng)
+		if BLOCK_USES.has(w.blocks[-1].use):
+			_big_block(w, br, w.blocks[-1].use, w.blocks[-1].name, rng)
+		else:
+			_shophouse_block(w, br, rng)
 	if plan.has("bts"):
 		_skytrain_plan(w, plan.bts)
 	_street_furniture(w, rng)
@@ -429,14 +433,15 @@ static func _fit(plan_rows: Array, plan: Dictionary, r: Rect2i) -> Array:
 	return rows
 
 
-## The floor upstairs (World.storey_map(1)): its walls and floor, the beds and
-## cupboards up there (containers with `storey` 1), what's on the floor.
-## Doorways upstairs are open; the stairs are the same cell as below.
-static func _build_upper(w: World, rec: Dictionary, plan: Dictionary, rng: RandomNumberGenerator) -> void:
+## A floor above the ground (World.storey_map(f)) from its rows: its walls
+## and floor, the beds and cupboards up there (containers with that
+## `storey`), what's on the floor, its taps. Doorways up here are open; the
+## stairs are the same cells as below.
+static func _build_storey(w: World, rec: Dictionary, plan: Dictionary, plan_rows: Array, f: int, rng: RandomNumberGenerator) -> void:
 	var r: Rect2i = rec.rect
-	var rows := _fit(plan.upper, plan, r)
-	var upper := w.storey_map(1)
-	var upper_blocked := w.storey_blocked(1)
+	var rows := _fit(plan_rows, plan, r)
+	var upper := w.storey_map(f)
+	var upper_blocked := w.storey_blocked(f)
 	rec.upper = true
 	for y in rows.size():
 		for x in r.size.x:
@@ -446,17 +451,20 @@ static func _build_upper(w: World, rec: Dictionary, plan: Dictionary, rng: Rando
 				upper[c] = World.IWALL
 				continue
 			upper[c] = World.FLOOR
+			if ch == "T":
+				rec.taps_up.append([c, f])
+				continue
 			if ch == "b" and y > 0 and rows[y - 1][x] == "b":
 				continue  # the foot of the bed above
 			if PLAN_FURNITURE.has(ch) or ch == "b":
-				var data := {id = w.containers.size(), kind = PLAN_FURNITURE.get(ch, "bed"), cell = c, table = "home", sign = rec.sign, storey = 1}
+				var data := {id = w.containers.size(), kind = PLAN_FURNITURE.get(ch, "bed"), cell = c, table = "home", sign = rec.sign, storey = f}
 				if ch == "b" and y + 1 < rows.size() and rows[y + 1][x] == "b":
 					data.long = 2
 					upper_blocked[c + Vector2i.DOWN] = true
 				upper_blocked[c] = true
 				w.containers.append(data)
 			elif PLAN_DECOR.has(ch) and ch != "S":
-				w.decor.append({kind = PLAN_DECOR[ch], cell = c, seed = rng.randi(), building = rec, storey = 1})
+				w.decor.append({kind = PLAN_DECOR[ch], cell = c, seed = rng.randi(), building = rec, storey = f})
 				if PLAN_DECOR[ch] in DECOR_BLOCKS:
 					upper_blocked[c] = true
 
@@ -472,7 +480,11 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 	var beds := {}
 	var front := Vector2i(-1, -1)
 	rec.taps = []
+	rec.taps_up = []  # [cell, storey]
 	rec.radios = []
+	rec.generators = []
+	rec.stairwells = []
+	rec.front_doors = []  # (columns of the doors in the front wall, for the facade)
 	var shutter := []
 	for y in rows.size():
 		for x in r.size.x:
@@ -483,8 +495,10 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 					pass
 				"D":
 					_add_opening(w, c, "door", rng)
-					rec.door = x
-					front = c + Vector2i.UP
+					if y == rows.size() - 1:
+						rec.door = x
+						rec.front_doors.append(x)
+						front = c + Vector2i.UP
 				"B":
 					if w.get_tile(c + Vector2i.UP) in [World.SOI, World.SIDEWALK, World.DIRT, World.GRASS]:
 						_add_opening(w, c, "door", rng)
@@ -510,6 +524,8 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 						rec.taps.append(c)
 					elif ch == "R":
 						rec.radios.append(c)
+					elif ch == "Q":
+						rec.generators.append(c)
 	rec.enter = true
 	if not shutter.is_empty():
 		# A rolling steel shutter across the whole shop front: all up or all
@@ -588,11 +604,13 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 			w.blocked[e[0]] = true
 		if e[1] == "stairs":
 			rec.stairs = e[0]
+			rec.stairwells.append(e[0])
 			w.stairs[e[0]] = true
 	for box in rooms:
 		w.decor.append({kind = "bulb", cell = Vector2i(box.get_center()), seed = 0, building = rec})
-	if not plan.upper.is_empty() and rec.kind == "shop":
-		_build_upper(w, rec, plan, rng)
+	if rec.kind != "store":
+		for i in plan.get("storeys", []).size():
+			_build_storey(w, rec, plan, plan.storeys[i], i + 1, rng)
 
 
 ## A door or window in a wall. Windows start intact (glass), some already smashed.
@@ -610,6 +628,133 @@ static func _add_opening(w: World, cell: Vector2i, kind: String, rng: RandomNumb
 
 
 # --- Blocks -----------------------------------------------------------------
+
+## What a zone plan's block `use` is built as: the big buildings (BigPlans)
+## it is laid out with, taken in turn.
+const BLOCK_USES := {
+	military_hospital = ["hospital", "flats", "hospital", "office"],
+	hospital = ["hospital", "flats"],
+	office = ["office", "flats"],
+	mall = ["mall"],
+	market = ["market"],
+}
+const SIGN_NAMES := {
+	mall = ["ชัยพลาซ่า", "สมรภูมิ มอลล์", "วิคตอรี่ สแควร์"],
+	office = ["อาคารพหลฯ ทาวเวอร์", "อาคารราชวิถี", "อาคารชัยสมรภูมิ", "อาคารสำนักงาน"],
+	flats = ["แฟลตข้าราชการ", "คอนโด ราชวิถี", "แฟลต"],
+}
+
+
+## A block given over to big buildings: set back from the street with a
+## driveway in front of each, lawns and trees between, parked cars; a
+## hospital's grounds walled, with gates onto the street.
+static func _big_block(w: World, b: Rect2i, use: String, name: String, rng: RandomNumberGenerator) -> void:
+	var kinds: Array = BLOCK_USES[use]
+	var inner := b.grow(-3 if use.ends_with("hospital") else -2)
+	var placed := []
+	var k := 0
+	var y := inner.position.y
+	while y < inner.end.y:
+		var x := inner.position.x
+		var row_d := 0
+		while x < inner.end.x:
+			var kind: String = kinds[k % kinds.size()]
+			var def: Dictionary = BigPlans.KINDS[kind]
+			var bw := mini(rng.randi_range(def.w[0], def.w[1]), inner.end.x - x)
+			var bd := mini(rng.randi_range(def.d[0], def.d[1]), inner.end.y - y - 5)  # (room for a driveway in front)
+			if bw < def.w[0] or bd < def.d[0]:
+				break
+			var r := Rect2i(x, y, bw, bd)
+			if _on_circle(w, r):
+				x += 4  # (the roundabout: try a little further along)
+				continue
+			x += bw + rng.randi_range(6, 12)
+			placed.append(r)
+			k += 1
+			row_d = maxi(row_d, bd)
+			if use == "mall":
+				break  # (one to a block)
+		if row_d == 0 or use == "mall":
+			break
+		y += row_d + rng.randi_range(7, 10)
+	if placed.is_empty():
+		_shophouse_block(w, b, rng)  # (too small for any of them)
+		return
+	w.fill(b, World.SOI)  # driveways and car parks
+	# Lawns and trees between the buildings, the car park round them.
+	for yy in range(inner.position.y, inner.end.y):
+		for xx in range(inner.position.x, inner.end.x):
+			var c := Vector2i(xx, yy)
+			var clear := true
+			for r: Rect2i in placed:
+				if r.grow(3).has_point(c) or Rect2i(r.position.x, r.end.y, r.size.x, 6).has_point(c):
+					clear = false
+					break
+			if clear and rng.randf() < 0.85:
+				w.fill(Rect2i(c, Vector2i.ONE), World.TREE if rng.randf() < 0.1 else World.GRASS)
+	for i in placed.size():
+		var r: Rect2i = placed[i]
+		var kind: String = kinds[i % kinds.size()]
+		var sign := name if kind == "hospital" and name.begins_with("โรงพยาบาล") else ""
+		if kind == "flats" and use.ends_with("hospital"):
+			sign = "แฟลตพยาบาล"
+		if kind == "market":
+			sign = "ตลาดสด" + (" " + name if name != "" else "")
+		_add_big(w, r, kind, rng, sign)
+	if use.ends_with("hospital"):
+		_wall_round(w, b, rng)
+	# Cars left in the car parks.
+	for i in int(b.size.x * b.size.y / 90):
+		var c := Vector2i(rng.randi_range(b.position.x + 1, b.end.x - 3), rng.randi_range(b.position.y + 1, b.end.y - 2))
+		var horizontal := rng.randf() < 0.5
+		var by_door := false
+		for dy in range(-2, 4):
+			for dx in range(-2, 4):
+				if w.get_tile(c + Vector2i(dx, dy)) == World.DOOR:
+					by_door = true
+		if not by_door:
+			_vehicle(w, c, horizontal, rng, false)
+
+
+## A wall round a block, with a gate onto the pavement every 30 cells or so.
+static func _wall_round(w: World, b: Rect2i, rng: RandomNumberGenerator) -> void:
+	var sides := [[b.position, Vector2i.RIGHT, b.size.x, Vector2i.UP],
+			[Vector2i(b.position.x, b.end.y - 1), Vector2i.RIGHT, b.size.x, Vector2i.DOWN],
+			[b.position, Vector2i.DOWN, b.size.y, Vector2i.LEFT],
+			[Vector2i(b.end.x - 1, b.position.y), Vector2i.DOWN, b.size.y, Vector2i.RIGHT]]
+	for sd in sides:
+		var start := rng.randi_range(6, 16)
+		for i in sd[2]:
+			var c: Vector2i = sd[0] + sd[1] * i
+			if i >= start and (i - start) % 32 < 5 and w.get_tile(c + sd[3]) == World.SIDEWALK:
+				w.fill(Rect2i(c, Vector2i.ONE), World.SOI)  # a gate
+			elif w.get_tile(c) in [World.SOI, World.GRASS, World.TREE]:
+				w.fill(Rect2i(c, Vector2i.ONE), World.WALL)
+
+
+## A big building (BigPlans) on `r`: every floor built from its plan, each
+## room holding what it is for (a ward's cupboards, a shop's shelves).
+static func _add_big(w: World, r: Rect2i, kind: String, rng: RandomNumberGenerator, sign := "") -> void:
+	w.fill(r, World.BUILDING)
+	var def: Dictionary = BigPlans.KINDS[kind]
+	var rec := {rect = r, kind = kind, seed = rng.randi(), floors = rng.randi_range(def.storeys[0], def.storeys[1]),
+			sign = sign, color = WALL_COLORS[rng.randi() % WALL_COLORS.size()], open = false, big = true}
+	if rec.sign == "":
+		var names: Array = SIGN_NAMES.get(kind, [def.name])
+		rec.sign = names[rec.seed % names.size()]
+	var plan := BigPlans.make(kind, r.size, rec.floors, rng)
+	var first := w.containers.size()
+	_build_plan(w, rec, plan, rng)
+	for i in range(first, w.containers.size()):
+		var ct: Dictionary = w.containers[i]
+		var at: Vector2i = ct.cell - r.position
+		for room in plan.rooms:
+			if room[0] == ct.get("storey", 0) and room[1].has_point(at):
+				ct.table = room[2]
+				break
+	rec.id = w.buildings.size()  # (its index: Buildings, WorldState)
+	w.buildings.append(rec)
+
 
 ## Rows of shophouses separated by sois, with a few cross-sois for shortcuts.
 static func _shophouse_block(w: World, b: Rect2i, rng: RandomNumberGenerator) -> void:

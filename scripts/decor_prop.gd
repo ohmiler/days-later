@@ -290,6 +290,25 @@ func _draw() -> void:
 				if i == 0:
 					for k in 3:
 						draw_circle(Vector2(x + rng.randf_range(-2, 2), -7 - rng.randf() * 3), 0.9, Color("e04a9a"))
+		"lift":
+			# Lift doors in the wall, shut since the power went: steel, the call button dark.
+			draw_rect(Rect2(-8, -26, 16, 26), Color("8a8c8e"))
+			draw_rect(Rect2(-6.5, -24, 13, 24), Color("b8bcc0"))
+			draw_line(Vector2(0, -24), Vector2(0, 0), Color("6a6c6e"), 0.8)
+			draw_line(Vector2(-4, -22), Vector2(-4, -3), Color(1, 1, 1, 0.25), 0.8)
+			draw_rect(Rect2(-5, -29, 10, 2.5), Color("2a2c2e"))  # the floor display, blank
+			draw_circle(Vector2(7, -12), 0.9, Color("4a4a4a"))
+			if rng.randf() < 0.3:
+				draw_line(Vector2(-6, -20), Vector2(5, -8), Color("7a2a1e", 0.7), 1.2)  # someone clawed at it
+		"wheelchair":
+			_shadow(6)
+			draw_circle(Vector2(-3, -4), 4.0, Color("2a2a2c"))
+			draw_circle(Vector2(-3, -4), 3.0, Color("9a9ea2"))
+			draw_rect(Rect2(-5, -9, 8, 2), Color("2a4a7a"))  # seat
+			draw_rect(Rect2(-6, -16, 2, 8), Color("2a4a7a"))  # back
+			draw_line(Vector2(-6, -16), Vector2(-8, -16), Color("9a9ea2"), 0.8)
+			draw_line(Vector2(3, -8), Vector2(5, -1), Color("9a9ea2"), 0.8)
+			draw_circle(Vector2(5, -1), 1.0, Color("2a2a2c"))
 		"hiphra":
 			# A Buddha shelf high on the wall: gold images, a garland, a flower vase.
 			draw_rect(Rect2(-7, -33, 14, 1.5), Color("8a5a2a"))
@@ -312,4 +331,4 @@ func _shadow(r: float) -> void:
 ## drawn (see World._draw_upper); the node stays at floor level so it sorts
 ## with the people up there by their feet.
 func _xf(pos: Vector2, rot := 0.0, scl := Vector2.ONE) -> void:
-	draw_set_transform(pos + Vector2(0, -BuildingProp.GROUND_H * data.get("storey", 0)), rot, scl)
+	draw_set_transform(pos + Vector2(0, -BuildingProp.storey_lift(data.get("storey", 0))), rot, scl)

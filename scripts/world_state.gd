@@ -29,7 +29,7 @@ func state(kind: String, id: int) -> Dictionary:
 	return s
 
 
-## Server: change one for everyone.
+## Server: change one for everyone: the fields in `s`; the rest stay as they are.
 func set_state(kind: String, id: int, s: Dictionary) -> void:
 	_apply.rpc(kind, id, s)
 
@@ -40,6 +40,7 @@ func _apply(kind: String, id: int, s: Dictionary) -> void:
 		return
 	var start: Dictionary = _kinds[kind].start.call(id)
 	var full := start.duplicate()
+	full.merge(_states[kind].get(id, {}), true)
 	full.merge(s, true)
 	if full == start:
 		_states[kind].erase(id)

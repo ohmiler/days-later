@@ -6,6 +6,7 @@ extends Node2D
 var thing: Dictionary  # {id, kind, cell, state}
 var _sound: AudioStreamPlayer2D
 var _t := 0.0
+var lift := 0.0  # drawn this far up (on a floor above the ground)
 
 
 func refresh() -> void:
@@ -13,7 +14,8 @@ func refresh() -> void:
 	if thing.kind == "radio":
 		_radio_sound(thing.state.on)
 	# Only something moving needs a look every frame (there are hundreds of stoves).
-	set_process((thing.kind == "radio" and thing.state.on) or (thing.kind == "stove" and not thing.state.pot.is_empty()))
+	set_process((thing.kind == "radio" and thing.state.on) or (thing.kind == "stove" and not thing.state.pot.is_empty())
+			or (thing.kind == "generator" and thing.state.on))
 
 
 func _ready() -> void:
@@ -27,6 +29,9 @@ func _process(delta: float) -> void:
 	elif thing.kind == "stove" and not thing.state.pot.is_empty():
 		_t += delta
 		queue_redraw()  # the flame, the steam
+	elif thing.kind == "generator" and thing.state.on:
+		_t += delta
+		queue_redraw()  # it shakes, it smokes (till the fuel runs out)
 
 
 ## Water in the tank on this tap's roof (see Buildings)?
@@ -35,6 +40,12 @@ func _tap_wet() -> bool:
 	if m == null or m.get("world_state") == null or m.world == null:
 		return true
 	return Buildings.tank(m, Buildings.at(m.world, thing.cell)) >= 1.0
+
+
+## A generator still running (fuel left, by the game clock)?
+func _running() -> bool:
+	var m = get_tree().current_scene if is_inside_tree() else null
+	return m is Main and m.things != null and m.things.gen_running(thing, m.now())
 
 
 ## Still cooking (by the game clock)?
@@ -65,7 +76,28 @@ func _radio_sound(on: bool) -> void:
 
 func _draw() -> void:
 	var s: Dictionary = thing.state
+	lift = BuildingProp.storey_lift(thing.get("storey", 0))
+	draw_set_transform(Vector2(0, -lift))
 	match thing.kind:
+		"generator":
+			# A diesel generator on its skid: a green box, the exhaust up the wall.
+			var run := _running()
+			var shake := Vector2(sin(_t * 60.0) * 0.4, 0) if run else Vector2.ZERO
+			draw_set_transform(Vector2(0, -1 - lift), 0, Vector2(1, 0.35))
+			draw_circle(Vector2.ZERO, 10.0, Color(0, 0, 0, 0.3))
+			draw_set_transform(shake + Vector2(0, -lift))
+			draw_rect(Rect2(-9, -2, 18, 2), Color("3a3a3a"))  # the skid
+			draw_rect(Rect2(-8, -13, 16, 11), Color("3a6a3e"))
+			draw_rect(Rect2(-8, -13, 16, 2), Color("4a8a4e"))
+			for i in 4:
+				draw_line(Vector2(-6 + i * 2, -10), Vector2(-6 + i * 2, -5), Color("2a4a2c"), 0.8)  # the vents
+			draw_rect(Rect2(2, -10, 5, 4), Color("2a2c2e"))  # the panel
+			draw_circle(Vector2(3.5, -8), 0.8, Color("50e060") if run else Color("5a2a24"))
+			draw_rect(Rect2(6, -20, 1.5, 8), Color("5a5a5a"))  # the exhaust
+			if run:
+				for i in 3:
+					var k := fmod(_t * 0.7 + i * 0.33, 1.0)
+					draw_circle(Vector2(7 + k * 4.0, -21 - k * 12.0), 1.5 + k * 2.5, Color(0.2, 0.2, 0.2, 0.35 * (1.0 - k)))
 		"tap":
 			# A sink on the back wall with a tap over it.
 			draw_rect(Rect2(-6, -12, 12, 2), Color("c8c8c0"))
@@ -77,9 +109,9 @@ func _draw() -> void:
 			if not wet:
 				draw_circle(Vector2(-2, -8), 1.0, Color(0.45, 0.25, 0.1, 0.8))  # rust where water used to sit
 		"radio":
-			draw_set_transform(Vector2(0, -1), 0, Vector2(1, 0.35))
+			draw_set_transform(Vector2(0, -1 - lift), 0, Vector2(1, 0.35))
 			draw_circle(Vector2.ZERO, 5.0, Color(0, 0, 0, 0.3))
-			draw_set_transform(Vector2.ZERO)
+			draw_set_transform(Vector2(0, -lift))
 			draw_rect(Rect2(-5, -7, 10, 6), Color("5a4a3a"))
 			draw_rect(Rect2(-4, -6, 4, 4), Color("2a2622"))  # speaker
 			draw_rect(Rect2(1, -6, 3, 2), Color("e8c060") if s.on else Color("6a6250"))  # dial
@@ -108,9 +140,9 @@ func _draw() -> void:
 					var k := fmod(_t * 0.6 + i * 0.5, 1.0)
 					draw_circle(Vector2(0.5 + sin(_t * 2.0 + i) * 1.5, -18 - k * 10.0), 1.5 + k * 2.0, Color(1, 1, 1, 0.3 * (1.0 - k)))
 		"vending":
-			draw_set_transform(Vector2(0, -1), 0, Vector2(1, 0.35))
+			draw_set_transform(Vector2(0, -1 - lift), 0, Vector2(1, 0.35))
 			draw_circle(Vector2.ZERO, 8.0, Color(0, 0, 0, 0.3))
-			draw_set_transform(Vector2.ZERO)
+			draw_set_transform(Vector2(0, -lift))
 			var body := Color("2a62a8") if thing.id % 2 == 0 else Color("b8302a")
 			draw_rect(Rect2(-6, -24, 12, 24), body)
 			draw_rect(Rect2(-6, -24, 12, 2), body.lightened(0.2))

@@ -341,15 +341,20 @@ func _move(dir: Vector2, delta: float) -> void:
 
 ## The stairs to take after someone on another floor: in the building
 ## they're up in, or (coming down) the one it's up in. NO_STAIRS if none, or
-## if the stairs don't reach the next floor toward them.
+## if no stairs there reach the next floor toward them.
 func _stairs_after(p: Player) -> Vector2i:
 	var b = world.building_at.get(world.to_cell(position if storey > 0 else p.position))
 	if b == null or not b.data.get("upper", false) or not b.data.has("stairs"):
 		return NO_STAIRS
+	# The nearest stairwell that goes on to that floor (a big building has several).
 	var next := storey + signi(p.storey - storey)
-	if next > 0 and not world.storey_map(next).has(b.data.stairs):
-		return NO_STAIRS
-	return b.data.stairs
+	var best := NO_STAIRS
+	for st: Vector2i in b.data.get("stairwells", [b.data.stairs]):
+		if next > 0 and not world.storey_map(next).has(st):
+			continue
+		if best == NO_STAIRS or position.distance_squared_to(world.to_pos(st)) < position.distance_squared_to(world.to_pos(best)):
+			best = st
+	return best
 
 
 ## Closest player it can actually see. By day, or when you stand in the light
@@ -459,7 +464,7 @@ func _set_wear(ids: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
-	lift = lerpf(lift, BuildingProp.GROUND_H * storey, minf(1.0, 12.0 * delta))
+	lift = lerpf(lift, BuildingProp.storey_lift(storey), minf(1.0, 12.0 * delta))
 	z_index = 2 if lift > 1.0 else 1
 	var before := position
 	if not multiplayer.is_server():

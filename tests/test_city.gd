@@ -5,10 +5,10 @@ extends "res://tests/test_base.gd"
 ## purpose, update the fingerprints below (and think about old saves).
 
 const SEED := 777
-## (Generator 8: the first zone drawn by hand, Victory Monument. Changing these means old
-## cities can no longer be rebuilt: bump CityGen.GEN so their saves move to a
-## new city instead of loading wrong.)
-const FINGERPRINT := {tiles = 1559731154, doors = 3936762461, containers = 2169627897, buildings = 4233577653}
+## (Generator 9: Victory Monument's big buildings, hospitals, flats, offices, the malls and
+## the market. Changing these means old cities can no longer be rebuilt: bump
+## CityGen.GEN so their saves move to a new city instead of loading wrong.)
+const FINGERPRINT := {tiles = 3060164627, doors = 794296472, containers = 4038043287, buildings = 484714712}
 
 
 func _fingerprint(w: World) -> Dictionary:
@@ -68,13 +68,15 @@ func run() -> void:
 		if d.kind in ["door", "shutter"] and not World.DIRS.any(func(dir): return reached.has(d.cell + dir) and not a.door_at.has(d.cell + dir)):
 			unreachable.append(d.cell)
 	for f in a.containers:
+		# (A bed down the room can be reached along its length, from its foot too.)
+		var cells := [f.cell] + ([f.cell + Vector2i.DOWN] if f.get("long", 0) == 2 else [])
 		if f.get("storey", 0) > 0:
 			# Upstairs: from the top of the stairs.
 			var st: Vector2i = a.building_at[f.cell].data.stairs
 			var s: int = f.storey
-			if not World.DIRS.any(func(dir): return not a.is_solid_on(f.cell + dir, s) and (f.cell + dir == st or not a.path_on(s, a.to_pos(st), a.to_pos(f.cell + dir)).is_empty())):
-				unreachable.append(f.cell)
-		elif not World.DIRS.any(func(dir): return reached.has(f.cell + dir) and not a.is_solid(f.cell + dir)):
+			if not cells.any(func(cc): return World.DIRS.any(func(dir): return not a.is_solid_on(cc + dir, s) and (cc + dir == st or not a.path_on(s, a.to_pos(st), a.to_pos(cc + dir)).is_empty()))):
+				unreachable.append([f.cell, s])
+		elif not cells.any(func(cc): return World.DIRS.any(func(dir): return reached.has(cc + dir) and not a.is_solid(cc + dir))):
 			unreachable.append(f.cell)
 	check(unreachable.is_empty(), "every door and cupboard can be walked up to from spawn (%d cannot: %s)" % [unreachable.size(), unreachable.slice(0, 5)])
 	var kinds := {}

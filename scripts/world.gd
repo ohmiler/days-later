@@ -71,7 +71,8 @@ var street_props: Array = []
 var roads: Array = []  # {rect: Rect2i, horizontal: bool}
 var intersections: Array = []  # Rect2i
 var wires: Array = []  # [from, to] pole tops
-var light_spots: Array = []  # [position, radius]: where street lamps and lit rooms light up the night (see is_lit)
+var light_spots: Array = []  # [position, radius, building]: where street lamps and lit rooms light up the night (see is_lit); a room's only with power
+var powered := {}  # building -> true: those with power right now (a generator running: see Things.update_power)
 var checkpoint := Rect2i()  # the junction the army held
 var city_seed := 0  # the seed this city was built from
 var vehicles: Array = []  # bikes you can ride (see Vehicles)
@@ -136,7 +137,7 @@ func _spawn_props() -> void:
 		var b := BuildingProp.new()
 		b.setup(rec)
 		b.z_index = 1
-		_stream(b, b.position)
+		_stream_wide(b, b.visual_rect())
 		building_nodes.append(b)
 		var r: Rect2i = rec.rect
 		for y in range(r.position.y, r.end.y):
@@ -187,9 +188,11 @@ func _spawn_props() -> void:
 			light.energy = 0.7
 			light.position = dp.position
 			light.visible = false
-			light.add_to_group("street_lights")
+			light.add_to_group("bulb_lights")
+			light.set_meta("building", int(rec.building.get("id", -1)) if rec.get("building") else -1)
+			light.set_meta("big", rec.get("building") != null and rec.building.get("big", false))
 			_stream(light, light.position)
-			light_spots.append([dp.position, BULB_LIGHT])
+			light_spots.append([dp.position, BULB_LIGHT, light.get_meta("building")])
 	for rec in containers:
 		var f := FurnitureProp.new()
 		f.data = rec
@@ -211,12 +214,14 @@ func _spawn_props() -> void:
 				n.draw.connect(_draw_upper.bind(n, b.data, f))
 				_on_storey(n, b, f)
 				n.z_index = 2
-				_stream(n, b.position)
+				_stream_wide(n, b.visual_rect())
 	for th in things:
 		var tp := ThingProp.new()
 		tp.thing = th
 		tp.position = to_pos(th.cell) + Vector2(0, TILE * 0.45)
 		tp.z_index = 1
+		if th.get("storey", 0) > 0:
+			_on_storey(tp, building_at.get(th.cell), th.storey)
 		_stream(tp, tp.position)
 		thing_nodes.append(tp)
 	for i in street_props.size():
@@ -269,7 +274,7 @@ func _storey_in(f: int, r: Rect2i) -> bool:
 func _draw_upper(node: Node2D, rec: Dictionary, f: int) -> void:
 	var mc := MeshCanvas.new()
 	var r: Rect2i = rec.rect
-	var lift := BuildingProp.GROUND_H * f
+	var lift := BuildingProp.storey_lift(f)
 	var upper := storey_map(f)
 	var col: Color = rec.color
 	mc.draw_rect(Rect2(r.position.x * TILE, r.end.y * TILE - lift, r.size.x * TILE, lift), col.darkened(0.2))
@@ -329,6 +334,30 @@ func near(pos: Vector2, r := 1) -> Array:
 	return out
 
 
+## A prop too big for one chunk (a big building): in the scene while any
+## chunk it covers (`area`, pixels) is.
+var wide := {}  # node -> [chunk]
+
+
+func _stream_wide(n: Node2D, area: Rect2) -> void:
+	var a := _chunk_of(area.position)
+	var b := _chunk_of(area.end - Vector2.ONE)
+	if a == b:
+		_stream(n, area.position)
+		return
+	var ks := []
+	for y in range(a.y, b.y + 1):
+		for x in range(a.x, b.x + 1):
+			var k := Vector2i(x, y)
+			ks.append(k)
+			if not stream.has(k):
+				stream[k] = []
+			stream[k].append(n)
+			if stream_on.has(k):
+				_attach(n)
+	wide[n] = ks
+
+
 ## Register a prop; it goes into the scene when the camera comes near.
 func _stream(n: Node2D, pos: Vector2) -> void:
 	var k := _chunk_of(pos)
@@ -368,6 +397,7 @@ func dispose() -> void:
 				n.free()
 	stream.clear()
 	stream_on.clear()
+	wide.clear()
 	for n in owned:
 		if is_instance_valid(n):
 			n.queue_free()
@@ -375,11 +405,15 @@ func dispose() -> void:
 
 
 func _attach(n: Node2D) -> void:
+	if n.get_parent():
+		return  # (a big one, already in by another of its chunks)
 	prop_parent.add_child(n)
 	# Lights and lit windows that came in after dusk: on, like the rest.
 	for x in [n] + n.get_children():
 		if x.is_in_group("street_lights") or x.is_in_group("night_glow"):
 			x.visible = is_night
+		elif x.is_in_group("bulb_lights"):
+			x.visible = _bulb_on(x)
 
 
 ## Every frame on a machine with a screen: bring in what's around the view,
@@ -402,12 +436,49 @@ func stream_around(view: Rect2) -> void:
 		if k.x < a.x - 1 or k.x > b.x + 1 or k.y < a.y - 1 or k.y > b.y + 1:
 			stream_on.erase(k)
 			for n: Node2D in stream.get(k, []):
-				if n.get_parent():
+				if n.get_parent() and not (wide.has(n) and wide[n].any(func(o): return stream_on.has(o))):
 					n.get_parent().remove_child(n)
 
 
 const LAMP_LIGHT := 64.0  # how far a street lamp lights the ground around it (pixels)
 const BULB_LIGHT := 40.0
+
+
+var all_lit := false  # (the title screen's city: every window lit, for the look of it)
+
+
+## Which buildings have power now: their bulbs light up at night, their
+## windows glow.
+func set_powered(now: Dictionary) -> void:
+	var changed := {}
+	for b in powered:
+		changed[b] = true
+	for b in now:
+		changed[b] = not changed.has(b)
+	powered = now
+	for b: int in changed:
+		if b >= 0 and b < building_nodes.size():
+			var bp: BuildingProp = building_nodes[b]
+			bp.data.lit = powered.has(b)
+			bp.glow.queue_redraw()
+	update_bulbs()
+
+
+## Bulbs in the scene on or off: night, and power (or the title screen).
+func update_bulbs() -> void:
+	if not is_inside_tree():
+		return
+	for x in get_tree().get_nodes_in_group("bulb_lights"):
+		x.visible = _bulb_on(x)
+
+
+## A room's bulb, lit: at night, with power. A big building's show only from
+## inside (under its great roof they'd light up the roof).
+func _bulb_on(x: Node) -> bool:
+	var b: int = x.get_meta("building")
+	if x.get_meta("big", false) and b >= 0 and b < building_nodes.size() and building_nodes[b].visible:
+		return false
+	return is_night and (all_lit or powered.has(b))
 
 
 ## At night, is `pos` somewhere lit (under a street lamp, in a lit room)? By day
@@ -416,6 +487,8 @@ func is_lit(pos: Vector2) -> bool:
 	if not is_night:
 		return true
 	for l in light_spots:
+		if l.size() > 2 and not powered.has(l[2]):
+			continue  # (a room's bulb, and no power)
 		if pos.distance_squared_to(l[0]) < l[1] * l[1]:
 			return true
 	return false
@@ -681,7 +754,7 @@ func path_between(a: Vector2, b: Vector2) -> Array:
 	var p: Array = astar.get_id_path(from, to_cell(b))
 	if p.is_empty():
 		var bld: BuildingProp = building_at.get(to_cell(b))
-		if bld and bld.data.get("enter", false):
+		if bld and bld.data.get("enter", false) and bld.data.has("door"):
 			var dc := Vector2i(bld.data.rect.position.x + bld.data.door, bld.data.rect.end.y - 1)
 			var id: int = door_at.get(dc, -1)
 			if id >= 0 and doors[id].closed:
@@ -761,13 +834,13 @@ func can_stand(p: Vector2, r: float, roof := false, road := false, storey := 0, 
 ## Flat shophouse roofs join up along a row, so you can walk from one to the next.
 func is_roof(c: Vector2i) -> bool:
 	var b: BuildingProp = building_at.get(c)
-	return b != null and b.data.kind in ["shop", "store"]
+	return b != null and (b.data.kind in ["shop", "store"] or b.data.get("big", false))
 
 
 ## How far above the street the roof at `pos` is, in screen pixels.
 func roof_height(pos: Vector2) -> float:
 	var b: BuildingProp = building_at.get(to_cell(pos))
-	return b.h if b and b.data.kind in ["shop", "store"] else 0.0
+	return b.h if b and (b.data.kind in ["shop", "store"] or b.data.get("big", false)) else 0.0
 
 
 func spawn_point() -> Vector2:

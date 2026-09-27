@@ -23,6 +23,12 @@ const DEFS := {
 	# `ready` is when it's done, nothing counts down - so you can leave it and
 	# come back. Each go uses gas from the bottle under it.
 	"stove": {name = "เตาแก๊ส", state = {gas = -1, pot = {}, ready = 0.0}, solid = false},
+	# A big building's diesel generator, in the plant room downstairs. Running,
+	# the building has power (Buildings.power: its lights, its fridges, the
+	# pump that sends water up to the roof), and it is loud. `fuel` is hours
+	# of running left as of `since` (-1: as it was left, worked out from the
+	# seed); running, it burns down by the clock, nothing counts it.
+	"generator": {name = "เครื่องปั่นไฟ", state = {fuel = -1.0, on = false, since = 0.0}, solid = true},
 }
 const BOIL_HOURS := 0.5  # game hours to boil a pot of water
 const COOK_HOURS := 0.75  # ...to cook rice
@@ -30,6 +36,10 @@ const COOK_SMELL := 110.0  # cooking smells: zombies this far come to see, every
 const GAS := [2, 6]  # goes a gas bottle has left, the least and the most
 const TAP_GULP := 2  # sips drunk straight from a tap
 const RADIO_NOISE := 95.0  # a playing radio calls zombies this far, every few seconds
+const GEN_NOISE := 190.0  # a running generator, further
+const GEN_TANK := 8.0  # hours of running a generator's tank holds
+const GEN_CAN := 4.0  # ...a jerrycan puts in
+const GEN_LEFT := [0.0, 2.5]  # what was left in one, the least and the most
 
 var _radio_t := 0.0
 
@@ -53,6 +63,14 @@ func actions_for(p: Player, id: int) -> Array:
 				return [_act("smash", "ทุบตู้เอาเครื่องดื่ม (เสียงดัง)")]
 		"stove":
 			return _stove_actions(p, th)
+		"generator":
+			var left := gen_fuel(th, main.now())
+			var can := Crafting.count_in(p.inv, "fuelcan") > 0
+			var fill := _act("refuel", "เติมน้ำมัน (แกลลอน 1 ใบ)", can and left < GEN_TANK - 1.0,
+					"ต้องมีแกลลอนน้ำมัน" if not can else "ถังน้ำมันเต็มแล้ว")
+			if gen_running(th, main.now()):
+				return [_act("stop", "ดับเครื่องปั่นไฟ"), fill]
+			return [_act("start", "ติดเครื่องปั่นไฟ (เสียงดังมาก)", left > 0.05, "น้ำมันหมด · เติมจากแกลลอน"), fill]
 	return []
 
 
@@ -104,6 +122,21 @@ func _pot_with_water(p: Player, sips: int) -> int:
 	return -1
 
 
+## Hours of running left in a generator at game time `now`.
+func gen_fuel(th: Dictionary, now: float) -> float:
+	var s: Dictionary = th.state
+	var fuel: float = s.fuel
+	if fuel < 0.0:
+		fuel = GEN_LEFT[0] + (GEN_LEFT[1] - GEN_LEFT[0]) * float((th.id * 13 + main.world_seed) % 11) / 10.0
+	if s.on:
+		fuel -= (now - float(s.since)) / Main.HOUR
+	return maxf(0.0, fuel)
+
+
+func gen_running(th: Dictionary, now: float) -> bool:
+	return th.state.on and gen_fuel(th, now) > 0.0
+
+
 ## Gas left in a stove's bottle (worked out from the stove until first used).
 func stove_gas(th: Dictionary) -> int:
 	if th.state.gas >= 0:
@@ -125,6 +158,13 @@ static func title_of(th: Dictionary) -> String:
 		"stove":
 			if not s.pot.is_empty():
 				return name + " · มีหม้อตั้งอยู่"  # (done or not: the action says)
+		"generator":
+			var m = Engine.get_main_loop().current_scene if Engine.get_main_loop() else null
+			if m is Main and m.things:
+				var left: float = m.things.gen_fuel(th, m.now())
+				if m.things.gen_running(th, m.now()):
+					return name + " · เดินอยู่ · น้ำมันอีกราว %d ชม." % ceili(left)
+				return name + (" · น้ำมันหมด" if left <= 0.05 else " · น้ำมันพอเดินได้ราว %d ชม." % ceili(left))
 	return name
 
 
@@ -243,6 +283,40 @@ func _do_stove_take(p: Player, th: Dictionary) -> void:
 		main._toast(p, "ต้มน้ำเสร็จ · น้ำสะอาดดื่มได้")
 
 
+func _do_generator_start(p: Player, th: Dictionary) -> void:
+	var now: float = main.now()
+	var left := gen_fuel(th, now)
+	set_state(th.id, {fuel = left, on = true, since = now})
+	var bid := Buildings.at(main.world, th.cell)
+	Buildings.power_run(main, bid, now, now + left * Main.HOUR)
+	_pumped[bid] = now
+	var at := main.world.to_pos(th.cell)
+	main.fx_sound.rpc("door", at)
+	main._make_noise(at, GEN_NOISE)
+	main._toast(p, "เครื่องติดแล้ว · ไฟในตึกมา ปั๊มส่งน้ำขึ้นแท็งก์ · เสียงดังไปไกล ซอมบี้ได้ยิน")
+
+
+func _do_generator_stop(p: Player, th: Dictionary) -> void:
+	var now: float = main.now()
+	set_state(th.id, {fuel = gen_fuel(th, now), on = false, since = now})
+	Buildings.power_stop(main, Buildings.at(main.world, th.cell), now)
+	main.fx_sound.rpc("ui_click", main.world.to_pos(th.cell))
+	main._toast(p, "ดับเครื่องแล้ว · ไฟในตึกดับ")
+
+
+func _do_generator_refuel(p: Player, th: Dictionary) -> void:
+	var now: float = main.now()
+	var running := gen_running(th, now)
+	var left := minf(GEN_TANK, gen_fuel(th, now) + GEN_CAN)
+	main.crafting._take(p, "fuelcan", 1)
+	main.inventory._send_inv(p)
+	set_state(th.id, {fuel = left, on = running, since = now})
+	if running:
+		Buildings.power_run(main, Buildings.at(main.world, th.cell), now, now + left * Main.HOUR)
+	main.fx_sound.rpc("eat", main.world.to_pos(th.cell))
+	main._toast(p, "เติมน้ำมันแล้ว · เดินได้อีกราว %d ชม." % ceili(left))
+
+
 func _do_radio_toggle(p: Player, th: Dictionary) -> void:
 	set_state(th.id, {on = not th.state.on})
 	main.fx_sound.rpc("ui_click", main.world.to_pos(th.cell))
@@ -261,7 +335,10 @@ func _do_vending_smash(p: Player, th: Dictionary) -> void:
 	main._toast(p, "ทุบตู้แตก · เสียงดังไปทั้งซอย")
 
 
-## A playing radio keeps drawing zombies to it; so does the smell of cooking.
+var _pumped := {}  # building -> game time the pump last sent water up to
+
+## A playing radio keeps drawing zombies to it; so does the smell of cooking,
+## and a running generator's din. While it runs, the pump sends water up.
 func server_tick(delta: float) -> void:
 	_radio_t -= delta
 	if _radio_t > 0.0:
@@ -273,6 +350,42 @@ func server_tick(delta: float) -> void:
 			main._make_noise(main.world.to_pos(th.cell), RADIO_NOISE)
 		elif th.kind == "stove" and not th.state.pot.is_empty() and now < th.state.ready:
 			main.stimulus("smell", main.world.to_pos(th.cell), COOK_SMELL, th.get("storey", 0))
+		elif th.kind == "generator" and th.state.on:
+			var bid := Buildings.at(main.world, th.cell)
+			var from: float = _pumped.get(bid, float(th.state.since))
+			var until := minf(now, float(th.state.since) + gen_fuel(th, float(th.state.since)) * Main.HOUR)
+			if until > from:
+				Buildings.pump(main, bid, Buildings.PUMP * (until - from) / Main.HOUR)
+			_pumped[bid] = now
+			if gen_running(th, now):
+				main._make_noise(main.world.to_pos(th.cell), GEN_NOISE)
+
+
+var _power_t := 0.0
+
+
+## On every machine: which buildings have power right now (their lights), a
+## look every second (a generator runs out by the clock, with nothing sent).
+func tick(delta: float) -> void:
+	_power_t -= delta
+	if _power_t > 0.0:
+		return
+	_power_t = 1.0
+	update_power()
+
+
+func update_power() -> void:
+	var w: World = main.world
+	if w == null:
+		return
+	var now := {}
+	for th in w.things:
+		if th.kind == "generator":
+			var bid := Buildings.at(w, th.cell)
+			if Buildings.powered(main, bid):
+				now[bid] = true
+	if now != w.powered:
+		w.set_powered(now)
 
 
 # --- State (kept by WorldState, kind "thing") ------------------------------------
@@ -297,14 +410,15 @@ func on_changed(id: int, state: Dictionary) -> void:
 		w.thing_nodes[id].refresh()
 
 
-## A building's state changed (its tank): its taps show it.
+## A building's state changed (its tank, its power): its taps and lights show it.
 func on_building_changed(id: int, _state: Dictionary) -> void:
 	var w: World = main.world
 	if w == null:
 		return
 	for th in w.things:
-		if th.kind == "tap" and Buildings.at(w, th.cell) == id and th.id < w.thing_nodes.size():
+		if th.kind in ["tap", "generator"] and Buildings.at(w, th.cell) == id and th.id < w.thing_nodes.size():
 			w.thing_nodes[th.id].refresh()
+	update_power()
 
 
 ## Old saves kept things on their own: put them back the new way.
@@ -326,6 +440,11 @@ static func place_all(w: World, rng: RandomNumberGenerator) -> void:
 		for c in rec.get("radios", []):
 			if rng.randf() < 0.22 and not w.blocked.has(c):
 				_add(w, "radio", c)
+		for e in rec.get("taps_up", []):
+			if rng.randf() < (0.95 if rec.get("big", false) else 0.7) and not w.storey_blocked(e[1]).has(e[0]):
+				_add(w, "tap", e[0], e[1])
+		for c in rec.get("generators", []):
+			_add(w, "generator", c)
 		var r: Rect2i = rec.rect
 		if rec.kind == "store" or rng.randf() < 0.06:
 			for tries in 4:
@@ -339,11 +458,17 @@ static func place_all(w: World, rng: RandomNumberGenerator) -> void:
 ## numbers, and after everything else: older saved cities keep their things.
 static func place_stoves(w: World) -> void:
 	for d in w.decor:
-		if d.kind == "stove" and d.get("storey", 0) == 0:
-			_add(w, "stove", d.cell)
+		if d.kind == "stove" and (d.get("storey", 0) == 0 or d.building.get("big", false)):
+			_add(w, "stove", d.cell, d.get("storey", 0))
 
 
-static func _add(w: World, kind: String, c: Vector2i) -> void:
+static func _add(w: World, kind: String, c: Vector2i, storey := 0) -> void:
 	if DEFS[kind].solid:
-		w.blocked[c] = true
-	w.things.append({id = w.things.size(), kind = kind, cell = c, state = DEFS[kind].state.duplicate()})
+		if storey > 0:
+			w.storey_blocked(storey)[c] = true
+		else:
+			w.blocked[c] = true
+	var th := {id = w.things.size(), kind = kind, cell = c, state = DEFS[kind].state.duplicate()}
+	if storey > 0:
+		th.storey = storey
+	w.things.append(th)

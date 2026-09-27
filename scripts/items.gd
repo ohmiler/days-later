@@ -353,7 +353,7 @@ static func fill_of(it: Dictionary) -> Dictionary:
 ## Spoiled, at game time `now`?
 static func spoiled(it: Dictionary, now: float) -> bool:
 	var h: float = def(it.id).get("spoil", 0.0)
-	return h > 0.0 and now - float(it.get("made", now)) > h * Main.HOUR
+	return h > 0.0 and age(it, now) > h * Main.HOUR
 
 
 ## Game hours until it spoils (-1: it doesn't).
@@ -361,7 +361,44 @@ static func hours_left(it: Dictionary, now: float) -> float:
 	var h: float = def(it.id).get("spoil", 0.0)
 	if h <= 0.0:
 		return -1.0
-	return maxf(0.0, h - (now - float(it.get("made", now))) / Main.HOUR)
+	return maxf(0.0, h - age(it, now) / Main.HOUR)
+
+
+# --- Fridges ------------------------------------------------------------------
+# Food in a fridge keeps while the building has power (Buildings.power). Put
+# in, it remembers when and in which building (`cold_in`, `cold_b`); taken out,
+# the time it spent cold with the power on is added up (`cold`) and counts only
+# FRIDGE_KEEP as much toward spoiling. Nothing ticks while it sits there.
+
+const FRIDGE_KEEP := 0.15  # how fast food goes off in a running fridge (1: as fast as out of it)
+## (building, from, to) -> seconds of game time it had power (Main sets it: Buildings.power_between).
+static var chill: Callable
+
+
+## How old it is, as far as going off goes (game seconds).
+static func age(it: Dictionary, now: float) -> float:
+	var a := now - float(it.get("made", now)) - float(it.get("cold", 0.0))
+	if it.has("cold_in") and chill.is_valid():
+		a -= float(chill.call(int(it.cold_b), float(it.cold_in), now)) * (1.0 - FRIDGE_KEEP)
+	return a
+
+
+## Into a fridge in building `b` (only food that goes off minds).
+static func chill_in(it: Dictionary, b: int, now: float) -> void:
+	chill_out(it, now)
+	if def(it.id).get("spoil", 0.0) > 0.0 and it.has("made") and b >= 0:
+		it.cold_in = now
+		it.cold_b = b
+
+
+## Out of the fridge: the cold time it had is kept.
+static func chill_out(it: Dictionary, now: float) -> void:
+	if not it.has("cold_in"):
+		return
+	if chill.is_valid():
+		it.cold = float(it.get("cold", 0.0)) + float(chill.call(int(it.cold_b), float(it.cold_in), now)) * (1.0 - FRIDGE_KEEP)
+	it.erase("cold_in")
+	it.erase("cold_b")
 
 
 ## Plain: nothing inside, no date on it (only plain items pile up together).
