@@ -955,6 +955,19 @@ static func crawl_anchors(a: float) -> Dictionary:
 			feet = [Vector2(-15.0 + maxf(0.0, -a) * 4.0, -0.4 - maxf(0.0, -a) * 1.4), Vector2(-15.0 + maxf(0.0, a) * 4.0, -0.4 - maxf(0.0, a) * 1.4)]}
 
 
+## Where the drawn body is, from `position` and `lift`, climbing up onto a
+## car or jumping down off one: the camera follows the body, not the spot it
+## started from. (Not the little hop of a jump: the camera doesn't bob.)
+func climb_offset() -> Vector2:
+	if vaulting() and vault_h0 > 0.0:
+		var kv := clampf(vault_t / vault_dur, 0.0, 1.0)
+		return Vector2(0, -vault_h0 * (1.0 - kv * kv))
+	if not climbing():
+		return Vector2.ZERO
+	var k := clampf(climb_t / climb_dur, 0.0, 1.0)
+	return (climb_to - climb_from) * smoothstep(0.45, 1.0, k) - Vector2(0, climb_h * smoothstep(0.3, 0.95, k))
+
+
 ## Climbing up onto a car: hands up on the edge of the roof, a knee up onto
 ## it, then the body pulls up and over onto the top (seen from the side if the
 ## car is beside you, else from the front or back).
