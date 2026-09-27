@@ -14,6 +14,10 @@ var peer_id := 0
 var is_local := false
 var hp := MAX_HP
 var kills := 0
+var skills := {}  # skill id -> experience (Skills; the server's, and the owner's copy)
+var skills_dirty := false  # server: to send to the owner
+var level_total := 1  # survivor level (Skills.total: 1 for a new survivor), shown by the name
+var levelup_t := 0.0  # > 0 just after going up a level: a ring of light (Skills.draw_ring)
 var aim := Vector2.RIGHT
 var move := Vector2.ZERO
 var punching := false
@@ -395,7 +399,7 @@ func load_kg() -> float:
 
 ## Kilograms you carry before slowing down: your own strength plus a bag's.
 func carry_limit() -> float:
-	var kg := Items.CARRY
+	var kg := Items.CARRY * Skills.mult(self, "carry")
 	for slot in wear_ids:
 		kg += float(Items.def(wear_ids[slot]).get("carry", 0.0))
 	return kg
@@ -858,6 +862,7 @@ func _process(delta: float) -> void:
 	night_eyes.position = Look.CHEST + Vector2(0, -lift)
 	z_index = 2 if on_roof or lift > 1.0 or vaulting() or climbing() else 1  # above the buildings while up there (and over a car mid-jump)
 	view = Look.pick_view(face().angle(), view)
+	levelup_t = maxf(0.0, levelup_t - delta)
 	if hitstop > 0.0:
 		hitstop -= delta  # the blow landed: hold the pose a beat
 	else:

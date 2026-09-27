@@ -24,6 +24,7 @@ var actions: Actions
 var things: Things
 var crafting: Crafting
 var admin: Admin
+var skills: Skills
 var vehicles: Vehicles
 var port := PORT  # override with -- --port=N
 var world: World
@@ -139,6 +140,7 @@ func _ready() -> void:
 	things = _module(Things.new(), "Things")
 	crafting = _module(Crafting.new(), "Crafting")
 	admin = _module(Admin.new(), "Admin")
+	skills = _module(Skills.new(), "Skills")
 	vehicles = _module(Vehicles.new(), "Vehicles")
 	world_state = _module(WorldState.new(), "WorldState")
 	phantoms = Phantoms.new()
@@ -578,6 +580,8 @@ func _server_tick(delta: float) -> void:
 		if not p.alive() and not p.dropped:
 			p.dropped = true
 			inventory._drop_everything(p)
+			skills.on_death(p)
+	skills.server_tick(delta)
 	var t_ai := Time.get_ticks_usec() if profiling else 0
 	for z: Zombie in zombies.values():
 		if not admin.frozen:
@@ -699,7 +703,7 @@ func _module(m: Node, node_name: String) -> Node:
 func _handler(method: StringName) -> Node:
 	if has_method(method):
 		return self
-	for m in [combat, inventory, doors, survival, net, actions, things, crafting, vehicles, admin]:
+	for m in [combat, inventory, doors, survival, net, actions, things, crafting, vehicles, admin, skills]:
 		if m.has_method(method):
 			return m
 	push_error("No handler for %s" % method)
@@ -1335,10 +1339,12 @@ func _draw_fx() -> void:
 	for p: Player in players.values():
 		if p.alive() and p.pname != "":
 			if p != local:  # (your own name is on your panel)
-				var w := font.get_string_size(p.pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 5).x + 6
+				var tag := "%s · %d" % [p.pname, p.level_total]  # (and their survivor level)
+				var w := font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 5).x + 6
 				var r := Rect2(p.position + Vector2(-w / 2, -41 - p.lift), Vector2(w, 7))
 				fx.draw_rect(r, Color(0, 0, 0, 0.45 * p.sight_k))
-				fx.draw_string(font, r.position + Vector2(0, 5.6), p.pname, HORIZONTAL_ALIGNMENT_CENTER, w, 5, Color(UiTheme.PAPER, p.sight_k))
+				fx.draw_string(font, r.position + Vector2(0, 5.6), tag, HORIZONTAL_ALIGNMENT_CENTER, w, 5, Color(UiTheme.PAPER, p.sight_k))
+			Skills.draw_ring(fx, p)
 			if p.say_t > 0.0:
 				# What they just said, in a bubble that fades at the end.
 				var a := clampf(p.say_t / 0.6, 0.0, 1.0)

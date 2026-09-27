@@ -152,6 +152,8 @@ func _at(p: Player, ref: Array):
 
 
 func _start(p: Player, job: Dictionary, seconds: float) -> void:
+	if job.kind in ["craft", "salvage", "repair", "strip"]:
+		seconds *= Skills.mult(p, "craft_time")  # (practised hands)
 	job.t = seconds
 	p.craft = job
 	main.fx_sound.rpc("rustle", p.position)
@@ -194,6 +196,7 @@ func server_tick(p: Player, delta: float) -> void:
 
 
 func _finish_craft(p: Player, id: String) -> void:
+	main.skills.gain(p, "craft", "craft")
 	if not can_make(p.inv, id):
 		return  # something was dropped meanwhile
 	var r: Dictionary = RECIPES[id]
@@ -205,6 +208,7 @@ func _finish_craft(p: Player, id: String) -> void:
 
 
 func _finish_salvage(p: Player, job: Dictionary) -> void:
+	main.skills.gain(p, "craft", "salvage")
 	var it = p.inv[job.idx] if job.idx < p.inv.size() else null
 	if it == null or it.id != job.id:
 		return
@@ -225,6 +229,7 @@ func _finish_salvage(p: Player, job: Dictionary) -> void:
 
 
 func _finish_repair(p: Player, job: Dictionary) -> void:
+	main.skills.gain(p, "craft", "repair")
 	var it = _at(p, job.ref)
 	var mat := repair_with(it)
 	if it == null or it.id != job.id or mat == "" or count_in(p.inv, mat) < 1:
@@ -236,6 +241,7 @@ func _finish_repair(p: Player, job: Dictionary) -> void:
 
 
 func _finish_strip(p: Player, id: int) -> void:
+	main.skills.gain(p, "craft", "strip")
 	var f: FurnitureProp = main.world.container_nodes[id]
 	if f.stripped or p.position.distance_to(f.position) > Interact.CONTAINER_REACH + 8.0:
 		return

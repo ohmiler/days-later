@@ -577,6 +577,19 @@ static func chill_out(it: Dictionary, now: float) -> void:
 	it.erase("cold_b")
 
 
+## What comes off a stove (every item some recipe `cooks` into).
+static func cooked_ids() -> Dictionary:
+	if _cooked.is_empty():
+		for id in DEFS:
+			var into: String = DEFS[id].get("cooks", {}).get("into", "")
+			if into != "":
+				_cooked[into] = true
+	return _cooked
+
+
+static var _cooked := {}
+
+
 ## Plain: nothing inside, no date on it (only plain items pile up together).
 static func plain(it: Dictionary) -> bool:
 	return not it.has("fill") and not it.has("made") and not it.has("v")

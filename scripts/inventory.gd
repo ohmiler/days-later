@@ -448,15 +448,19 @@ func _use_selected(p: Player) -> void:
 	if d.get("splint", false) and not Body.splint(p):
 		main._toast(p, "ไม่มีข้อเท้าแพลงให้ใส่เฝือก")
 		return
+	if d.get("splint", false):
+		main.skills.gain(p, "medic", "splint")
 	var off := Items.spoiled(it, main.now())
-	p.hp = minf(Player.MAX_HP, p.hp + d.get("heal", 0.0))
-	p.hunger = clampf(p.hunger + d.get("food", 0.0) * (0.5 if off else 1.0), 0.0, 100.0)
+	p.hp = minf(Player.MAX_HP, p.hp + d.get("heal", 0.0) * Skills.mult(p, "heal"))
+	var cooked: bool = it.has("made") and Items.cooked_ids().has(it.id)  # (a good cook's rice fills you more)
+	p.hunger = clampf(p.hunger + d.get("food", 0.0) * (0.5 if off else 1.0) * (Skills.mult(p, "cooked_food") if cooked else 1.0), 0.0, 100.0)
 	if off and randf() < SPOILED_SICK:
 		main._toast(p, Body.add_condition(p, "food_poisoning", main.now()))
 	p.thirst = clampf(p.thirst + d.get("drink", 0.0), 0.0, 100.0)
 	p.stamina = minf(100.0, p.stamina + d.get("stamina", 0.0))
 	if d.get("cure", 0.0) > 0.0 and Body.clear_fever(p):
 		main._toast(p, "แผลหายอักเสบแล้ว")
+		main.skills.gain(p, "medic", "cure")
 	if d.get("cure", 0.0) > 0.0 and p.infection > 0.0:
 		p.infection = maxf(0.0, p.infection - d.cure)
 		if p.infection <= 0.0:
@@ -471,6 +475,7 @@ func _use_selected(p: Player) -> void:
 		p.bleeding = p.wounds.any(func(w): return w.bleeding and not w.bandaged)
 		if done > 0:
 			main._toast(p, "พันแผลแล้ว")
+			main.skills.gain(p, "medic", "treat", done)
 	it.n -= 1
 	if it.n <= 0:
 		p.inv[p.sel] = null

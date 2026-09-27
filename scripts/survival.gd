@@ -202,6 +202,10 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 		main._make_noise(p.position, (main.NOISE_RUN if running else main.NOISE_WALK) * p.wear_mult("noise"), p.storey)  # (rubber boots squeak)
 	_tick_wet(p)
 	_tick_lamp(p, real_delta)
+	if p.swimming() and p.move.length() > 0.1:
+		main.skills.gain(p, "endurance", "swim", real_delta)
+	if p.sneak and p.move.length() > 0.1 and _unnoticed_near(p):
+		main.skills.gain(p, "stealth", "creep", real_delta)  # (creeping past them unseen is the practice)
 	# Bleeding, you leave a smell of fresh blood that brings them after you.
 	p.scent_t -= real_delta
 	if p.bleeding and p.scent_t <= 0.0:
@@ -215,7 +219,8 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 	if p.sleeping:
 		pass  # (rested in _tick_sleep)
 	elif running:
-		p.stamina = maxf(0.0, p.stamina - 22.0 * real_delta / p.load_speed() * (1.0 + p.heat() * 0.5))  # heavier and hotter tires you faster
+		p.stamina = maxf(0.0, p.stamina - 22.0 * real_delta / p.load_speed() * (1.0 + p.heat() * 0.5) * Skills.mult(p, "run_cost"))  # heavier and hotter tires you faster
+		main.skills.gain(p, "endurance", "run", real_delta)
 		if p.stamina <= 0.0:
 			p.exhausted = true
 			main._toast(p, "หมดแรง! ต้องพักก่อนวิ่งต่อ")
@@ -582,3 +587,15 @@ func trapped_died(z: Zombie) -> void:
 ## A new zone (or a fresh world): nothing let out yet.
 func clear_trapped() -> void:
 	_awake.clear()
+
+
+
+const CREEP_NEAR := 70.0  # creeping this close to a zombie that hasn't seen you counts as practice
+
+
+## A zombie close by that hasn't noticed you (sneaking past it teaches you).
+func _unnoticed_near(p: Player) -> bool:
+	for z: Zombie in main.zombies.values():
+		if z.storey == p.storey and z.state == 0 and z.position.distance_to(p.position) < CREEP_NEAR:
+			return true
+	return false

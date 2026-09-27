@@ -218,7 +218,7 @@ func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 	p.shoot_cd = stats[2]
 	p.search_id = -1  # swinging interrupts a search
 	var wid := p.hand_weapon(p.swing_hand) if kind in [Look.SWING, Look.SWING_L] else ""
-	p.stamina = maxf(0.0, p.stamina - blow_cost(kind, wid))
+	p.stamina = maxf(0.0, p.stamina - blow_cost(kind, wid) * Skills.mult(p, "blow_cost"))
 	p.exert_t = EXERT_PAUSE
 	if p.stamina <= 0.0 and not p.exhausted:
 		p.exhausted = true
@@ -229,6 +229,7 @@ func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 	if quiet != null:
 		_silent_kill(p, quiet, wid)
 		return
+	p.shoot_cd *= Skills.mult(p, "swing_cd")  # (a practised hand swings again sooner)
 	fx_melee.rpc(p.peer_id, kind)
 	main._make_noise(p.position, main.NOISE_SWING * (0.6 if p.sneak else 1.0))
 	p.pending_kind = kind
@@ -314,7 +315,11 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		z.push += dir * stats[4]  # (played out over a moment: Zombie.server_tick)
 		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), dmg, where, z.hp <= 0)
 		main._make_noise(z.position, main.NOISE_HIT)
+		main.skills.gain(p, "combat", "hit")
+		if where == "head":
+			main.skills.gain(p, "combat", "head")
 		if z.hp <= 0:
+			main.skills.gain(p, "combat", "kill")
 			_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0, how, where)
 			p.kills += 1
 			continue
@@ -436,6 +441,8 @@ func _silent_kill(p: Player, z: Zombie, wid: String) -> void:
 	fx_stealth.rpc(p.peer_id, p.position, side)
 	main.fx_sound.rpc("blade", z.position)
 	_kill_zombie(z, side, wid, "head", false, "held")
+	main.skills.gain(p, "stealth", "silent_kill")
+	main.skills.gain(p, "combat", "kill")
 	p.kills += 1
 	main._toast(p, "ฆ่าเงียบ")
 
@@ -643,6 +650,9 @@ func fire(p: Player, hand: String) -> void:
 			hit.stun = maxf(hit.stun, 0.25)
 			hit.position = main.world.slide(hit.position, dir * 3.0, Zombie.RADIUS, false, false, hit.storey)
 			fx_hit.rpc(hit.zid, hit.position, dir, true, p.peer_id, "", dmg, where, hit.hp <= 0)
+			main.skills.gain(p, "combat", "hit")
+			if hit.hp <= 0:
+				main.skills.gain(p, "combat", "kill")
 			if hit.hp <= 0 and main.zombies.has(hit.zid):
 				_kill_zombie(hit, 1.0 if dir.x >= 0 else -1.0, "gun", where, int(d.pellets) > 1 and length < 60.0)
 				p.kills += 1
