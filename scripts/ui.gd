@@ -371,6 +371,9 @@ func toggle_help() -> void:
 
 # --- Message feed ------------------------------------------------------------
 
+const FEED_TEXT_W := 360.0  # widest a message line gets (the feed is 396 wide)
+
+
 func push_feed(text: String, kind := "info") -> void:
 	if feed.get_child_count() > 0:
 		var last := feed.get_child(feed.get_child_count() - 1)
@@ -397,6 +400,10 @@ func push_feed(text: String, kind := "info") -> void:
 	l.add_theme_font_override("font", UiTheme.body_bold())
 	l.add_theme_font_size_override("font_size", 16)
 	l.add_theme_color_override("font_color", UiTheme.PAPER)
+	# A long message wraps onto more lines rather than running off the screen.
+	if UiTheme.body_bold().get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x > FEED_TEXT_W:
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size.x = FEED_TEXT_W
 	p.add_child(l)
 	feed.add_child(p)
 	while feed.get_child_count() > 5:
