@@ -1,7 +1,10 @@
 # Audio credits
 
-Every sound here is released under **CC0** (public domain): free to use,
-change and sell, no attribution required. Credited anyway, with thanks.
+Almost every sound here is released under **CC0** (public domain): free to
+use, change and sell, no attribution required. Those from Pixabay are under
+the **Pixabay Content License** (free to use in the game, commercially too, no
+attribution required; not to be sold or given away on their own). Credited
+anyway, with thanks. (Sounds still wanted: WANTED.md.)
 
 ## Sound effects
 
@@ -15,6 +18,7 @@ change and sell, no attribution required. Credited anyway, with thanks.
 | `sfx/scream_*`, `eat_*` | [80 CC0 creature SFX](https://opengameart.org/content/80-cc0-creature-sfx) | rubberduck |
 | `sfx/siren_0` (cut from) | [Storm & Siren](https://opengameart.org/content/storm-siren) | TinyWorlds |
 | `sfx/gunshot_*`, `shotgun_*`, `reload_0`, `gun_click_0` | Made in code for this game (no outside source) | — |
+| `sfx/zombie_alert_0` | [Zombie Call](https://pixabay.com/sound-effects/horror-zombie-call-357977/) (Pixabay Content License) | DRAGON-STUDIO |
 
 ## Ambience
 
@@ -36,4 +40,6 @@ change and sell, no attribution required. Credited anyway, with thanks.
 | `music/danger.ogg` | [Bleeding out](https://opengameart.org/content/bleeding-out) | Brandon Morris |
 
 Files were converted to Ogg Vorbis (mono for sound effects), and the siren was cut
-to 22 seconds with fades. Nothing else was changed.
+to 22 seconds with fades. Sounds added from 2026-09-28 on are also trimmed of
+silence and brought to one loudness (see WANTED.md); the groans and the
+snarl were brought to that loudness too (they had been up to 33 dB apart).

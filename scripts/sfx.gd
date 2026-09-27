@@ -51,6 +51,29 @@ static func play(parent: Node, name: String, pos: Vector2, volume_db := 0.0, pit
 	p.finished.connect(p.queue_free)
 
 
+## The first of `names` that has recorded files (audio/sfx/<name>_N.ogg),
+## else the last: a kind's own sound when there is one ("runner_alert"),
+## else the zombies' ("zombie_alert"), else the old stand-in ("groan").
+## (See audio/WANTED.md for the sounds still to find.)
+static func first(names: Array) -> String:
+	for n: String in names:
+		if has_files(n):
+			return n
+	return names[-1]
+
+
+static func has_files(name: String) -> bool:
+	if _has.has(name):
+		return _has[name]
+	var base: String = ALIASES.get(name, name)
+	var yes := ResourceLoader.exists(DIR + base + "_0.ogg") or ResourceLoader.exists(DIR + base + "_0.wav") or ResourceLoader.exists(DIR + base + ".ogg")
+	_has[name] = yes
+	return yes
+
+
+static var _has := {}
+
+
 ## A sound with no place in the world (menu clicks).
 static func play_ui(parent: Node, name: String, volume_db := -6.0) -> void:
 	if DisplayServer.get_name() == "headless":
