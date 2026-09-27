@@ -71,6 +71,11 @@ const ROOF_DIM := 0.4  # how much the street below darkens while you're up top
 var players := {}  # peer_id -> Player
 var zombies := {}  # zid -> Zombie
 var next_zid := 1
+## Where a frame's time goes, in microseconds added up while `profiling` is on
+## (tests/horde.gd reads it): the server's tick, the zombies' thinking in it,
+## pushing them apart; zombies' own per-frame work and drawing on this machine.
+static var profiling := false  # (static: a cheap check where it's asked every frame)
+var prof := {server = 0, ai = 0, separate = 0, zproc = 0, zdraw = 0, look = 0, path = 0, move = 0}
 
 
 ## A new zombie's id, for one turning up at `pos`: the next free one that
@@ -81,6 +86,7 @@ func new_zid(pos: Vector2) -> int:
 	next_zid = zid + 1
 	return zid
 var world_seed := 0
+var seed_override := -1  # (tests: a new city from this seed, not a random one)
 var zone := ""  # the zone this server runs (see Zones); "" until one is loaded
 var address := ""  # the server joined (to find the next zone's server on the same machine)
 var time := 0.3
@@ -267,7 +273,7 @@ func _host(dedicated: bool, resume := false) -> void:
 	_connect_once(multiplayer.peer_disconnected, net._on_peer_disconnected)
 	if not resume:
 		SaveGame.wipe()
-	world_seed = saved.get("seed", randi())
+	world_seed = saved.get("seed", randi() if seed_override < 0 else seed_override)
 	inventory._loot_rng.randomize()
 	_clear_backdrop()
 	_make_world(world_seed)
@@ -553,9 +559,14 @@ func _server_tick(delta: float) -> void:
 		if not p.alive() and not p.dropped:
 			p.dropped = true
 			inventory._drop_everything(p)
+	var t_ai := Time.get_ticks_usec() if profiling else 0
 	for z: Zombie in zombies.values():
 		z.server_tick(delta)
+	var t_sep := Time.get_ticks_usec() if profiling else 0
 	_separate()
+	if profiling:
+		prof.ai += t_sep - t_ai
+		prof.separate += Time.get_ticks_usec() - t_sep
 	doors._tick_traps(delta)
 
 	actions.tick_alarms(delta)
@@ -580,6 +591,9 @@ func _server_tick(delta: float) -> void:
 ## Keep bodies from overlapping. Zombies are bucketed into 16 px cells so each
 ## only checks the ones around it, not every other zombie in the city.
 func _separate() -> void:
+	# Pairs close enough to overlap push each other apart. The pushes are added
+	# up and each zombie moves once (a crowd has hundreds of overlapping pairs:
+	# moving on each would mean a wall check each time).
 	var grid := {}
 	for z: Zombie in zombies.values():
 		var k := Vector2i(z.position / 16.0)
@@ -587,24 +601,31 @@ func _separate() -> void:
 			grid[k].append(z)
 		else:
 			grid[k] = [z]
+	var shove := {}  # zombie -> how far it's pushed this tick
+	var none := []
 	for a: Zombie in zombies.values():
 		var k := Vector2i(a.position / 16.0)
 		for dy in range(-1, 2):
 			for dx in range(-1, 2):
-				for b: Zombie in grid.get(k + Vector2i(dx, dy), []):
+				for b: Zombie in grid.get(k + Vector2i(dx, dy), none):
 					if b.zid <= a.zid:
 						continue  # each pair once
 					var v := b.position - a.position
-					var dist := v.length()
-					if dist < 9.0 and dist > 0.01 and a.storey == b.storey:
+					var d2 := v.length_squared()
+					if d2 < 81.0 and d2 > 0.0001 and a.storey == b.storey:
+						var dist := sqrt(d2)
 						var push := v / dist * (9.0 - dist) * 0.5
-						a.position = world.slide(a.position, -push, Zombie.RADIUS, false, false, a.storey)
-						b.position = world.slide(b.position, push, Zombie.RADIUS, false, false, b.storey)
+						shove[a] = shove.get(a, Vector2.ZERO) - push
+						shove[b] = shove.get(b, Vector2.ZERO) + push
 		for p: Player in players.values():
 			var v := a.position - p.position
 			var dist := v.length()
 			if p.alive() and not p.on_roof and p.on_car < 0 and p.storey == a.storey and dist < 10.0 and dist > 0.01:
-				a.position = world.slide(a.position, v / dist * (10.0 - dist), Zombie.RADIUS, false, false, a.storey)
+				shove[a] = shove.get(a, Vector2.ZERO) + v / dist * (10.0 - dist)
+	for z: Zombie in shove:
+		var s: Vector2 = shove[z]
+		if s.length_squared() > 0.0025:
+			z.position = world.slide(z.position, s.limit_length(4.5), Zombie.RADIUS, false, false, z.storey)
 
 
 ## Every zombie within `radius` goes to look.
@@ -995,7 +1016,10 @@ func _process(delta: float) -> void:
 		last_kills = me.kills
 
 	if multiplayer.is_server():
+		var t_srv := Time.get_ticks_usec() if profiling else 0
 		_server_tick(delta)
+		if profiling:
+			prof.server += Time.get_ticks_usec() - t_srv
 
 	var light := lerpf(0.12, 1.0, clampf((0.5 - absf(time - 0.4)) * 4.0, 0.0, 1.0)) * (0.8 if raining else 1.0)
 	if raining:

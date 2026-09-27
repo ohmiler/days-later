@@ -790,6 +790,19 @@ func to_pos(c: Vector2i) -> Vector2:
 ## `road`: for a bike, which can't go indoors (floors and doorways are walls to it).
 ## `prone`: crawling, which fits under a bus or a truck (see is_under).
 func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, storey := 0, prone := false, swim := false) -> Vector2:
+	# Nearly every step stays over the same few cells it was already standing
+	# on (a step is under a pixel; a cell is 16): nothing new to run into, so
+	# no need to look (a horde is a few hundred of these a frame). Where a
+	# vehicle's drawn side overhangs a cell, look properly.
+	if storey == 0 and not roof and not road and not prone:
+		if not _boxes_read:
+			_read_boxes()
+		var d := r * FOOT_DEPTH
+		var lo := to_cell(pos + Vector2(-r, -d))
+		var hi := to_cell(pos + Vector2(r, d))
+		var np := pos + v
+		if to_cell(np + Vector2(-r, -d)) == lo and to_cell(np + Vector2(r, d)) == hi 				and not _boxes.has(lo) and not _boxes.has(hi) and not _boxes.has(Vector2i(lo.x, hi.y)) and not _boxes.has(Vector2i(hi.x, lo.y)):
+			return np
 	var stuck := _solid_corner_cells(pos, r, roof, road, storey, prone, swim)
 	if not stuck.is_empty():
 		# Already overlapping something solid (a door shut on us): only allow
@@ -837,7 +850,10 @@ var _boxes_read := false
 func _in_vehicle(c: Vector2i, p: Vector2, prone := false) -> Rect2:
 	if not _boxes_read:
 		_read_boxes()
-	for e in _boxes.get(c, []):
+	var list = _boxes.get(c)
+	if list == null:
+		return Rect2()
+	for e in list:
 		if e[0].has_point(p) and not (prone and e[1]):
 			return e[0]
 	return Rect2()

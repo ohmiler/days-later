@@ -51,13 +51,14 @@ func frames(n := 1) -> void:
 
 ## A fresh game hosted on `port`, with its zombies cleared out of the way so
 ## each test places exactly the ones it wants.
-func host(port: int, resume := false, clear_zombies := true) -> void:
+func host(port: int, resume := false, clear_zombies := true, city_seed := -1) -> void:
 	Zombie.grab_chance = 0.0  # (a lunge bites, every time: grabbing is test_grab's, which asks for it)
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
 	current_scene = main
 	await frames(2)
 	main.port = port
+	main.seed_override = city_seed
 	main.player_name = "Tester"
 	main._host(false, resume)
 	me = main.players.get(1)  # none if the game refused to start
