@@ -1056,10 +1056,12 @@ func _process(delta: float) -> void:
 		if profiling:
 			prof.server += Time.get_ticks_usec() - t_srv
 
+	# (How bright it is decides what counts as night for the game: zombies'
+	# eyes, street lights. The colour you see is sky_color's.)
 	var light := lerpf(0.12, 1.0, clampf((0.5 - absf(time - 0.4)) * 4.0, 0.0, 1.0)) * (0.8 if raining else 1.0)
 	if raining:
 		rain_fx.queue_redraw()
-	shade.color = Color(light * 0.85, light * 0.92, minf(1.0, light * 1.4))
+	shade.color = sky_color(time, raining)
 	_update_roof_view(me, delta)
 	var night := light < 0.6
 	if night != world.is_night:
@@ -1106,6 +1108,30 @@ func _process(delta: float) -> void:
 
 
 var faded: Array = []
+
+
+## The light over the city through the day, by the clock's hour: moonlit
+## blue at night, pink at first light, warm through the morning, near white
+## at noon, gold then red as the sun goes, violet at dusk. (What's lit at
+## night, lamps and bulbs, shines on top of it.)
+const SKY := [
+	[0.0, Color(0.21, 0.26, 0.42)], [4.5, Color(0.24, 0.28, 0.44)], [6.0, Color(0.72, 0.60, 0.64)],
+	[7.5, Color(0.96, 0.92, 0.88)], [12.0, Color(0.97, 0.99, 1.0)], [16.0, Color(1.0, 0.97, 0.92)],
+	[18.0, Color(1.0, 0.80, 0.58)], [19.0, Color(0.80, 0.55, 0.52)], [20.0, Color(0.44, 0.39, 0.57)],
+	[21.5, Color(0.22, 0.27, 0.43)], [24.0, Color(0.21, 0.26, 0.42)],
+]
+const RAIN_TINT := Color(0.8, 0.83, 0.88)  # grey and a little blue under the clouds
+
+
+static func sky_color(t: float, rain := false) -> Color:
+	var hour := fmod(t * 24.0 + 2.4, 24.0)  # (the clock's hour: see UI)
+	var col: Color = SKY[0][1]
+	for i in SKY.size() - 1:
+		if hour >= SKY[i][0] and hour <= SKY[i + 1][0]:
+			var k := smoothstep(SKY[i][0], SKY[i + 1][0], hour)
+			col = (SKY[i][1] as Color).lerp(SKY[i + 1][1], k)
+			break
+	return col * RAIN_TINT if rain else col
 
 
 ## Up on the roofs the street drops into shadow while the roofs you can walk on
@@ -1287,6 +1313,14 @@ func _fade_trees_near(pos: Vector2) -> void:
 			world.overhead.modulate.a = 0.45
 			faded.append(world.overhead)
 			break
+	# Under the skywalk round the monument's circle (a ring drawn raised).
+	if not world.circle.is_empty() and not faded.has(world.overhead):
+		var ring_at: Vector2 = world.to_pos(world.circle.at)
+		var ring_r: float = (world.circle.r - 6) * World.TILE
+		var ring_d := (pos + Vector2(0, World.BTS_H * 0.6 - 14.0)).distance_to(ring_at)
+		if ring_d > ring_r - 16.0 and ring_d < ring_r + 40.0:
+			world.overhead.modulate.a = 0.45
+			faded.append(world.overhead)
 	if world.bts_row >= 0:
 		var deck_bottom := (world.bts_row + 3) * World.TILE - World.BTS_H + 9
 		var deck_top := (world.bts_row - 1) * World.TILE - World.BTS_H
