@@ -53,7 +53,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 			if main.pickups[pid].get("storey", 0) == p.storey and p.position.distance_to(pos) < PICKUP_REACH:
 				out.append({kind = "pickup", id = pid, pos = pos, title = Items.display_name(main.pickups[pid].item.id)})
 		for z: Zombie in main.zombies.values():
-			if z.storey == p.storey and z.flags & 2 and p.position.distance_to(z.position) < STOMP_REACH:
+			if z.storey == p.storey and z.flags & 2 and not (z.flags & 16 and z.kind == "faker") and p.position.distance_to(z.position) < STOMP_REACH:
 				out.append({kind = "zombie", id = z.zid, pos = z.position, title = "ซอมบี้ล้มอยู่"})
 		for f in w.near(p.position):
 			if f is FurnitureProp and f.data.get("storey", 0) == p.storey and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == w.building_at.get(w.to_cell(p.position)):
@@ -73,7 +73,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 			out.append({kind = "pickup", id = pid, pos = pos, title = Items.display_name(main.pickups[pid].item.id)})
 	# A zombie knocked flat right at your feet: finish it.
 	for z: Zombie in main.zombies.values():
-		if z.flags & 2 and z.storey == 0 and p.position.distance_to(z.position) < STOMP_REACH:
+		if z.flags & 2 and not (z.flags & 16 and z.kind == "faker") and z.storey == 0 and p.position.distance_to(z.position) < STOMP_REACH:
 			out.append({kind = "zombie", id = z.zid, pos = z.position, title = "ซอมบี้ล้มอยู่"})
 	var trap := trap_near(w, p.position)
 	if trap >= 0:

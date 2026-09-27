@@ -44,6 +44,7 @@ var map_t := 0.0
 var raining := false  # the server rolls the weather; clients get it in every snapshot
 var rain_total := 0.0  # game seconds it has rained, ever (rooftop tanks fill by it: see Buildings)
 var world_state: WorldState
+var phantoms: Phantoms  # what a player on pills sees that isn't there (local only)
 var rain_fx: Control
 var bar_click := false  # a mouse button went down on the hotbar: do not punch until it is let go
 ## Bodies of zombies killed (server keeps them; everyone draws them as they
@@ -140,6 +141,8 @@ func _ready() -> void:
 	admin = _module(Admin.new(), "Admin")
 	vehicles = _module(Vehicles.new(), "Vehicles")
 	world_state = _module(WorldState.new(), "WorldState")
+	phantoms = Phantoms.new()
+	phantoms.main = self
 	y_sort_enabled = true  # characters and trees are drawn back-to-front by their feet
 	shade = CanvasModulate.new()
 	add_child(shade)
@@ -189,10 +192,11 @@ func _ready() -> void:
 	ui.admin.heal_requested.connect(func(): _request(&"req_heal", []))
 	ui.admin.clear_requested.connect(func(r: float): _request(&"req_clear", [r]))
 	ui.admin.time_requested.connect(func(t: float): _request(&"req_time", [t]))
-	ui.admin.zombie_requested.connect(func(kind: String):
+	ui.admin.zombie_requested.connect(func(kind: String, n: int, special: bool):
 		var me: Player = players.get(multiplayer.get_unique_id())
 		if me:
-			_request(&"req_zombie", [me.position + Vector2(60, 0).rotated(randf() * TAU), kind]))
+			_request(&"req_zombie", [me.position + Vector2(60, 0).rotated(randf() * TAU), kind, n, special]))
+	ui.admin.command_requested.connect(func(rpc_name: StringName, args: Array): _request(rpc_name, args))
 	ui.gear.drop_requested.connect(func(ref: Array): _request(&"req_move", [ref, ["ground", -1]]))
 	ui.gear.box_closed.connect(func(): _request(&"req_close_box", []))
 	ui.chat_sent.connect(func(t: String): _request(&"req_chat", [t]))
@@ -389,6 +393,7 @@ func _drop_world() -> void:
 	for z in zombies.values():
 		z.queue_free()
 	zombies.clear()
+	phantoms.clear()
 	pickups.clear()
 	outfits.clear()
 	corpses.clear()
@@ -567,7 +572,8 @@ func _server_tick(delta: float) -> void:
 			inventory._drop_everything(p)
 	var t_ai := Time.get_ticks_usec() if profiling else 0
 	for z: Zombie in zombies.values():
-		z.server_tick(delta)
+		if not admin.frozen:
+			z.server_tick(delta)
 	var t_sep := Time.get_ticks_usec() if profiling else 0
 	_separate()
 	if profiling:
@@ -925,6 +931,7 @@ func _process(delta: float) -> void:
 			world.update_bulbs()
 		return
 	var me: Player = players.get(multiplayer.get_unique_id())
+	phantoms.tick(me, delta)
 	map_t -= delta
 	if me and map_t <= 0.0:
 		map_t = 0.3

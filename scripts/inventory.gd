@@ -422,6 +422,9 @@ func req_quick_heal() -> void:
 
 func _use_selected(p: Player) -> void:
 	var it = p.inv[p.sel]
+	if it != null and Items.def(it.id).get("blow", false):
+		blow(p)
+		return
 	if it != null and Items.is_wear(it.id):
 		_equip(p, p.sel)
 		return
@@ -440,6 +443,8 @@ func _use_selected(p: Player) -> void:
 	if d.has("cooks") and d.get("food", 0.0) <= 0.0:
 		main._toast(p, "ต้องหุงก่อน · ใส่หม้อกับน้ำแล้วตั้งบนเตาในครัว")
 		return
+	if d.has("condition"):
+		main._toast(p, Body.add_condition(p, d.condition, main.now()))
 	if d.get("splint", false) and not Body.splint(p):
 		main._toast(p, "ไม่มีข้อเท้าแพลงให้ใส่เฝือก")
 		return
@@ -626,3 +631,18 @@ func container_searched(id: int) -> void:
 	var me: Player = main.players.get(multiplayer.get_unique_id())
 	if me and me.position.distance_to(main.world.container_nodes[id].position) < 30:
 		main.ui.tutorial("search")
+
+
+var _blow_cd := {}  # peer -> when (real seconds) they can blow again
+
+
+## Blow a whistle (in the bag or round your neck): every zombie around hears
+## it and comes to look. A friend can pull them off you, or you off a door.
+func blow(p: Player) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now < float(_blow_cd.get(p.peer_id, 0.0)):
+		return
+	_blow_cd[p.peer_id] = now + 1.5
+	main.fx_sound.rpc("whistle", p.position)
+	main._make_noise(p.position, main.survival.WHISTLE_NOISE, p.storey)
+	main._toast(p, "เป่านกหวีด · ซอมบี้แถวนี้ได้ยินแล้ว")

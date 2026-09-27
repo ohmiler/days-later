@@ -10,7 +10,25 @@ const KINDS := {
 	"runner": {speed = 64.0, hp = 35.0, dmg = 6.0, girth = 0.8, door = 0.7},
 	"fat": {speed = 25.0, hp = 170.0, dmg = 14.0, girth = 1.5, door = 3.0},
 	"screamer": {speed = 34.0, hp = 45.0, dmg = 6.0, girth = 0.9, door = 0.6},
+	# Out of its head on pills when it turned: fast, strong, feels no blow
+	# (stun: how much of a blow's stagger it takes), until it burns out and drops.
+	"junkie": {speed = 58.0, hp = 110.0, dmg = 9.0, girth = 0.85, door = 1.3, stun = 0.25},
+	# Lies among the dead, still, until you walk past (no flies on it: the tell).
+	"faker": {speed = 38.0, hp = 55.0, dmg = 10.0, girth = 1.0, door = 1.0},
+	# A security guard still on duty: blows its whistle when it sees you, calling the rest.
+	"guard": {speed = 36.0, hp = 75.0, dmg = 8.0, girth = 1.1, door = 1.0},
+	# The evening aerobics class never stopped: dancing on the spot till it hears you.
+	"aerobic": {speed = 42.0, hp = 50.0, dmg = 7.0, girth = 0.9, door = 0.8},
 }
+const FRENZY := 9.0  # a junkie chases this long, then burns out...
+const SPENT := 3.5  # ...and lies there spent this long
+const WAKE := 30.0  # a faker gets up when someone comes this close
+const WHISTLE_CD := 9.0
+var frenzy_t := 0.0  # server: how long a junkie has been after someone
+var shamming := false  # a faker lying still among the dead (server; clients see flag 16)
+var long_down := false  # server: down for longer than a knock (flag 16 while it lasts)
+var whistle_cd := 0.0
+var dance_t := 0.0  # client: the aerobics routine's clock
 
 const GROUND_BITE_CD := 1.6  # a zombie on the ground snaps at your legs this often
 ## A lunge that lands can grab hold instead of biting at once: you can't move
@@ -113,7 +131,20 @@ func server_tick(delta: float) -> void:
 	climb_t -= delta
 	repath -= delta
 	investigate_t -= delta
-	flags = (1 if lunge_t > 0.0 else 0) | (2 if down_t > 0.0 else 0) | (8 if grab_peer != 0 else 0)
+	if shamming:
+		_sham_tick()
+		return
+	if long_down and down_t <= RISE_TIME:
+		long_down = false
+	flags = (1 if lunge_t > 0.0 else 0) | (2 if down_t > 0.0 else 0) | (8 if grab_peer != 0 else 0) | (16 if long_down else 0)
+	if kind == "junkie" and down_t <= 0.0:
+		frenzy_t = frenzy_t + delta if target != null else maxf(0.0, frenzy_t - delta)
+		if frenzy_t > FRENZY:
+			frenzy_t = 0.0
+			release()
+			down_t = SPENT
+			long_down = true
+			lunge_t = 0.0
 	if grab_peer != 0 and (down_t > 0.0 or stun > 0.0):
 		release()  # (knocked over or hit: it lets go)
 	if down_t > 0.0:
@@ -190,6 +221,12 @@ func server_tick(delta: float) -> void:
 	if kind == "screamer" and state == 2 and prev_state != 2 and scream_cd <= 0.0 and get_parent() is Main:
 		scream_cd = 8.0
 		get_parent().survival.zombie_scream(self)
+	whistle_cd -= delta
+	if kind == "guard" and state == 2 and prev_state != 2 and whistle_cd <= 0.0 and get_parent() is Main:
+		whistle_cd = WHISTLE_CD
+		get_parent().survival.zombie_whistle(self)
+	if kind == "junkie" and state == 2 and prev_state != 2 and get_parent() is Main:
+		get_parent().fx_sound.rpc("cackle", position)
 
 	if target == null or not target.alive():
 		if investigate_t > 0.0:
@@ -240,6 +277,11 @@ func server_tick(delta: float) -> void:
 		_move((target.position - position).normalized(), delta)
 	else:
 		_follow(delta)
+
+
+## An aerobics zombie with nobody to go after keeps the class going.
+func _dancing() -> bool:
+	return kind == "aerobic" and state == 0 and not moving and down_el < 0.0 and hit_t <= 0.0
 
 
 ## Client: where it was at server time `t` (from a snapshot).
@@ -297,9 +339,39 @@ func bite_damage() -> float:
 	return KINDS[kind].dmg * (0.5 + 0.25 * arms)
 
 
+## Server: a faker lying still until someone comes close (or hits it).
+func _sham_tick() -> void:
+	flags = 2 | 16
+	var woke: Player = null
+	for p: Player in players.values():
+		if p.alive() and p.storey == storey and p.position.distance_to(position) < WAKE:
+			woke = p
+			break
+	if woke == null and hp >= max_hp:
+		return
+	shamming = false
+	long_down = true
+	down_t = RISE_TIME + 0.15
+	target = woke if woke else _nearest_player()
+	state = 2
+	if get_parent() is Main:
+		get_parent().fx_sound.rpc("groan", position)
+
+
+## Start (or stop) lying among the dead, playing dead.
+func _sham(on: bool) -> void:
+	shamming = on
+	long_down = on
+	down_t = 1e9 if on else 0.0
+	flags = (2 | 16) if on else 0
+	if on:
+		down_el = 0.7  # (already lying there, not falling)
+
+
 ## Server: knocked flat by a kick.
 func knock_down() -> void:
 	down_t = DOWN_TIME
+	long_down = false
 	lunge_t = 0.0
 
 
@@ -435,6 +507,10 @@ func _ready() -> void:
 			skin = skin.lightened(0.12).lerp(Color("b8b890"), 0.4)
 		"screamer":
 			skin = Color("c8c6bc")
+		"junkie":
+			skin = skin.lerp(Color("c8b870"), 0.35).darkened(0.1)  # sallow
+		"guard", "aerobic":
+			_uniform()
 	if not outfit.is_empty():
 		apply_outfit(outfit)
 	# No two shamble quite the same.
@@ -451,24 +527,56 @@ func _ready() -> void:
 
 
 static func kind_for(id: int) -> String:
+	# Some belong to places (the id says where it's from: Main.new_zid).
+	var place: String = Items.ZOMBIE_PLACES[id % Items.ZOMBIE_PLACES.size()]
+	var h2 := (id * 40503 + 7) % 100
+	if place in ["office", "mall", "hospital"] and h2 < 8:
+		return "guard"
+	if (place == "mall" and h2 >= 8 and h2 < 20) or (place == "street" and h2 >= 8 and h2 < 11):
+		return "aerobic"
+	if (place == "hospital" and h2 >= 20 and h2 < 32) or h2 >= 97:
+		return "faker"
 	var h := (id * 2654435761) % 1000
 	if h < 680:
 		return "normal"
 	if h < 830:
 		return "runner"
-	if h < 940:
+	if h < 930:
 		return "fat"
-	return "screamer"
+	if h < 970:
+		return "screamer"
+	return "junkie"
 
 
 func set_kind(k: String) -> void:
 	var was_full := hp >= max_hp
 	kind = k
 	var d: Dictionary = KINDS[k]
+	if shamming != (k == "faker"):
+		_sham(k == "faker")
+	if k in ["guard", "aerobic"] and is_inside_tree():
+		_uniform()
 	speed = d.speed
 	max_hp = d.hp
 	if was_full:
 		hp = max_hp
+
+
+## Dressed for what it was doing: a guard in its uniform, whistle round its
+## neck; the aerobics class in a vest and shorts.
+func _uniform() -> void:
+	var w2 := wear.duplicate()
+	for slot in ["over", "face", "back", "waist"]:
+		w2.erase(slot)
+	if kind == "guard":
+		w2.body = "guard_shirt"
+		w2.neck = "whistle"
+		w2.legs = "slacks"
+	elif kind == "aerobic":
+		w2.body = "tanktop#%d" % (zid % 100000)
+		w2.legs = "shorts"
+		w2.erase("head")
+	_set_wear(w2)
 
 
 func apply_outfit(o: Array) -> void:
@@ -515,6 +623,11 @@ func _process_body(delta: float) -> void:
 		atk_t += delta
 		if atk_t > LUNGE + 0.2:
 			atk_t = -1.0
+	if flags & 16 and flags & 2:
+		if down_el < 0.0 and kind == "faker":
+			down_el = 0.7  # (first seen already lying there)
+		if down_el >= 0.0:
+			down_el = minf(down_el, DOWN_TIME - RISE_TIME)  # (stays down: it isn't getting up yet)
 	if flags & 2:
 		if down_el < 0.0:
 			down_el = 0.0
@@ -529,6 +642,9 @@ func _process_body(delta: float) -> void:
 			up_el = -1.0
 	if kind == "screamer" and state == 2 and shown_state != 2:
 		scream_t = 1.0
+	if kind == "aerobic" and _dancing():
+		dance_t += delta
+		phase += delta * 5.0  # stepping on the spot
 	scream_t = maxf(0.0, scream_t - delta * 0.9)
 	if moving and hit_t <= 0 and stagger_t <= 0.0:  # (reeling back, it still faces who hit it)
 		facing = lerp_angle(facing, moved.angle(), minf(1.0, 8.0 * delta))
@@ -548,7 +664,7 @@ func _process_body(delta: float) -> void:
 	shown_state = state
 	alert_t = maxf(0.0, alert_t - delta)
 	groan_t -= delta
-	if groan_t <= 0:
+	if groan_t <= 0 and flags & 16 == 0:
 		groan_t = randf_range(5.0, 12.0)
 		var cam := get_viewport().get_camera_2d()
 		if cam and cam.global_position.distance_to(global_position) < 260:
@@ -577,7 +693,7 @@ func _maybe_redraw(delta: float) -> void:
 		_drawn_still = false
 	if not on:
 		return
-	var busy := moving or flags & 8 != 0 or hit_t > 0.0 or atk_t >= 0.0 or down_el >= 0.0 or up_el >= 0.0 or scream_t > 0.0 or alert_t > 0.0
+	var busy := _dancing() or kind == "junkie" and state == 2 or moving or flags & 8 != 0 or hit_t > 0.0 or atk_t >= 0.0 or (down_el >= 0.0 and flags & 16 == 0) or up_el >= 0.0 or scream_t > 0.0 or alert_t > 0.0
 	if not busy:
 		if not _drawn_still or hp != _drawn_hp:
 			_drawn_still = true
@@ -660,9 +776,14 @@ func _draw_body() -> void:
 	elif up_el >= 0.0:
 		st.rise = lerpf(_risen, 1.0, clampf(up_el / 0.2, 0.0, 1.0))
 		st.fall_dir = fall_side
+	if _dancing():
+		st.moving = true
+		st.scream = fmod(dance_t * 0.8, 1.0)  # arms up and down with the beat
 	var lk := body_look()
 	lk.mouth = 1.0 if kind == "screamer" else 0.0
 	Look.lift = Vector2(0, -lift)
+	if kind == "junkie" and state == 2 and down_el < 0.0:
+		Look.lift += Vector2(randf_range(-0.7, 0.7), randf_range(-0.5, 0.5))  # twitching
 	Look.draw_eased(self, st, lk, _pose)  # (from one pose to the next over a moment, as a survivor does)
 	Look.lift = Vector2.ZERO
 	draw_set_transform(Vector2(0, -lift))
