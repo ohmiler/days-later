@@ -365,6 +365,7 @@ func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
 			var hp := full if not z.outfit.is_empty() or special else maxi(1, int(full * randf_range(0.3, 0.8)))
 			main._spawn_pickup(z.position + Vector2.from_angle(i * 1.3) * 7, Items.from_key(id, hp), z.storey)
 		i += 1
+	main.survival.trapped_died(z)
 	main.zombies.erase(z.zid)
 	z.queue_free()
 

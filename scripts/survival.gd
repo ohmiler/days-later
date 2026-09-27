@@ -443,7 +443,7 @@ func _spawn_zombie() -> void:
 	var p: Player = around[randi() % around.size()]
 	var near := 0
 	for z: Zombie in main.zombies.values():
-		if z.position.distance_to(p.position) < main.NEAR:
+		if z.home < 0 and z.position.distance_to(p.position) < main.NEAR:
 			near += 1
 	if near >= main.MAX_ZOMBIES:
 		return
@@ -472,7 +472,7 @@ func _despawn_far(delta: float) -> void:
 		return
 	_despawn_t = 2.0
 	for z: Zombie in main.zombies.values():
-		if z.target != null or z.investigate_t > 0.0:
+		if z.target != null or z.investigate_t > 0.0 or z.home >= 0:
 			continue
 		var far := true
 		for p: Player in main.players.values():
@@ -482,3 +482,94 @@ func _despawn_far(delta: float) -> void:
 		if far:
 			main.zombies.erase(z.zid)
 			z.queue_free()
+
+
+# --- Shut in since the outbreak ----------------------------------------------
+
+static var trapped_on := true  # (tests turn it off, so only the zombies they place are about)
+var _trapped_t := 0.0
+var _awake := {}  # building id -> [zid, ...]: its shut-in zombies, let out while someone is near
+
+
+## Big buildings aren't empty: the ones shut inside when it began (Buildings
+## `trapped`) are there, on every floor, when someone comes near; a big
+## building's good loot is paid for. They go back to being a number when
+## everyone has left (still shut in, still waiting); only killing them
+## brings the number down, for good.
+func _tick_trapped(delta: float) -> void:
+	_trapped_t -= delta
+	if _trapped_t > 0.0 or not trapped_on:
+		return
+	_trapped_t = 1.0
+	var w: World = main.world
+	for rec: Dictionary in w.buildings:
+		if not rec.get("big", false):
+			continue
+		var id: int = rec.id
+		var r: Rect2i = rec.rect
+		var box := Rect2(Vector2(r.position) * World.TILE, Vector2(r.size) * World.TILE)
+		var nearest := INF
+		for p: Player in main.players.values():
+			if p.alive():
+				var q: Vector2 = p.position.clamp(box.position, box.end)
+				nearest = minf(nearest, q.distance_to(p.position))
+		if not _awake.has(id):
+			if nearest < main.NEAR:
+				_let_out(rec)
+		elif nearest > main.NEAR * 1.5:
+			var zids: Array = _awake[id]
+			if zids.all(func(zid): return not main.zombies.has(zid) or main.zombies[zid].target == null):
+				for zid in zids:
+					if main.zombies.has(zid):
+						main.zombies[zid].queue_free()
+						main.zombies.erase(zid)
+				_awake.erase(id)
+
+
+## Where they are: on any floor of it, somewhere to stand, not on the stairs.
+func _let_out(rec: Dictionary) -> void:
+	var w: World = main.world
+	var n: int = main.world_state.state("building", rec.id).get("trapped", 0)
+	var zids := []
+	_awake[rec.id] = zids
+	if n <= 0:
+		return
+	var r: Rect2i = rec.rect
+	var spots := []  # [cell, storey]
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			var c := Vector2i(x, y)
+			if w.stairs.has(c):
+				continue
+			var b = w.building_at.get(c)
+			if b != null and b.data == rec and not w.is_solid(c):
+				spots.append([c, 0])
+			for f: int in w.storeys:
+				if not w.is_solid_on(c, f):
+					spots.append([c, f])
+	if spots.is_empty():
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(rec.seed) + n * 131
+	for i in n:
+		var s: Array = spots[rng.randi() % spots.size()]
+		var pos: Vector2 = w.to_pos(s[0]) + Vector2(rng.randf_range(-3, 3), rng.randf_range(-3, 3))
+		var z: Zombie = main._add_zombie(main.new_zid(pos), pos)
+		z.home = rec.id
+		z.storey = s[1]
+		z.lift = BuildingProp.storey_lift(s[1])
+		zids.append(z.zid)
+
+
+## One of a building's shut-in zombies killed: one fewer in there, for good.
+func trapped_died(z: Zombie) -> void:
+	if z.home < 0 or not _awake.has(z.home):
+		return
+	_awake[z.home].erase(z.zid)
+	var n: int = main.world_state.state("building", z.home).get("trapped", 0)
+	main.world_state.set_state("building", z.home, {trapped = maxi(0, n - 1)})
+
+
+## A new zone (or a fresh world): nothing let out yet.
+func clear_trapped() -> void:
+	_awake.clear()

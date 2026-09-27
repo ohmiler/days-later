@@ -440,6 +440,9 @@ func _use_selected(p: Player) -> void:
 	if d.has("cooks") and d.get("food", 0.0) <= 0.0:
 		main._toast(p, "ต้องหุงก่อน · ใส่หม้อกับน้ำแล้วตั้งบนเตาในครัว")
 		return
+	if d.get("splint", false) and not Body.splint(p):
+		main._toast(p, "ไม่มีข้อเท้าแพลงให้ใส่เฝือก")
+		return
 	var off := Items.spoiled(it, main.now())
 	p.hp = minf(Player.MAX_HP, p.hp + d.get("heal", 0.0))
 	p.hunger = clampf(p.hunger + d.get("food", 0.0) * (0.5 if off else 1.0), 0.0, 100.0)
@@ -578,6 +581,9 @@ func _tick_search(p: Player, delta: float) -> void:
 	f.items.resize(FurnitureProp.SIZE)
 	for id in found:
 		var it := Items.make(id, _loot_rng)
+		if Items.def(id).get("spoil", 0.0) > 0.0:
+			# (left on the stall since it all began: part way to going off already)
+			it.made = main.now() - _loot_rng.randf() * Items.def(id).spoil * 0.5 * Main.HOUR
 		var slot := _slot_for(f.items, it)
 		if slot >= 0:
 			if f.items[slot] == null:

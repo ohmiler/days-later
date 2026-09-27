@@ -337,6 +337,7 @@ func _make_world(seed_val: int, zone_id := "") -> void:
 	world.generate(seed_val, zone_id if zone_id != "" else zone)
 	# What can change in this world, kept the one way (see WorldState).
 	world_state.clear()
+	survival.clear_trapped()
 	world_state.register("thing", func(id): return Things.start_state(world, id), things.on_changed)
 	world_state.register("building", func(id): return Buildings.start(world, id), things.on_building_changed)
 	ui.city_map.setup(world, ui.cfg, seed_val)
@@ -581,6 +582,7 @@ func _server_tick(delta: float) -> void:
 	var horde := survival.is_horde(day, time)
 	spawn_timer -= delta
 	survival._despawn_far(delta)
+	survival._tick_trapped(delta)
 	if spawn_timer <= 0 and zombies.size() < (survival.HORDE_MAX_ZOMBIES if horde else MAX_ZOMBIES * maxi(1, players.size())):
 		if horde and not players.is_empty():
 			survival._spawn_horde_zombie()
