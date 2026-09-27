@@ -789,8 +789,8 @@ func to_pos(c: Vector2i) -> Vector2:
 ## Move a body by `v`, sliding along walls one axis at a time.
 ## `road`: for a bike, which can't go indoors (floors and doorways are walls to it).
 ## `prone`: crawling, which fits under a bus or a truck (see is_under).
-func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, storey := 0, prone := false) -> Vector2:
-	var stuck := _solid_corner_cells(pos, r, roof, road, storey, prone)
+func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, storey := 0, prone := false, swim := false) -> Vector2:
+	var stuck := _solid_corner_cells(pos, r, roof, road, storey, prone, swim)
 	if not stuck.is_empty():
 		# Already overlapping something solid (a door shut on us): only allow
 		# moves heading away from it, never deeper in or along it.
@@ -799,24 +799,26 @@ func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, sto
 			centre += to_pos(c) / stuck.size()
 		var away := pos - centre
 		for step in [v, Vector2(v.x, 0), Vector2(0, v.y)]:
-			if step.dot(away) > 0.0 and _solid_corner_cells(pos + step, r, roof, road, storey, prone).size() <= stuck.size():
+			if step.dot(away) > 0.0 and _solid_corner_cells(pos + step, r, roof, road, storey, prone, swim).size() <= stuck.size():
 				return pos + step
 		return pos
 	var nx := pos + Vector2(v.x, 0)
-	if can_stand(nx, r, roof, road, storey, prone):
+	if can_stand(nx, r, roof, road, storey, prone, swim):
 		pos = nx
 	var ny := pos + Vector2(0, v.y)
-	if can_stand(ny, r, roof, road, storey, prone):
+	if can_stand(ny, r, roof, road, storey, prone, swim):
 		pos = ny
 	return pos
 
 
-func _solid_corner_cells(p: Vector2, r: float, roof: bool, road := false, storey := 0, prone := false) -> Array:
+func _solid_corner_cells(p: Vector2, r: float, roof: bool, road := false, storey := 0, prone := false, swim := false) -> Array:
 	var out := []
 	for o in _feet(r):
 		var c := to_cell(p + o)
 		if prone and storey == 0 and not roof and is_under(c):
 			continue  # (flat on the ground, under a bus or a truck)
+		if swim and storey == 0 and not roof and get_tile(c) == WATER:
+			continue  # (a life jacket: the canal's no wall)
 		if (not is_roof(c)) if roof else (is_solid_on(c, storey) if storey > 0 else (is_solid(c) or road and get_tile(c) in [FLOOR, DOOR])):
 			out.append(c)
 		elif storey == 0 and not roof:
@@ -876,10 +878,12 @@ static func _feet(r: float) -> Array:
 
 ## On the ground, stand anywhere not solid; on the roof, only on shophouse
 ## roofs; upstairs, only on the floor up there.
-func can_stand(p: Vector2, r: float, roof := false, road := false, storey := 0, prone := false) -> bool:
+func can_stand(p: Vector2, r: float, roof := false, road := false, storey := 0, prone := false, swim := false) -> bool:
 	for o in _feet(r):
 		var c := to_cell(p + o)
 		if prone and storey == 0 and not roof and is_under(c):
+			continue
+		if swim and storey == 0 and not roof and get_tile(c) == WATER:
 			continue
 		if (not is_roof(c)) if roof else is_solid_on(c, storey):
 			return false

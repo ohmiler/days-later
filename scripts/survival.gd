@@ -200,6 +200,8 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 	if p.move.length() > 0.1 and not p.sneak and not p.prone and p.step_t <= 0.0 and p.riding < 0:  # (a bike makes its own noise)
 		p.step_t = 0.5
 		main._make_noise(p.position, (main.NOISE_RUN if running else main.NOISE_WALK) * p.wear_mult("noise"), p.storey)  # (rubber boots squeak)
+	_tick_wet(p)
+	_tick_lamp(p, real_delta)
 	# Bleeding, you leave a smell of fresh blood that brings them after you.
 	p.scent_t -= real_delta
 	if p.bleeding and p.scent_t <= 0.0:
@@ -388,6 +390,46 @@ func fx_announce(text: String, siren: bool) -> void:
 	main.ui.announce(text)
 	if siren:
 		Sfx.play(main, "siren", main.camera.position, -6.0, 1.0)
+
+
+const DRY_HOURS := 0.35  # game hours to dry off in a T-shirt...
+const DRY_PER_CLOTH := 0.12  # ...and this much longer for each thing of cloth worn (jeans, a hoodie)
+
+
+## Out in the rain with nothing to keep it off, or in the canal: soaked, and
+## it takes a while to dry once out of it (thick clothes longer).
+func _tick_wet(p: Player) -> void:
+	var w: World = main.world
+	var b = w.building_at.get(w.to_cell(p.position))
+	var sheltered: bool = p.storey > 0 or (b != null and b.data.get("enter", false) and not p.on_roof)
+	var rainproof: bool = p.wear_ids.values().any(func(k): return Items.def(k).get("rainproof", false))
+	var soaking := p.swimming() or (main.raining and not sheltered and not rainproof)
+	if not soaking:
+		return
+	var cloth := p.wear_ids.values().filter(func(k): return Items.has_tag(k, "cloth")).size()
+	var until: float = main.now() + (DRY_HOURS + DRY_PER_CLOTH * cloth) * Main.HOUR
+	if not p.conditions.has("wet"):
+		main._toast(p, "ตัวเปียก · เสื้อผ้าหนักขึ้น" + (" · ว่ายข้ามคลอง" if p.swimming() else " · หลบฝนหรือใส่เสื้อกันฝน"))
+		p.body_dirty = true
+	elif float(p.conditions.wet) < until - Main.HOUR * 0.05:
+		p.body_dirty = true  # (tell them it's longer now, now and then: not every tick)
+	p.conditions.wet = maxf(float(p.conditions.get("wet", 0.0)), until)
+
+
+const LAMP_DRAIN := 1.0  # a headlamp's charge (its hp) used a second while it's on
+
+
+## A headlamp burns its batteries at night; flat, it goes dark (put new ones in: see recipes).
+func _tick_lamp(p: Player, real_delta: float) -> void:
+	var it = p.worn.get("head")
+	if it == null or not Items.def(it.id).get("lamp", false) or not main.world.is_night:
+		return
+	it.hp -= LAMP_DRAIN * real_delta
+	if it.hp <= 0.0:
+		p.worn.head = {id = Items.def(it.id).get("flat", it.id), n = 1, hp = 1}
+		p.refresh_wear()
+		main.inventory._send_inv(p)
+		main._toast(p, "ถ่านไฟฉายคาดหัวหมด · ใส่ถ่านใหม่ได้ (ทำของ)")
 
 
 ## Zombies are about wherever someone is: a new one turns up out of sight

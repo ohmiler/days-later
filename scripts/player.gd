@@ -193,6 +193,25 @@ func alive() -> bool:
 	return hp > 0
 
 
+var _lamp: PointLight2D
+
+
+## A lit headlamp throws a pool of light ahead (everyone sees it, zombies too).
+func _update_lamp() -> void:
+	var on := lamp_lit() and alive()
+	if on and _lamp == null:
+		_lamp = PointLight2D.new()
+		_lamp.texture = StreetProp._lamp_texture()
+		_lamp.texture_scale = 0.8
+		_lamp.color = Color("fff0c8")
+		_lamp.energy = 0.9
+		add_child(_lamp)
+	if _lamp:
+		_lamp.visible = on
+		if on:
+			_lamp.position = Vector2(0, -lift - 6) + face() * 26.0
+
+
 ## Bitten: a jolt away from it, arms up, a flush of red (see _draw_standing).
 func hurt(dir: Vector2) -> void:
 	hurt_t = HURT
@@ -293,7 +312,7 @@ func server_tick(delta: float) -> void:
 		return
 	if riding >= 0:
 		return  # the bike moves them (Vehicles.server_tick)
-	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof, false, storey, prone)
+	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof, false, storey, prone, floats())
 
 
 ## The way the body faces: where you aim, or, held by a zombie, at it.
@@ -353,6 +372,8 @@ func speed_mult() -> float:
 	if Body.fevered(wounds):
 		m *= 0.92  # feverish
 	m *= Body.mod(self, "speed")  # (sick: see Body.CONDITIONS)
+	if swimming():
+		m = minf(m, 0.45)  # (paddling across the canal in a life jacket)
 	if aiming:
 		m = minf(m, 0.55)  # steady, careful steps
 	for slot in wear_ids:
@@ -367,6 +388,8 @@ func load_kg() -> float:
 		kg += Items.weight_of(it)
 	for slot in wear_ids:
 		kg += float(Items.def(wear_ids[slot]).get("weight", 0.0))
+		if conditions.has("wet") and Items.has_tag(wear_ids[slot], "cloth"):
+			kg += float(Items.def(wear_ids[slot]).get("weight", 0.0)) * WET_WEIGHT  # (soaked through: cotton holds water)
 	return kg
 
 
@@ -396,7 +419,29 @@ func heat() -> float:
 	var h := 0.0
 	for slot in wear_ids:
 		h += float(Items.def(wear_ids[slot]).get("hot", 0.0))
-	return h
+	return h * (0.4 if conditions.has("wet") else 1.0)  # (soaked, you're not hot)
+
+
+const WET_WEIGHT := 0.8  # cloth soaked through weighs this much more
+
+
+## Wearing something that floats you (a life jacket): the canal can be swum.
+func floats() -> bool:
+	return wear_ids.values().any(func(k): return Items.def(k).get("floats", false))
+
+
+func swimming() -> bool:
+	return storey == 0 and not on_roof and world != null and world.get_tile(world.to_cell(position)) == World.WATER
+
+
+## A headlamp on, lighting the way (at night, with charge in it).
+func lamp_lit() -> bool:
+	return world != null and world.is_night and wear_ids.values().any(func(k): return Items.def(k).get("lamp", false))
+
+
+## A mirror on the helmet: a glimpse of what's behind.
+func has_mirror() -> bool:
+	return wear_ids.values().any(func(k): return Items.def(k).get("mirror", false))
 
 
 ## What everything worn multiplies `field` by (its `field` in data/items.cfg; 1 if not given).
@@ -812,6 +857,7 @@ func _process(delta: float) -> void:
 		death_t += delta
 	night_eyes.energy = move_toward(night_eyes.energy, 0.55 if world.is_night and alive() and is_local else 0.0, delta * 0.5)
 	night_eyes.visible = night_eyes.energy > 0.01
+	_update_lamp()
 	hurt_t = maxf(0.0, hurt_t - delta)
 	var red := clampf(hurt_t / HURT, 0.0, 1.0) ** 2
 	modulate = Color(1.0 + red * 0.3, 1.0 - red * 0.2, 1.0 - red * 0.2, sight_k)  # (a flush, not a red silhouette)
@@ -1093,3 +1139,13 @@ func _draw_standing(ext: float, wdef: Dictionary, ldef: Dictionary) -> void:
 			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = (anim != Look.NONE and anim_t < 1.2) or grabbed_by >= 0 or jolt > 0.3,
 			crouch = 3.0 if sneak else 0.0, run = 1.0 if leap else run_k, pant = _pant(), weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = aiming,
 			breath = Time.get_ticks_msec() * 0.0016 + get_instance_id() % 7}, look, _pose)
+	if swimming():
+		# In the canal up to the waist: the water over the legs, a ripple round.
+		var t := Time.get_ticks_msec() * 0.004
+		var water: Color = World.COLORS[World.WATER]
+		draw_set_transform(Vector2(0, -3.0), 0, Vector2(1, 0.9))
+		draw_circle(Vector2.ZERO, 8.5, water)  # (over the legs, round the waist)
+		draw_set_transform(Vector2(0, -10.5), 0, Vector2(1, 0.35))
+		draw_circle(Vector2.ZERO, 8.0 + sin(t) * 0.8, water.lightened(0.1))
+		draw_arc(Vector2.ZERO, 8.0 + sin(t) * 0.8, 0.0, PI, 12, Color(1, 1, 1, 0.3), 1.2)  # the ripple in front
+		draw_set_transform(Vector2.ZERO)

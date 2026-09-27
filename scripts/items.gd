@@ -883,6 +883,50 @@ static func _wear_icon(ci: CanvasItem, r: Rect2, draw: Dictionary, slot: String)
 		"cap":
 			ci.draw_colored_polygon(P.call(_dome(Vector2(-2, 5), 10.0)), col)
 			ci.draw_rect(Rect2(c + Vector2(4, 3) * s, Vector2(12, 3) * s), dark)
+		"skirt", "sarong":
+			var full: bool = w.shape == "sarong"  # (a pha thung: to the ankle)
+			ci.draw_colored_polygon(P.call([Vector2(-9, -12), Vector2(9, -12), Vector2(12 if not full else 10, 8 if not full else 16),
+					Vector2(-12 if not full else -10, 8 if not full else 16)]), col)
+			ci.draw_rect(Rect2(c + Vector2(-9, -12) * s, Vector2(18, 3) * s), dark)
+			if full:
+				ci.draw_rect(Rect2(c + Vector2(-10, 11) * s, Vector2(20, 3) * s), w.get("col2", dark))
+			elif w.get("pattern", "") == "plaid":
+				ci.draw_line(c + Vector2(-10, -2) * s, c + Vector2(10, -2) * s, w.get("col2", dark), 1.5 * s)
+				ci.draw_line(c + Vector2(0, -9) * s, c + Vector2(0, 8) * s, w.get("col2", dark), 1.5 * s)
+		"ngop":
+			ci.draw_colored_polygon(P.call([Vector2(-17, 6), Vector2(17, 6), Vector2(0, -10)]), col)
+			ci.draw_line(c + Vector2(-17, 6) * s, c + Vector2(17, 6) * s, dark, 1.5 * s)
+			for k in [-8.0, 0.0, 8.0]:
+				ci.draw_line(c + Vector2(k, 5) * s, c + Vector2(0, -9) * s, col.darkened(0.15), 1.0)
+		"halfhelmet":
+			ci.draw_colored_polygon(P.call(_dome(Vector2(0, 5), 12.0)), col)
+			ci.draw_rect(Rect2(c + Vector2(-12, 4) * s, Vector2(24, 2) * s), dark)
+			ci.draw_line(c + Vector2(9, 5) * s, c + Vector2(5, 13) * s, Color("2a2a2a"), 1.2 * s)
+			if w.get("mirror", false):
+				ci.draw_line(c + Vector2(11, -2) * s, c + Vector2(15, -8) * s, Color("5a5a5a"), 1.2 * s)
+				ci.draw_rect(Rect2(c + Vector2(13, -13) * s, Vector2(6, 5) * s), Color("9ab8c8"))
+		"headlamp":
+			ci.draw_arc(c, 11 * s, 0, TAU, 20, Color("2a2c30"), 2.5 * s)
+			ci.draw_rect(Rect2(c + Vector2(-5, 6) * s, Vector2(10, 8) * s), col)
+			ci.draw_circle(c + Vector2(0, 10) * s, 2.6 * s, Color("fff6c8") if w.get("lit", true) else Color("5a5a52"))
+		"gasmask":
+			ci.draw_circle(c, 12 * s, col)
+			for sx in [-1.0, 1.0]:
+				ci.draw_circle(c + Vector2(5 * sx, -3) * s, 3.4 * s, Color("2a3a44"))
+			ci.draw_circle(c + Vector2(0, 8) * s, 4.5 * s, col.darkened(0.3))
+		"lifejacket":
+			ci.draw_colored_polygon(P.call([Vector2(-7, -14), Vector2(7, -14), Vector2(12, -9), Vector2(12, 15), Vector2(-12, 15), Vector2(-12, -9)]), col)
+			ci.draw_rect(Rect2(c + Vector2(-12, 1) * s, Vector2(24, 3) * s), Color("e8e4d0"))
+			ci.draw_line(c + Vector2(0, -13) * s, c + Vector2(0, 15) * s, dark, 1.0)
+		"armband":
+			ci.draw_rect(Rect2(c + Vector2(-13, -3) * s, Vector2(26, 6) * s), col)
+			ci.draw_line(c + Vector2(8, 3) * s, c + Vector2(11, 13) * s, col.darkened(0.15), 2.5 * s)
+			ci.draw_line(c + Vector2(4, 3) * s, c + Vector2(5, 12) * s, col.darkened(0.15), 2.5 * s)
+		"heels":
+			for sx in [-1.0, 1.0]:
+				var f := c + Vector2(sx * 7 - 4, 0) * s
+				ci.draw_colored_polygon(PackedVector2Array([f + Vector2(0, -6) * s, f + Vector2(9, 2) * s, f + Vector2(9, 5) * s, f + Vector2(0, 0) * s]), col)
+				ci.draw_rect(Rect2(f + Vector2(0, 0) * s, Vector2(1.5, 7) * s), col.darkened(0.3))
 		"sandals":
 			for sx in [-1.0, 1.0]:
 				var f := c + Vector2(sx * 7, 2) * s
@@ -983,6 +1027,12 @@ static func _wear_icon(ci: CanvasItem, r: Rect2, draw: Dictionary, slot: String)
 			ci.draw_colored_polygon(P.call([Vector2(-6, -14), Vector2(0, -8), Vector2(6, -14), Vector2(0, -18)]), dark)
 			ci.draw_line(c + Vector2(0, -12) * s, c + Vector2(0, 17) * s, dark, 1.0)
 		"pack":
+			if w.get("basket", false):
+				ci.draw_colored_polygon(P.call([Vector2(-12, -10), Vector2(12, -10), Vector2(9, 14), Vector2(-9, 14)]), col)
+				for i in 5:
+					ci.draw_line(c + Vector2(-11 + i * 0.6, -6 + i * 4) * s, c + Vector2(11 - i * 0.6, -6 + i * 4) * s, col.darkened(0.25), 1.2 * s)
+				ci.draw_arc(c + Vector2(0, -10) * s, 10 * s, PI, TAU, 12, col.darkened(0.3), 1.5 * s)
+				return
 			if w.get("box", false):
 				ci.draw_rect(Rect2(c + Vector2(-12, -12) * s, Vector2(24, 24) * s), col)
 				ci.draw_rect(Rect2(c + Vector2(-12, -12) * s, Vector2(24, 4) * s), col.lightened(0.2))

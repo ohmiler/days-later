@@ -87,5 +87,88 @@ func run() -> void:
 
 	# A pha khao ma tears into bandages.
 	check(Crafting.RECIPES.has("bandage_pakhaoma"), "a pha khao ma tears into bandages")
+
+	# --- Round 2 ---
+	# A life jacket: the canal can be swum (slowly); without one, it can't; zombies never.
+	var wc := Vector2i(-1, -1)
+	for y in range(1, World.H - 1):
+		if w.get_tile(Vector2i(60, y)) == World.WATER and w.get_tile(Vector2i(60, y - 1)) != World.WATER:
+			wc = Vector2i(60, y)
+			break
+	check(wc.x >= 0, "a canal to swim")
+	var bank := w.to_pos(wc + Vector2i.UP)
+	me.worn = {}
+	me.refresh_wear()
+	me.position = bank
+	for i in 60:
+		me.position = w.slide(me.position, Vector2(0, 1.0), Player.RADIUS, false, false, 0, false, me.floats())
+	check(not me.swimming(), "without a life jacket you can't go in the canal")
+	me.worn.over = Items.make("lifejacket")
+	me.refresh_wear()
+	for i in 60:
+		me.position = w.slide(me.position, Vector2(0, 1.0), Player.RADIUS, false, false, 0, false, me.floats())
+	check(me.swimming() and me.speed_mult() < 0.5, "in a life jacket you swim out into it, slowly (%.2f)" % me.speed_mult())
+	var zb := zombie_at(bank)
+	for i in 60:
+		zb.position = w.slide(zb.position, Vector2(0, 1.0), Zombie.RADIUS)
+	check(w.get_tile(w.to_cell(zb.position)) != World.WATER, "a zombie can't follow you in")
+	main.zombies.erase(zb.zid)
+	zb.queue_free()
+	main.survival._tick_wet(me)
+	check(me.conditions.has("wet"), "in the canal you get soaked")
+	var dry_kg := 0.0
+	me.conditions.erase("wet")
+	me.worn = {body = Items.make("jeans")}
+	me.worn.body = Items.make("hoodie")
+	me.worn.legs = Items.make("jeans")
+	me.refresh_wear()
+	me.position = w.to_pos(w.spawn_cell)
+	dry_kg = me.load_kg()
+	main.survival._set_rain(true)
+	main.survival._tick_wet(me)
+	check(me.conditions.has("wet") and me.load_kg() > dry_kg + 0.5, "out in the rain you're soaked: jeans and a hoodie get heavy (%.1f -> %.1f kg)" % [dry_kg, me.load_kg()])
+	me.conditions.erase("wet")
+	me.worn.over = Items.make("raincoat")
+	me.refresh_wear()
+	main.survival._tick_wet(me)
+	check(not me.conditions.has("wet"), "a raincoat keeps it off")
+	main.survival._set_rain(false)
+
+	# A headlamp lights the night (zombies see you by it) and runs down.
+	me.worn = {head = Items.make("headlamp")}
+	me.refresh_wear()
+	w.is_night = true
+	check(me.lamp_lit(), "a headlamp on at night")
+	me.worn.head.hp = 0.5
+	main.survival._tick_lamp(me, 1.0)
+	check(me.worn.head.id == "headlamp_off" and not me.lamp_lit(), "its batteries run flat: dark")
+	check(Crafting.RECIPES.headlamp.needs.has("battery"), "new batteries in it: a recipe")
+	w.is_night = false
+
+	# A mirror on the helmet: a glimpse of what's behind.
+	var sg := Sight.new()
+	sg.world = w
+	me.aim = Vector2(1, 0)
+	for d in [Vector2(1, 0), Vector2(-1, 0), Vector2(0, 1), Vector2(0, -1)]:
+		if w.sight_ray(me.position + Vector2(0, -2), -d, 90.0)[0] >= 90.0:
+			me.aim = d  # (facing so that the way behind is open)
+			break
+	me.worn = {}
+	me.refresh_wear()
+	sg.update(me, 1.0, 400.0)
+	sg.on = 1.0
+	var behind := me.position - me.aim * 80.0
+	var saw := sg.sees(behind)
+	me.worn.head = Items.make("mirrorhelmet")
+	me.refresh_wear()
+	sg.update(me, 1.0, 400.0)
+	sg.on = 1.0
+	check(not saw and sg.sees(behind), "with the mirror you see a way behind you")
+
+	# Heels: slower; a skirt: bare legs below it.
+	me.worn = {feet = Items.make("heels"), legs = Items.make("skirt")}
+	me.refresh_wear()
+	check(me.speed_mult() < 0.95 and me.wear_mult("noise") > 1.2, "heels: slower, and loud")
+	check(Look._dress(me.look, false).shorts, "a skirt: bare legs below it")
 	SaveGame.wipe()
 	await close_game()

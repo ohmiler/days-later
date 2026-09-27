@@ -32,6 +32,12 @@ const OUTFITS := [
 	{body = "mohom", legs = "fisherman", waist = "pakhaoma#1"},
 	{body = "denim_jacket", legs = "jeans", head = "cap"},
 	{body = "shirt_long#6", legs = "cargo"},
+	# The wardrobe, round 2: new shapes.
+	{body = "tshirt#5", legs = "skirt#10", feet = "heels", arms = "prajiad", head = "headlamp"},
+	{body = "tanktop", legs = "sarong#1", head = "ngop", back = "basket", feet = "flipflops"},
+	{body = "polo#1", over = "lifejacket", head = "mirrorhelmet", face = "gasmask", knees = "pvcguards"},
+	{body = "jersey#2", legs = "jeans", head = "halfhelmet#1"},
+	{head = "headlamp_off", legs = "skirt", body = "school_shirt"},
 ]
 const CELL := Vector2(44, 46)
 const ZOOM := 3.0

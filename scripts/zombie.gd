@@ -382,7 +382,7 @@ func _nearest_player() -> Player:
 		if storey > 0 and world.building_at.get(world.to_cell(p.position)) != world.building_at.get(world.to_cell(position)):
 			continue  # upstairs, only the one building
 		var d := position.distance_to(p.position)
-		var lit := world.is_lit(p.position) or (p.riding >= 0 and p.riding < world.vehicles.size() and Vehicles.headlight_on(world.vehicles[p.riding], world))  # (a headlight shows you up)
+		var lit := world.is_lit(p.position) or p.lamp_lit() or (p.riding >= 0 and p.riding < world.vehicles.size() and Vehicles.headlight_on(world.vehicles[p.riding], world))  # (a headlight shows you up)
 		var reach := SIGHT_DAY if lit else SIGHT_DARK * p.seen_in_dark()
 		if p.under_vehicle():
 			reach = SENSE  # (under a bus: only right up close does it know you're there)
