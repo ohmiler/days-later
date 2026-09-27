@@ -80,15 +80,40 @@ func _notification(what: int) -> void:
 
 
 var showing_storey := 0
+var _fade: Tween
+const FADE := 0.16  # seconds the roof takes to lift off (and come back), a floor to come in
+
+
+## The roof lifting off as you go in (shown false) or settling back as you
+## come out: a quick fade, not a blink. `done` is called once it's gone.
+func fade(shown: bool, done := Callable()) -> void:
+	if _fade:
+		_fade.kill()
+	if shown:
+		visible = true
+	_fade = create_tween()
+	_fade.tween_property(self, "self_modulate:a", 1.0 if shown else 0.0, FADE)
+	if not shown:
+		_fade.tween_callback(func():
+			visible = false
+			self_modulate.a = 1.0
+			if done.is_valid():
+				done.call())
+	elif self_modulate.a >= 0.999:
+		self_modulate.a = 0.0  # (from nothing, if it was out of sight entirely)
 
 
 ## Show storey `f` and only that one (someone local is up there), or none of
-## them (0: on the ground).
+## them (0: on the ground). The floor you come up to fades in over the one below.
 func show_storey(f: int) -> void:
 	showing_storey = f
 	for s: int in storey_nodes:
 		for n in storey_nodes[s]:
+			var was: bool = n.visible
 			n.visible = s == f
+			if n.visible and not was and n.is_inside_tree():
+				n.modulate.a = 0.0
+				n.create_tween().tween_property(n, "modulate:a", 1.0, FADE)
 	for n in interior:
 		n.visible = not visible and f == 0
 

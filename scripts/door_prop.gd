@@ -8,9 +8,29 @@ const DOOR_STRETCH := 2.0
 const WINDOW_STRETCH := 1.8
 
 var door: Dictionary
+var shut := -1.0  # as drawn: 1 shut, 0 open, in between swinging (or a shutter rolling)
+const SWING := 0.16  # seconds a door takes to swing to (a shutter a little longer)
+
+
+func _ready() -> void:
+	set_process(false)
+
+
+## Swing toward what the door now is, over a moment.
+func _process(delta: float) -> void:
+	var want := 1.0 if door.get("closed", false) else 0.0
+	shut = move_toward(shut, want, delta / (SWING * (1.8 if door.get("kind", "") == "shutter" else 1.0)))
+	queue_redraw()
+	if shut == want:
+		set_process(false)
 
 
 func _draw() -> void:
+	var want := 1.0 if door.get("closed", false) else 0.0
+	if shut < 0.0 or not is_inside_tree():
+		shut = want  # (first drawn, or off screen: as it is)
+	elif shut != want and not is_processing():
+		set_process(true)
 	var kind: String = door.get("kind", "door")
 	if kind == "window":
 		_draw_window()
@@ -33,10 +53,11 @@ func _draw() -> void:
 			draw_colored_polygon(PackedVector2Array([Vector2(x, -2), Vector2(x + 3, -2), Vector2(x + 1.5, -6 - i * 2)]), wood.darkened(0.2))
 		draw_line(Vector2(1, -14), Vector2(6, -11), wood, 1.5)
 		return
-	if not door.closed:
-		# Swung inward: just its edge against the side of the frame.
-		draw_rect(Rect2(1, -15, 2.5, 15), wood.darkened(0.35))
-		draw_rect(Rect2(1, -15, 2.5, 1), wood.lightened(0.1))
+	if shut < 1.0:
+		# Swung inward (or swinging): the panel narrows to its edge against the frame.
+		var wd := lerpf(2.5, T - 2, shut)
+		draw_rect(Rect2(1, -15, wd, 15), wood.darkened(0.35 * (1.0 - shut)))
+		draw_rect(Rect2(1, -15, wd, 1), wood.lightened(0.1))
 	else:
 		var r := Rect2(1, -15, T - 2, 15)
 		draw_rect(r, wood)
@@ -70,14 +91,16 @@ func _draw_side() -> void:
 			var y := 2.0 + i * 5.0
 			draw_line(Vector2(T * 0.5 - 2, y), Vector2(T * 0.5 + 1.5, y + 2.5), wood.darkened(0.2), 1.4)
 		return
-	if not door.closed:
-		# Standing open across the top of the doorway, its face to us.
-		var r := Rect2(T * 0.5, 1.5 - 28.0, T * 0.8, 28.0)
+	if shut < 0.5:
+		# Standing open across the top of the doorway, its face to us (rising as it swings open).
+		var hgt := 28.0 * (1.0 - shut * 2.0)
+		var r := Rect2(T * 0.5, 1.5 - hgt, T * 0.8, hgt)
 		draw_rect(r, wood.darkened(0.1))
-		draw_rect(Rect2(r.position.x + 1.5, r.position.y + 2, r.size.x - 3, 10), wood.darkened(0.22))  # panels
-		draw_rect(Rect2(r.position.x + 1.5, r.position.y + 14, r.size.x - 3, 11), wood.darkened(0.22))
+		if hgt > 26.0:
+			draw_rect(Rect2(r.position.x + 1.5, r.position.y + 2, r.size.x - 3, 10), wood.darkened(0.22))  # panels
+			draw_rect(Rect2(r.position.x + 1.5, r.position.y + 14, r.size.x - 3, 11), wood.darkened(0.22))
+			draw_circle(Vector2(r.end.x - 2.5, r.position.y + 14), 0.8, Color("c8b070"))
 		draw_rect(r, wood.darkened(0.4), false, 0.6)
-		draw_circle(Vector2(r.end.x - 2.5, r.position.y + 14), 0.8, Color("c8b070"))
 	else:
 		draw_rect(Rect2(T * 0.5 - 2.5, 0, 5, T), wood)
 		draw_rect(Rect2(T * 0.5 - 2.5, 0, 1.2, T), wood.lightened(0.15))
@@ -98,10 +121,10 @@ func _draw_side() -> void:
 func _draw_shutter() -> void:
 	var T := World.TILE
 	var steel := Color("8e9092")
-	if not door.closed and not door.broken:
+	if shut <= 0.0 and not door.broken:
 		return
-	var bottom := -6.0 if door.broken else 0.0
 	var top := -13.5  # (up to the bottom of the box it rolls into: see BuildingProp)
+	var bottom := -6.0 if door.broken else lerpf(top, 0.0, shut)  # (rolling down, or up)
 	draw_rect(Rect2(0, top, T, bottom - top), steel)
 	for y in range(-13, int(bottom), 1):
 		draw_line(Vector2(0, y + 0.5), Vector2(T, y + 0.5), steel.darkened(0.18 if y % 2 else 0.05), 0.4)

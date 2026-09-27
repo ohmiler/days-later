@@ -21,7 +21,9 @@ func _measure(label: String, n_zombies: int) -> void:
 		if main.world.can_stand(pos, 5):
 			var z: Zombie = main._add_zombie(main.new_zid(pos), pos)
 			z.target = me
-	await wait(3.0)  # (they close in round you, as they do on a horde night)
+	for i in 180:  # (they close in round you, as they do on a horde night)
+		root.warp_mouse(root.get_visible_rect().size * 0.5 + Vector2(200, 0))
+		await process_frame
 	for k in main.prof:
 		main.prof[k] = 0
 	Main.profiling = true
@@ -38,6 +40,7 @@ func _measure(label: String, n_zombies: int) -> void:
 		elapsed += dt / 1000.0
 		draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 		me.hp = 100.0  # (you don't die in a measurement)
+		root.warp_mouse(root.get_visible_rect().size * 0.5 + Vector2(200, 0))  # (the mouse still: the camera looks where it always does)
 		me.bleeding = false
 	Main.profiling = false
 	var n := times.size()

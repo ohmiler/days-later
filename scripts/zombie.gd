@@ -42,6 +42,7 @@ var stun := 0.0  # staggered after being hit
 var hit_t := 0.0  # > 0 while flinching from a hit (visual, every peer)
 var hit_dir := Vector2.ZERO
 var push := Vector2.ZERO  # server: how much further a blow is still knocking it back (it goes over a moment, not in a jump)
+var _pose := {}  # what Rig.build_eased remembers, to blend between poses
 var stagger_t := 0.0  # > 0 while it reels back from a kick (visual, every peer): stumbling steps backward, the body thrown back
 const STAGGER := 0.5
 const PUSH_RATE := 9.0  # how fast a knock-back plays out (most of it in the first ~0.25 s)
@@ -661,7 +662,7 @@ func _draw_body() -> void:
 	var lk := body_look()
 	lk.mouth = 1.0 if kind == "screamer" else 0.0
 	Look.lift = Vector2(0, -lift)
-	Look.draw(self, st, lk)
+	Look.draw_eased(self, st, lk, _pose)  # (from one pose to the next over a moment, as a survivor does)
 	Look.lift = Vector2.ZERO
 	draw_set_transform(Vector2(0, -lift))
 	Look.draw_hp(self, hp / max_hp)
