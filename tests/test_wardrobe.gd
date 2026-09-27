@@ -170,5 +170,49 @@ func run() -> void:
 	me.refresh_wear()
 	check(me.speed_mult() < 0.95 and me.wear_mult("noise") > 1.2, "heels: slower, and loud")
 	check(Look._dress(me.look, false).shorts, "a skirt: bare legs below it")
+
+	# --- Round 3: the strange ones ---
+	# A mascot costume: thick fur, hot, and you see out of it poorly.
+	me.worn = {over = Items.make("mascot_durian")}
+	me.refresh_wear()
+	sg.update(me, 1.0, 400.0)
+	check(me.guard("torso") >= 0.5 and me.heat() >= 0.8 and sg.cone < Sight.CONE * 0.7, "a mascot suit: bites don't get through, it's hot, you see less")
+	# The blow-up dinosaur keeps off a bite or three, then it's gone.
+	me.worn = {over = Items.make("dinosuit")}
+	me.refresh_wear()
+	for i in 4:
+		me.hp = 100.0
+		me.bite(10.0, "torso")
+	check(not me.worn.has("over"), "the blow-up dinosaur pops after a few bites")
+	# A pot on the head: bitten there, it rings.
+	me.worn = {head = Items.make("pothelm")}
+	me.refresh_wear()
+	var zp := zombie_at(me.position + Vector2(160, 0))
+	zp.target = null
+	zp.investigate_t = 0.0
+	me.bite(5.0, "head")
+	check(zp.investigate_t > 0.0, "a bite on a pot helmet rings out: a zombie a way off comes to see")
+	main.zombies.erase(zp.zid)
+	zp.queue_free()
+	check(Crafting.RECIPES.has("pothelm"), "a pot and tape make a pot helmet")
+	# A mongkol: breath back quicker (you believe in it).
+	me.worn = {head = Items.make("mongkol")}
+	me.refresh_wear()
+	check(me.wear_mult("stamina") > 1.05, "a mongkol: breath back quicker")
+	# A duck ring floats you too.
+	me.worn = {waist = Items.make("swimring")}
+	me.refresh_wear()
+	check(me.floats(), "a duck swim ring floats you")
+	# Now and then a zombie in a costume, and it comes off whole.
+	var specials := 0
+	for mz in range(4, 8000, 8):  # (from the mall)
+		var wr := Items.zombie_wear(mz)
+		if wr.values().any(func(k): return Items.def(k).get("special", false)):
+			specials += 1
+	check(specials > 5 and specials < 60, "one mall zombie in a hundred or so is still in a costume (%d/1000)" % specials)
+	var zc := zombie_at(me.position + Vector2(40, 0))
+	zc._set_wear({over = "mascot_elephant"})
+	main.combat._kill_zombie(zc, 1.0)
+	check(main.pickups.values().any(func(pu): return pu.item.id == "mascot_elephant"), "killed, the costume always comes off")
 	SaveGame.wipe()
 	await close_game()

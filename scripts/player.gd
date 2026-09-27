@@ -422,6 +422,7 @@ func heat() -> float:
 	return h * (0.4 if conditions.has("wet") else 1.0)  # (soaked, you're not hot)
 
 
+const CLANG_NOISE := 170.0  # a bite on a pot helmet: the street hears it
 const WET_WEIGHT := 0.8  # cloth soaked through weighs this much more
 
 
@@ -710,6 +711,9 @@ func set_wear(ids: Dictionary) -> void:
 ## Server: a zombie bite landing on `part`. What guards that part soaks up
 ## its share and wears down doing so: the most protective piece there first.
 func bite(dmg: float, part := "torso") -> void:
+	if part == "head" and wear_ids.has("head") and Items.def(wear_ids.head).get("clang", false) and get_parent() is Main:
+		get_parent()._make_noise(position, CLANG_NOISE)  # (a pot on your head, rung like a gong)
+		get_parent().fx_sound.rpc("hit", position)
 	var g := guard(part)
 	take_damage(dmg * (1.0 - g))
 	bitten = true

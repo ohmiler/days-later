@@ -403,10 +403,24 @@ const DRESS := {
 			["head", [["cap", 2], ["bucket", 2], ["beanie", 1]], 0.3],
 			["face", [["sunglasses", 2], ["mask", 1]], 0.2],
 			["waist", [["bumbag", 1]], 0.15], ["back", [["schoolbag", 2], ["deliverybag", 1]], 0.12]],
-	home = [["body", [["tanktop", 4], ["tshirt", 5], ["school_shirt", 1]], 0.85],
-			["legs", [["shorts", 4], ["fisherman", 2], ["jeans", 1]], 0.8],
+	home = [["body", [["tanktop", 4], ["tshirt", 5], ["school_shirt", 1], ["pajama_top", 3]], 0.85],
+			["legs", [["shorts", 4], ["fisherman", 2], ["jeans", 1], ["pajama_pants", 3], ["sarong", 2]], 0.8],
 			["feet", [["flipflops", 5]], 0.5],
 			["waist", [["pakhaoma", 2]], 0.2]],
+}
+
+
+## One zombie in so many: the costumes (always dropped whole: `special`).
+const SPECIAL_CHANCE := 0.015
+const SPECIALS := {
+	street = [{head = "mongkol", arms = "prajiad", hands = "boxing", legs = "shorts"},
+			{body = "band_uniform", head = "shako", legs = "slacks", feet = "schoolshoes"},
+			{over = "likay", head = "wig", face = "phitakhon"}],
+	mall = [{over = "mascot_durian"}, {over = "mascot_elephant"}, {over = "dinosuit"}],
+	market = [{over = "likay", legs = "sarong"}, {head = "mongkol", arms = "prajiad", hands = "boxing", legs = "shorts"}],
+	home = [{body = "pajama_top", legs = "pajama_pants", waist = "swimring"}],
+	hospital = [{body = "pajama_top", legs = "pajama_pants"}],
+	office = [{body = "band_uniform", head = "shako", legs = "slacks"}],
 }
 
 
@@ -415,6 +429,14 @@ static func zombie_wear(zid: int) -> Dictionary:
 	rng.seed = zid * 7919 + 17
 	var out := {}
 	var place: String = ZOMBIE_PLACES[zid % ZOMBIE_PLACES.size()]
+	# Now and then one still in something you'd remember (it comes off whole).
+	if rng.randf() < SPECIAL_CHANCE:
+		var sets: Array = SPECIALS.get(place, SPECIALS.street)
+		var picked: Dictionary = sets[rng.randi() % sets.size()]
+		for slot in picked:
+			var id: String = picked[slot]
+			out[slot] = "%s#%d" % [id, rng.randi() % 100000] if def(id).has("looks") else id
+		return out
 	for e in DRESS[place]:
 		if rng.randf() >= e[2]:
 			continue
@@ -883,6 +905,67 @@ static func _wear_icon(ci: CanvasItem, r: Rect2, draw: Dictionary, slot: String)
 		"cap":
 			ci.draw_colored_polygon(P.call(_dome(Vector2(-2, 5), 10.0)), col)
 			ci.draw_rect(Rect2(c + Vector2(4, 3) * s, Vector2(12, 3) * s), dark)
+		"mascot":
+			ci.draw_circle(c + Vector2(0, 4) * s, 12 * s, col)  # the body
+			ci.draw_circle(c + Vector2(0, -9) * s, 8 * s, col.lightened(0.05))  # the big head
+			ci.draw_circle(c + Vector2(0, 6) * s, 6 * s, w.get("col2", col.lightened(0.3)))
+			ci.draw_circle(c + Vector2(-3, -10) * s, 1.5 * s, Color("1e1e1e"))
+			ci.draw_circle(c + Vector2(3, -10) * s, 1.5 * s, Color("1e1e1e"))
+			match [w.get("shape"), w.get("style", "")]:
+				["mascot", "durian"]:
+					for i in 8:
+						ci.draw_circle(c + Vector2(0, -9) * s + Vector2.from_angle(i * TAU / 8.0) * 8 * s, 1.6 * s, col.darkened(0.35))
+				["mascot", _]:
+					ci.draw_circle(c + Vector2(-8, -9) * s, 4 * s, col.darkened(0.1))
+					ci.draw_circle(c + Vector2(8, -9) * s, 4 * s, col.darkened(0.1))
+					ci.draw_line(c + Vector2(0, -7) * s, c + Vector2(1, 1) * s, col.darkened(0.1), 3 * s)
+				_:
+					for x in [-4.0, -1.5, 1.5, 4.0]:
+						ci.draw_rect(Rect2(c + Vector2(x - 0.6, -5) * s, Vector2(1.2, 2) * s), Color("f0ece4"))
+		"likay":
+			ci.draw_colored_polygon(P.call([Vector2(-10, -14), Vector2(10, -14), Vector2(15, -10), Vector2(12, 15), Vector2(-12, 15), Vector2(-15, -10)]), col)
+			var gold: Color = w.get("col2", Color("e0c040"))
+			ci.draw_rect(Rect2(c + Vector2(-15, -14) * s, Vector2(30, 3) * s), gold)
+			for i in 9:
+				ci.draw_circle(c + Vector2(-8 + (i % 3) * 8, -6 + (i / 3) * 7) * s, 1.4 * s, gold if i % 2 else Color("f8f0d0"))
+		"swimring":
+			ci.draw_arc(c + Vector2(0, 3) * s, 11 * s, 0, TAU, 24, col, 6 * s)
+			ci.draw_circle(c + Vector2(0, -9) * s, 5 * s, col)
+			ci.draw_rect(Rect2(c + Vector2(3, -9) * s, Vector2(5, 2.5) * s), Color("e07a2a"))
+			ci.draw_circle(c + Vector2(1.5, -11) * s, 1 * s, Color("1e1e1e"))
+		"mongkol":
+			ci.draw_arc(c, 11 * s, 0, TAU, 24, col, 4 * s)
+			ci.draw_arc(c, 11 * s, 0, TAU, 24, w.get("col2", Color("e0c040")), 1.2 * s)
+			ci.draw_line(c + Vector2(0, 11) * s, c + Vector2(3, 17) * s, col, 3 * s)
+		"pothelm":
+			ci.draw_rect(Rect2(c + Vector2(-11, -9) * s, Vector2(22, 16) * s), col)
+			ci.draw_rect(Rect2(c + Vector2(-13, 6) * s, Vector2(26, 3) * s), col.darkened(0.2))
+			ci.draw_rect(Rect2(c + Vector2(-16, -5) * s, Vector2(5, 2) * s), Color("2a2a2a"))
+			ci.draw_rect(Rect2(c + Vector2(11, -5) * s, Vector2(5, 2) * s), Color("2a2a2a"))
+			ci.draw_rect(Rect2(c + Vector2(-8, -7) * s, Vector2(4, 10) * s), col.lightened(0.3))
+		"wig":
+			match w.get("pattern", "afro"):
+				"bob":
+					ci.draw_colored_polygon(P.call(_dome(Vector2(0, 2), 12.0)), col)
+					ci.draw_rect(Rect2(c + Vector2(-12, 2) * s, Vector2(24, 10) * s), col)
+				"poof":
+					for k in 7:
+						ci.draw_circle(c + Vector2.from_angle(PI + k * PI / 6.0) * 9 * s, 5 * s, col)
+					ci.draw_circle(c + Vector2(0, -3) * s, 7 * s, col)
+				_:
+					ci.draw_circle(c, 14 * s, col)
+					ci.draw_circle(c + Vector2(-4, -5) * s, 4 * s, col.lightened(0.12))
+		"shako":
+			ci.draw_rect(Rect2(c + Vector2(-9, -12) * s, Vector2(18, 20) * s), col)
+			ci.draw_rect(Rect2(c + Vector2(-10, -13) * s, Vector2(20, 3) * s), w.get("col2", Color("e0c040")))
+			ci.draw_rect(Rect2(c + Vector2(-10, 6) * s, Vector2(20, 3) * s), w.get("col2", Color("e0c040")))
+			ci.draw_circle(c + Vector2(0, -16) * s, 3.5 * s, Color("f0ece4"))
+		"phitakhon":
+			ci.draw_circle(c + Vector2(0, 4) * s, 11 * s, col)
+			ci.draw_colored_polygon(P.call([Vector2(-9, -3), Vector2(9, -3), Vector2(6, -17), Vector2(-6, -17)]), w.get("col2", Color("e0c040")))
+			ci.draw_circle(c + Vector2(-4, 2) * s, 2 * s, Color("1e1e1e"))
+			ci.draw_circle(c + Vector2(4, 2) * s, 2 * s, Color("1e1e1e"))
+			ci.draw_line(c + Vector2(0, 4) * s, c + Vector2(0, 13) * s, w.get("col2", Color("e0c040")), 3 * s)
 		"skirt", "sarong":
 			var full: bool = w.shape == "sarong"  # (a pha thung: to the ankle)
 			ci.draw_colored_polygon(P.call([Vector2(-9, -12), Vector2(9, -12), Vector2(12 if not full else 10, 8 if not full else 16),
@@ -1084,6 +1167,9 @@ static func _icon_marks(ci: CanvasItem, c: Vector2, s: float, w: Dictionary) -> 
 			r.call(1, -6, 3, 9, c2)
 		"badge":
 			ci.draw_circle(c + Vector2(5, -6) * s, 2 * s, Color("d8b040"))
+		"band":
+			for y in [-6.0, -2.0, 2.0]:
+				r.call(-6, y, 12, 1.5, c2)
 		"vneck":
 			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-4, -14) * s, c + Vector2(4, -14) * s, c + Vector2(0, -7) * s]), col.darkened(0.3))
 		"collar":

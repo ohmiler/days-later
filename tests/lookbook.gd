@@ -38,6 +38,15 @@ const OUTFITS := [
 	{body = "polo#1", over = "lifejacket", head = "mirrorhelmet", face = "gasmask", knees = "pvcguards"},
 	{body = "jersey#2", legs = "jeans", head = "halfhelmet#1"},
 	{head = "headlamp_off", legs = "skirt", body = "school_shirt"},
+	# The wardrobe, round 3: the strange ones.
+	{over = "mascot_durian"},
+	{over = "mascot_elephant", legs = "jeans"},
+	{over = "dinosuit"},
+	{over = "likay", head = "wig#10", face = "phitakhon", legs = "sarong"},
+	{head = "mongkol", arms = "prajiad", hands = "boxing", legs = "shorts", waist = "swimring"},
+	{body = "band_uniform", head = "shako", legs = "slacks", feet = "schoolshoes"},
+	{body = "pajama_top", legs = "pajama_pants", head = "pothelm"},
+	{head = "wig#5", body = "tshirt"},
 ]
 const CELL := Vector2(44, 46)
 const ZOOM := 3.0

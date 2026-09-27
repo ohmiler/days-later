@@ -230,6 +230,7 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 		if Body.fevered(p.wounds):
 			regen *= 0.6  # a fever wears you out
 		regen *= Body.mod(p, "stamina_regen")
+		regen *= p.wear_mult("stamina")  # (a mongkol: you believe it, and it helps)
 		p.stamina = minf(100.0, p.stamina + regen * real_delta)
 		if p.exhausted and p.stamina > 35.0:
 			p.exhausted = false
