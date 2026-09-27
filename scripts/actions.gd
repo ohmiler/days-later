@@ -120,20 +120,6 @@ func req_struggle() -> void:
 		main._toast(p, "ดิ้นหลุดแล้ว!")
 
 
-## V: down on hands and knees to crawl, or back up. Crawling is slow and
-## silent, zombies hardly see you, and you fit under a bus or a truck (where
-## they don't see you at all unless right beside you, and can't get in).
-@rpc("any_peer", "call_remote", "reliable")
-func req_prone() -> void:
-	var p := main._sender()
-	if p == null or not p.alive() or p.riding >= 0 or p.on_car >= 0 or p.sleeping or p.sitting != -1 or p.vaulting() or p.grabbed_by >= 0:
-		return
-	if p.prone and p.under_vehicle():
-		main._toast(p, "คลานออกมาก่อนค่อยลุก")
-		return
-	p.prone = not p.prone
-
-
 ## Space at a run: a running jump the way you're going. Over something low in
 ## the way (sandbags, a bin, the bonnet of a car: World.is_low) to the clear
 ## ground beyond, or on open ground a leap of HOP (over a body, a trap, glass).

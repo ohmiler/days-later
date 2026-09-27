@@ -101,12 +101,12 @@ func run() -> void:
 	me.refresh_wear()
 	me.position = bank
 	for i in 60:
-		me.position = w.slide(me.position, Vector2(0, 1.0), Player.RADIUS, false, false, 0, false, me.floats())
+		me.position = w.slide(me.position, Vector2(0, 1.0), Player.RADIUS, false, false, 0, me.floats())
 	check(not me.swimming(), "without a life jacket you can't go in the canal")
 	me.worn.over = Items.make("lifejacket")
 	me.refresh_wear()
 	for i in 60:
-		me.position = w.slide(me.position, Vector2(0, 1.0), Player.RADIUS, false, false, 0, false, me.floats())
+		me.position = w.slide(me.position, Vector2(0, 1.0), Player.RADIUS, false, false, 0, me.floats())
 	check(me.swimming() and me.speed_mult() < 0.5, "in a life jacket you swim out into it, slowly (%.2f)" % me.speed_mult())
 	var zb := zombie_at(bank)
 	for i in 60:

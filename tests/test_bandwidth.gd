@@ -35,16 +35,16 @@ func run() -> void:
 	var dz := NetCodec.get_zombie(b)
 	check(dz.id == z.zid and dz.pos.distance_to(z.position) <= 0.5 and dz.hp == 47.0 and dz.missing == Look.LOST_ARM_L,
 			"a zombie packs into %d bytes and back (%s)" % [NetCodec.ZOMBIE_BYTES, dz])
-	me.prone = true
+	me.sneak = true
 	me.aim = Vector2(0, -30)
 	b = StreamPeerBuffer.new()
 	NetCodec.put_player(b, me)
 	var size := b.get_size()
 	b.seek(0)
 	var dp := NetCodec.get_player(b)
-	check(dp.id == me.peer_id and dp.pos.distance_to(me.position) <= 0.5 and dp.prone and (dp.aim as Vector2).angle_to(me.aim) < 0.03,
+	check(dp.id == me.peer_id and dp.pos.distance_to(me.position) <= 0.5 and dp.sneak and (dp.aim as Vector2).angle_to(me.aim) < 0.03,
 			"a player packs into %d bytes and back" % size)
-	me.prone = false
+	me.sneak = false
 
 	# Played back smoothly: between two snapshots, in between; past the newest,
 	# carried on a little; a zombie that only moved goes as a 7-byte nudge.

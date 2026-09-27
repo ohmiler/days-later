@@ -76,10 +76,8 @@ static func poses() -> Array:
 		["punch", {view = [Look.SIDE, false], attack = Look.PUNCH_R, ext = 0.8, guard = true}],
 		["kick", {view = [Look.FRONT, false], attack = Look.KICK, ext = 0.6}],
 		["leap", {view = [Look.SIDE, false], anchors = leap[1], lean = leap[1].lean}],
-		["crawl", {view = [Look.SIDE, false], anchors = Player.crawl_anchors(0.7), lean = Player.CRAWL_LEAN}],
+		["crawler", {view = [Look.SIDE, false], anchors = Zombie.crawl_anchors(0.7), lean = Zombie.CRAWL_LEAN}],
 		["fallen", {view = [Look.SIDE, false], fall = 1.0, fall_dir = 1.0}],
-		["crawl up", {}, TopRig.prone(false, 0.7)],
-		["crawl dn", {}, TopRig.prone(true, 0.7)],
 		["asleep", {}, TopRig.supine(true)],
 		["asleep dn", {}, TopRig.supine(false)],
 	]

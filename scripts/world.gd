@@ -608,26 +608,17 @@ func is_solid(c: Vector2i) -> bool:
 
 ## Cells taken by something low enough to jump over at a run: a line of
 ## sandbags, a bin, a dropped bag, a heap of rubble, the bonnet of a car or a
-## wreck (not a van, a bus or a stall with its roof). And cells under
-## something high enough off the ground to crawl under and hide: a bus, a
-## songthaew, a pickup, a van, the army truck (not a car: too low). Both
-## worked out from the props already there, the first time either is asked.
+## wreck (not a van, a bus or a stall with its roof). Worked out from the
+## props already there, the first time it is asked.
 const LOW_PROPS := ["sandbags", "barrier", "bin", "luggage", "debris"]
 const LOW_VEHICLES := {car = 2, taxi = 2, wreck = 2, tuktuk = 1}
-const HIGH_VEHICLES := {van = 2, pickup = 2, songthaew = 2, bus = 7, army = 3}
 var _low: Dictionary = {}
-var _under: Dictionary = {}
 var _props_read := false
 
 
 func is_low(c: Vector2i) -> bool:
 	_read_props()
 	return _low.has(c)
-
-
-func is_under(c: Vector2i) -> bool:
-	_read_props()
-	return _under.has(c)
 
 
 func _read_props() -> void:
@@ -640,17 +631,15 @@ func _read_props() -> void:
 			var at := to_cell(pos - Vector2(0, 5))
 			if blocked.has(at):
 				_low[at] = true
-		for table in [[LOW_VEHICLES, _low], [HIGH_VEHICLES, _under]]:
-			if not table[0].has(sp.kind):
-				continue
+		if LOW_VEHICLES.has(sp.kind):
 			# (A vehicle's pos is the bottom-left corner of its last cell.)
-			var n: int = table[0][sp.kind]
+			var n: int = LOW_VEHICLES[sp.kind]
 			var x := int(pos.x / TILE)
 			var last := int(pos.y / TILE) - 1
 			for i in n:
-				var at := Vector2i(x + i, last) if sp.get("horizontal", false) or sp.kind == "army" else Vector2i(x, last - n + 1 + i)
+				var at := Vector2i(x + i, last) if sp.get("horizontal", false) else Vector2i(x, last - n + 1 + i)
 				if blocked.has(at):
-					table[1][at] = true
+					_low[at] = true
 
 
 func is_built(id: int) -> bool:
@@ -788,13 +777,12 @@ func to_pos(c: Vector2i) -> Vector2:
 
 ## Move a body by `v`, sliding along walls one axis at a time.
 ## `road`: for a bike, which can't go indoors (floors and doorways are walls to it).
-## `prone`: crawling, which fits under a bus or a truck (see is_under).
-func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, storey := 0, prone := false, swim := false) -> Vector2:
+func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, storey := 0, swim := false) -> Vector2:
 	# Nearly every step stays over the same few cells it was already standing
 	# on (a step is under a pixel; a cell is 16): nothing new to run into, so
 	# no need to look (a horde is a few hundred of these a frame). Where a
 	# vehicle's drawn side overhangs a cell, look properly.
-	if storey == 0 and not roof and not road and not prone:
+	if storey == 0 and not roof and not road:
 		if not _boxes_read:
 			_read_boxes()
 		var d := r * FOOT_DEPTH
@@ -803,7 +791,7 @@ func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, sto
 		var np := pos + v
 		if to_cell(np + Vector2(-r, -d)) == lo and to_cell(np + Vector2(r, d)) == hi 				and not _boxes.has(lo) and not _boxes.has(hi) and not _boxes.has(Vector2i(lo.x, hi.y)) and not _boxes.has(Vector2i(hi.x, lo.y)):
 			return np
-	var stuck := _solid_corner_cells(pos, r, roof, road, storey, prone, swim)
+	var stuck := _solid_corner_cells(pos, r, roof, road, storey, swim)
 	if not stuck.is_empty():
 		# Already overlapping something solid (a door shut on us): only allow
 		# moves heading away from it, never deeper in or along it.
@@ -812,50 +800,48 @@ func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, sto
 			centre += to_pos(c) / stuck.size()
 		var away := pos - centre
 		for step in [v, Vector2(v.x, 0), Vector2(0, v.y)]:
-			if step.dot(away) > 0.0 and _solid_corner_cells(pos + step, r, roof, road, storey, prone, swim).size() <= stuck.size():
+			if step.dot(away) > 0.0 and _solid_corner_cells(pos + step, r, roof, road, storey, swim).size() <= stuck.size():
 				return pos + step
 		return pos
 	var nx := pos + Vector2(v.x, 0)
-	if can_stand(nx, r, roof, road, storey, prone, swim):
+	if can_stand(nx, r, roof, road, storey, swim):
 		pos = nx
 	var ny := pos + Vector2(0, v.y)
-	if can_stand(ny, r, roof, road, storey, prone, swim):
+	if can_stand(ny, r, roof, road, storey, swim):
 		pos = ny
 	return pos
 
 
-func _solid_corner_cells(p: Vector2, r: float, roof: bool, road := false, storey := 0, prone := false, swim := false) -> Array:
+func _solid_corner_cells(p: Vector2, r: float, roof: bool, road := false, storey := 0, swim := false) -> Array:
 	var out := []
 	for o in _feet(r):
 		var c := to_cell(p + o)
-		if prone and storey == 0 and not roof and is_under(c):
-			continue  # (flat on the ground, under a bus or a truck)
 		if swim and storey == 0 and not roof and get_tile(c) == WATER:
 			continue  # (a life jacket: the canal's no wall)
 		if (not is_roof(c)) if roof else (is_solid_on(c, storey) if storey > 0 else (is_solid(c) or road and get_tile(c) in [FLOOR, DOOR])):
 			out.append(c)
 		elif storey == 0 and not roof:
-			var box := _in_vehicle(c, p + o, prone)
+			var box := _in_vehicle(c, p + o)
 			if box.has_area():
 				out.append(to_cell(box.get_center()))  # (away from the vehicle, not the free cell beside it)
 	return out
 
 
 ## Vehicles running up the screen are drawn wider than their lane of cells:
-## beside them, what's drawn is solid too (cell -> [[box, high]]).
+## beside them, what's drawn is solid too (cell -> [box, ...]).
 var _boxes := {}
 var _boxes_read := false
 
 
-func _in_vehicle(c: Vector2i, p: Vector2, prone := false) -> Rect2:
+func _in_vehicle(c: Vector2i, p: Vector2) -> Rect2:
 	if not _boxes_read:
 		_read_boxes()
 	var list = _boxes.get(c)
 	if list == null:
 		return Rect2()
-	for e in list:
-		if e[0].has_point(p) and not (prone and e[1]):
-			return e[0]
+	for box: Rect2 in list:
+		if box.has_point(p):
+			return box
 	return Rect2()
 
 
@@ -872,13 +858,12 @@ func _read_boxes() -> void:
 		while top - 1 >= last - most + 1 and blocked.has(Vector2i(x, top - 1)):
 			top -= 1
 		var box := Rect2(x * TILE + shift.x, top * TILE, TILE - 2.0 * shift.x, (last + 1 - top) * TILE)
-		var high: bool = HIGH_VEHICLES.has(sp.kind)
 		for y in range(top, last + 1):
 			for side in [-1, 1]:
 				var c := Vector2i(x + side, y)
 				if not _boxes.has(c):
 					_boxes[c] = []
-				_boxes[c].append([box, high])
+				_boxes[c].append(box)
 
 
 ## Seen from above at this angle, what someone stands on is wide and shallow:
@@ -894,18 +879,16 @@ static func _feet(r: float) -> Array:
 
 ## On the ground, stand anywhere not solid; on the roof, only on shophouse
 ## roofs; upstairs, only on the floor up there.
-func can_stand(p: Vector2, r: float, roof := false, road := false, storey := 0, prone := false, swim := false) -> bool:
+func can_stand(p: Vector2, r: float, roof := false, road := false, storey := 0, swim := false) -> bool:
 	for o in _feet(r):
 		var c := to_cell(p + o)
-		if prone and storey == 0 and not roof and is_under(c):
-			continue
 		if swim and storey == 0 and not roof and get_tile(c) == WATER:
 			continue
 		if (not is_roof(c)) if roof else is_solid_on(c, storey):
 			return false
 		if road and get_tile(c) in [FLOOR, DOOR]:
 			return false
-		if storey == 0 and not roof and _in_vehicle(c, p + o, prone).has_area():
+		if storey == 0 and not roof and _in_vehicle(c, p + o).has_area():
 			return false
 	return true
 

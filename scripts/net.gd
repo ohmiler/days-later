@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 27  # 27: silent kill played out (fx_stealth); 26: crawlers (missing 4 bits, storey 4 bits), silent kills; 25: hit zones (fx_hit zone, kill), new death styles; 24: four new zombie kinds, flag 16, pills/whistle; 23: place items (round B), shut-in zombies; 22: big buildings (CityGen.GEN 9), generators, power; 21: WorldState (things, buildings), rain in every snapshot; 20: storeys
+const PROTOCOL := 28  # 28: no crawling (P_PRONE gone, req_prone gone); 27: silent kill played out (fx_stealth); 26: crawlers (missing 4 bits, storey 4 bits), silent kills; 25: hit zones (fx_hit zone, kill), new death styles; 24: four new zombie kinds, flag 16, pills/whistle; 23: place items (round B), shut-in zombies; 22: big buildings (CityGen.GEN 9), generators, power; 21: WorldState (things, buildings), rain in every snapshot; 20: storeys
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -401,7 +401,6 @@ func snapshot(data: PackedByteArray) -> void:
 		p.sitting = d.sitting
 		p.rest_face = d.rest_face
 		p.on_car = d.on_car
-		p.prone = d.prone
 		p.grabbed_by = d.grabbed_by
 		p.struggle = d.struggle
 		var seat: int = d.seat

@@ -186,7 +186,7 @@ func server_tick(delta: float) -> void:
 		lunge_t -= delta
 		if lunge_t <= 0.0 and target and target.alive() and not target.on_roof and target.on_car < 0 and target.storey == storey and position.distance_to(target.position) < 16.0:
 			var arms := 2 - int(missing & Look.LOST_ARM_L != 0) - int(missing & Look.LOST_ARM_R != 0)
-			if arms > 0 and target.grabbed_by < 0 and not target.vaulting() and not target.under_vehicle() and randf() < grab_chance:
+			if arms > 0 and target.grabbed_by < 0 and not target.vaulting() and randf() < grab_chance:
 				grab(target)
 			else:
 				target.bite(bite_damage(), target.bite_part(position, false))
@@ -335,7 +335,6 @@ func grab(p: Player) -> void:
 	p.grabbed_by = zid
 	p.grab_t = GRAB_TIME
 	p.struggle = 0.0
-	p.prone = false
 	p.stand_up()
 	if get_parent() is Main:
 		get_parent()._toast(p, "โดนจับ! กด Space หรือคลิกรัว ๆ ให้หลุด")
@@ -398,6 +397,16 @@ func _sham(on: bool) -> void:
 	flags = (2 | 16) if on else 0
 	if on:
 		down_el = 0.7  # (already lying there, not falling)
+
+
+## A crawler side-on, `a` (-1..1) through the stride: flat to the ground,
+## head up, forearms out ahead (one reaching as the other pulls back) and the
+## knee on the other side drawn up to push.
+const CRAWL_LEAN := 1.26
+static func crawl_anchors(a: float) -> Dictionary:
+	return {seat = Vector2(-5.5, -3.6 + absf(a) * 0.25), head = Vector2(-3.5, 1.5),  # (head up, eyes ahead)
+			hands = [Vector2(12.0 + a * 2.4, -0.5), Vector2(12.0 - a * 2.4, -0.5)],
+			feet = [Vector2(-15.0 + maxf(0.0, -a) * 4.0, -0.4 - maxf(0.0, -a) * 1.4), Vector2(-15.0 + maxf(0.0, a) * 4.0, -0.4 - maxf(0.0, a) * 1.4)]}
 
 
 ## A leg cut off: it can't stand, it drags itself along the ground.
@@ -505,11 +514,7 @@ func _nearest_player() -> Player:
 		var d := position.distance_to(p.position)
 		var lit := world.is_lit(p.position) or p.lamp_lit() or (p.riding >= 0 and p.riding < world.vehicles.size() and Vehicles.headlight_on(world.vehicles[p.riding], world))  # (a headlight shows you up)
 		var reach := SIGHT_DAY if lit else SIGHT_DARK * p.seen_in_dark()
-		if p.under_vehicle():
-			reach = SENSE  # (under a bus: only right up close does it know you're there)
-		elif p.prone:
-			reach *= 0.35  # flat on the ground
-		elif p.sneak:
+		if p.sneak:
 			reach *= 0.5
 		elif p.sitting != -1 or p.sleeping:
 			reach *= 0.65  # (low down, harder to spot)
@@ -819,8 +824,8 @@ func _draw_body() -> void:
 	if crawler() and down_el < 0.0 and up_el < 0.0:
 		# Side-on, pulling itself along on its forearms (a survivor's crawl).
 		st.view = [Look.SIDE, cos(facing) < 0.0]
-		st.anchors = Player.crawl_anchors(sin(phase * 0.8))
-		st.lean = Player.CRAWL_LEAN
+		st.anchors = crawl_anchors(sin(phase * 0.8))
+		st.lean = CRAWL_LEAN
 		st.erase("bite")
 	if _dancing():
 		st.moving = true
