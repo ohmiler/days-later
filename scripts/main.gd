@@ -306,7 +306,15 @@ func _host(dedicated: bool, resume := false) -> void:
 func _join(to: String) -> void:
 	address = to
 	var peer := _socket()
-	var url := "ws://%s:%d" % [to, port]
+	# "host:port" picks a server on another port (several zones on one machine).
+	var at := port
+	if to.count(":") == 1 and to.get_slice(":", 1).is_valid_int():
+		at = int(to.get_slice(":", 1))
+		to = to.get_slice(":", 0)
+	# A page served over https may only open secure sockets (wss): a public
+	# server sits behind something that speaks TLS for it (a Cloudflare tunnel).
+	var secure := OS.has_feature("web") and str(JavaScriptBridge.eval("window.location.protocol", true)) == "https:"
+	var url := "%s://%s:%d" % ["wss" if secure else "ws", to, at]
 	if peer.create_client(url) != OK:
 		ui.set_status("ที่อยู่ไม่ถูกต้อง")
 		return
@@ -1486,8 +1494,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_request(&"req_sleep", [])
 		elif k == KEY_X:
 			_request(&"req_sit", [])
-		elif k == KEY_F2 and (multiplayer.is_server() or "--admin" in OS.get_cmdline_user_args()):
+		elif k == KEY_F2 and (multiplayer.is_server() or Admin.asked_for()):
 			ui.admin.visible = not ui.admin.visible  # developer tools (see Admin)
+		elif k == KEY_F3:
+			ui.perf.visible = not ui.perf.visible
 		elif k == KEY_C:
 			sneak_toggle = not sneak_toggle
 			ui.push_feed("ย่อง: เงียบ ช้า มองเห็นยาก" if sneak_toggle else "เลิกย่อง")
