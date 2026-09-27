@@ -211,28 +211,42 @@ static func _dress(lk: Dictionary, zombie: bool) -> Dictionary:
 	var out := lk.duplicate()
 	out.shoes = lk.get("shoes", SHOE)
 	var wear: Dictionary = lk.get("wear", {})
-	var grime := 0.15 if zombie else 0.0  # the dead's clothes are filthy
+	# The dead's clothes are filthy (their worn items already are: see
+	# Zombie._set_wear; this is for their own shirt and trousers).
+	var grime: float = lk.get("grime", 0.3) if zombie else 0.0
 	var body: Dictionary = wear.get("body", {})
 	if not body.is_empty() and body.shape != "vest":
-		out.shirt = (body.col as Color).darkened(grime)
+		out.shirt = body.col
 		out.long_sleeves = body.shape in ["long", "hoodie", "shirt"]
 		out.sleeveless = body.shape == "tank"
 	var legs: Dictionary = wear.get("legs", {})
 	if not legs.is_empty():
-		out.pants = (legs.col as Color).darkened(grime)
+		out.pants = legs.col
 		out.shorts = legs.shape in ["shorts", "skirt"]  # (a skirt: bare legs below it)
 	var feet: Dictionary = wear.get("feet", {})
 	if not feet.is_empty():
-		out.shoes = (feet.col as Color).darkened(grime)
+		out.shoes = feet.col
 		out.boots = feet.shape == "boots"
 		out.heels = feet.shape == "heels"
 		if feet.shape == "sandals":
 			out.shoes = (lk.skin as Color).darkened(0.12)  # (flip-flops: at this size, bare feet)
 	var over: Dictionary = wear.get("over", {})
 	if over.get("covers", false):  # a coat over everything: its colour on the body and sleeves
-		out.shirt = (over.col as Color).darkened(grime)
+		out.shirt = over.col
 		out.long_sleeves = true
+	if zombie and wear.get("body", {}).is_empty() and lk.has("shirt"):
+		out.shirt = _filthy(lk.shirt, grime)  # (its own clothes, not a worn item)
+	if zombie and wear.get("legs", {}).is_empty() and lk.has("pants"):
+		out.pants = _filthy(lk.pants, grime)
 	return out
+
+
+const DIRT := Color("5a5244")
+
+
+## A colour worn filthy: `g` 0 clean .. 1 caked (faded to dirt, darker).
+static func _filthy(col: Color, g: float) -> Color:
+	return col.lerp(DIRT, g * 0.7).darkened(g * 0.4)
 
 
 ## Set the drawing transform for a body part, on top of the whole-body transform.
@@ -591,7 +605,7 @@ static func _head(ci, view: int, c: Vector2, skin: Color, hair: Color, style: St
 		_rect(ci, Rect2(-1.2, -21, 2.4, 2), skin.darkened(0.25))  # neck
 	_dot(ci, c, 4.2, skin.darkened(0.18))
 	_dot(ci, c + Vector2(-0.4, -0.4), 3.7, skin)
-	var eye := Color("e6e2c8") if zombie else Color("1c1612")
+	var eye := Color("dcd8bc") if zombie else Color("1c1612")  # a dead eye: milky, no pupil
 	if closed:
 		eye = skin.darkened(0.45)  # eyes shut
 	var dark := skin.darkened(0.4)
@@ -613,8 +627,11 @@ static func _head(ci, view: int, c: Vector2, skin: Color, hair: Color, style: St
 			if not zombie:
 				_rect(ci, Rect2(c.x - 2.3, c.y - 0.7, 1.6, 0.45), hair.darkened(0.2))  # brows
 				_rect(ci, Rect2(c.x + 0.7, c.y - 0.7, 1.6, 0.45), hair.darkened(0.2))
-			_dot(ci, c + Vector2(-1.5, 0.4), 0.6, eye)
-			_dot(ci, c + Vector2(1.5, 0.4), 0.6, eye)
+			if zombie and not closed:
+				_dot(ci, c + Vector2(-1.5, 0.4), 1.0, skin.darkened(0.42))  # sunken sockets
+				_dot(ci, c + Vector2(1.5, 0.4), 1.0, skin.darkened(0.42))
+			_dot(ci, c + Vector2(-1.5, 0.4), 0.75 if zombie else 0.6, eye)
+			_dot(ci, c + Vector2(1.5, 0.4), 0.75 if zombie else 0.6, eye)
 			_rect(ci, Rect2(c.x - 0.4, c.y + 0.8, 0.8, 1.0), skin.darkened(0.15))  # nose
 			if zombie:
 				_rect(ci, Rect2(c.x - 1.1 - mouth * 0.3, c.y + 2.2, 2.2 + mouth * 0.6, 1.0 + mouth * 1.4), Color("3a1a16"))
@@ -650,7 +667,9 @@ static func _head(ci, view: int, c: Vector2, skin: Color, hair: Color, style: St
 			_dot(ci, c + Vector2(-1.0, 0.6), 0.85, skin.darkened(0.12))  # ear, on the hairline
 			if not zombie:
 				_rect(ci, Rect2(c.x + 1.6, c.y - 0.9, 1.6, 0.45), hair.darkened(0.2))  # brow
-			_dot(ci, c + Vector2(2.4, 0.3), 0.55, eye)
+			if zombie and not closed:
+				_dot(ci, c + Vector2(2.4, 0.3), 0.9, skin.darkened(0.42))  # sunken socket
+			_dot(ci, c + Vector2(2.4, 0.3), 0.7 if zombie else 0.55, eye)
 			_dot(ci, c + Vector2(4.0, 1.0), 0.75, skin)  # nose
 			_rect(ci, Rect2(c.x + 2.3, c.y + 2.3, 1.3 + mouth * 0.4, 0.45 + mouth * 1.3), Color("3a1a16") if zombie else dark)
 			if zombie and drip:

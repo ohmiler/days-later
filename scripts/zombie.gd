@@ -126,6 +126,8 @@ var vary := {}
 var gore := 0
 var hair_style := "short"
 var gait := 1.0
+var height := 1.0  # drawn this much taller or shorter (no two in a crowd the same)
+var grime := 0.3  # how filthy its clothes are (Look._dress)
 var _path_goal := Vector2.INF  # where the current path leads, to reuse it while that stays put
 
 
@@ -434,7 +436,7 @@ func arm_left_to_cut() -> int:
 ## Everything needed to draw this body (for corpses and flying parts).
 func body_look() -> Dictionary:
 	return {skin = skin, shirt = shirt, pants = pants, hair = hair, hair_style = hair_style, wear = wear_look,
-			missing = missing, gore = gore}
+			missing = missing, gore = gore, height = height, grime = grime}
 
 
 func _bash_door_ahead() -> bool:
@@ -569,6 +571,9 @@ func _ready() -> void:
 	facing = RandomNumberGenerator.new().randf_range(-PI, PI) if zid == 0 else float(zid * 2654435761 % 6283) / 1000.0 - PI  # standing about, facing anywhere
 	if outfit.is_empty() and r2.randf() < 0.07:
 		missing = Look.LOST_ARM_L if r2.randf() < 0.5 else Look.LOST_ARM_R  # lost an arm before it turned
+	height = r2.randf_range(0.92, 1.08)
+	grime = r2.randf_range(0.25, 0.55) if outfit.is_empty() else 0.15  # (a survivor who turned: not long in the dirt)
+	_set_wear(wear)  # (dirtied as filthy as it turned out)
 
 
 static func kind_for(id: int) -> String:
@@ -637,6 +642,13 @@ func apply_outfit(o: Array) -> void:
 func _set_wear(ids: Dictionary) -> void:
 	wear = ids
 	wear_look = Items.wear_draw(ids)
+	# Everything it has on is filthy, the vest and the costume too (Look._filthy).
+	for slot in wear_look:
+		var d: Dictionary = wear_look[slot].duplicate()
+		for key in d:
+			if d[key] is Color:
+				d[key] = Look._filthy(d[key], grime)
+		wear_look[slot] = d
 
 
 func _process(delta: float) -> void:
@@ -851,10 +863,12 @@ func _draw_body() -> void:
 	var lk := body_look()
 	lk.mouth = 1.0 if kind == "screamer" else 0.0
 	Look.lift = Vector2(0, -lift)
+	Look.body_xf = Transform2D(0.0, Vector2(height, height), 0.0, Vector2.ZERO)  # (from the feet up)
 	if kind == "junkie" and state == 2 and down_el < 0.0:
 		Look.lift += Vector2(randf_range(-0.7, 0.7), randf_range(-0.5, 0.5))  # twitching
 	Look.draw_eased(self, st, lk, _pose)  # (from one pose to the next over a moment, as a survivor does)
 	Look.lift = Vector2.ZERO
+	Look.body_xf = Transform2D.IDENTITY
 	draw_set_transform(Vector2(0, -lift))
 	Look.draw_hp(self, hp / max_hp)
 	if alert_t > 0.0 and state > 0:
