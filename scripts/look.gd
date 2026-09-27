@@ -44,6 +44,9 @@ static var muzzle = null  # where the last gun drawn points out (in the canvas i
 ## Menu option: no flying parts, wounds or spurting blood (fights still play the same).
 static var low_gore := false
 static var _UV3 := PackedVector2Array([Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0.5, 0.5)])  # (the texture's solid middle)
+static var _Q := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])  # (reused: no new array per dot)
+static var _C := PackedColorArray([Color.WHITE])
+static var _UV_DOT := PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])  # (the whole round dot)
 static var _UV4 := PackedVector2Array([Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0.5, 0.5)])
 
 
@@ -351,7 +354,14 @@ static func _dot(ci, c: Vector2, r: float, col: Color, just_load := false) -> vo
 		_dot_tex = ImageTexture.create_from_image(img)
 	if just_load:
 		return
-	ci.draw_texture_rect(_dot_tex, Rect2(c.x - r, c.y - r, r * 2.0, r * 2.0), false, col)
+	# (A textured quad the same kind of command as every other shape, so a whole
+	# character batches: switching between kinds of command starts a new batch.)
+	_Q[0] = Vector2(c.x - r, c.y - r)
+	_Q[1] = Vector2(c.x + r, c.y - r)
+	_Q[2] = Vector2(c.x + r, c.y + r)
+	_Q[3] = Vector2(c.x - r, c.y + r)
+	_C[0] = col
+	ci.draw_primitive(_Q, _C, _UV_DOT, _dot_tex)
 
 
 ## A filled rectangle, drawn from the same texture as everything else so the
@@ -359,7 +369,12 @@ static func _dot(ci, c: Vector2, r: float, col: Color, just_load := false) -> vo
 static func _rect(ci, r: Rect2, col: Color) -> void:
 	if _dot_tex == null:
 		dot_tex()
-	ci.draw_texture_rect_region(_dot_tex, r, Rect2(30, 30, 4, 4), col)
+	_Q[0] = r.position
+	_Q[1] = Vector2(r.end.x, r.position.y)
+	_Q[2] = r.end
+	_Q[3] = Vector2(r.position.x, r.end.y)
+	_C[0] = col
+	ci.draw_primitive(_Q, _C, _UV4, _dot_tex)
 
 
 ## A straight stroke as one textured quad (same texture, so it batches too).
@@ -385,7 +400,9 @@ static func _poly(ci, pts: PackedVector2Array, col: Variant) -> void:
 	var per_point: bool = col is PackedColorArray
 	if n <= 4:
 		# (Most are: limbs, strokes, rects. One primitive, as it comes.)
-		ci.draw_primitive(pts, col if per_point else PackedColorArray([col]), _UV4 if n == 4 else _UV3, _dot_tex)
+		if not per_point:
+			_C[0] = col
+		ci.draw_primitive(pts, col if per_point else _C, _UV4 if n == 4 else _UV3, _dot_tex)
 		return
 	var flat := PackedColorArray([col]) if not per_point else PackedColorArray()
 	var i := 1

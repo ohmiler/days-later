@@ -286,6 +286,8 @@ func server_tick(delta: float) -> void:
 			on_roof = false
 			on_car = -1
 		return
+	if sleeping or sitting != -1 or grabbed_by >= 0 or vaulting() or getup_t > 0.0 or on_car >= 0 or riding >= 0:
+		walk_v = Vector2.ZERO  # (not on your own feet: no running start after)
 	if sleeping or sitting != -1:
 		if move.length() > 0.1 or punching or kicking:
 			stand_up()
@@ -312,7 +314,7 @@ func server_tick(delta: float) -> void:
 		return
 	if riding >= 0:
 		return  # the bike moves them (Vehicles.server_tick)
-	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof, false, storey, prone, floats())
+	walk(move, delta)
 
 
 ## The way the body faces: where you aim, or, held by a zombie, at it.
@@ -420,6 +422,24 @@ func heat() -> float:
 	for slot in wear_ids:
 		h += float(Items.def(wear_ids[slot]).get("hot", 0.0))
 	return h * (0.4 if conditions.has("wet") else 1.0)  # (soaked, you're not hot)
+
+
+const ACCEL := SPEED * 14.0  # px/s² getting going and pulling up: full walking pace in about a fifteenth of a second
+var walk_v := Vector2.ZERO  # how fast you're going on foot (eases toward what the keys ask)
+
+
+## One step on foot: speed eases toward what `dir` asks (a moment to get
+## going, to stop), then the step slides along walls. The server and your
+## own machine both step this way, so they agree.
+func walk(dir: Vector2, delta: float) -> void:
+	var want := dir.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position)
+	walk_v = walk_v.move_toward(want, ACCEL * delta)
+	if walk_v == Vector2.ZERO:
+		return
+	var was := position
+	position = world.slide(position, walk_v * delta, RADIUS, on_roof, false, storey, prone, floats())
+	if delta > 0.0:
+		walk_v = (position - was) / delta  # (against a wall, you're not still pushing into it)
 
 
 const CLANG_NOISE := 170.0  # a bite on a pot helmet: the street hears it

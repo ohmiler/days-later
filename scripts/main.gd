@@ -103,6 +103,11 @@ var shake := 0.0
 var cam_lead := Vector2.ZERO  # how far ahead the camera looks, riding
 const CAM_LEAD := 0.3  # seconds of travel
 const CAM_LEAD_MAX := 48.0
+const CAM_AIM := 0.1  # on foot, the camera looks this share of the way toward where you aim
+const CAM_AIM_GUN := 0.28  # ...with a gun raised, further
+const CAM_FOLLOW := 12.0  # how quickly it catches up (a few pixels behind at a walk)
+const CAM_CUT := 160.0  # further than this from where it should be: cut, don't glide
+var cam_pos := Vector2.INF
 const INTERACT_RANGE := 20.0
 var pickups := {}  # id -> {pos, item: {id, n, hp}} items lying on the ground
 var next_pickup := 1
@@ -982,21 +987,34 @@ func _process(delta: float) -> void:
 			net.send_input.rpc_id(1, move, aim, punch, kick, me.sprint, me.sneak, aiming)
 			me.set_attack_input(punch, kick)
 			combat.predict(me, delta)
+			if me.riding >= 0:
+				me.walk_v = Vector2.ZERO  # (the bike carries you)
 			if me.riding >= 0 and me.seat == 0 and me.alive():
 				if Vehicles.step(me, world.vehicles[me.riding], move, delta, world) > Vehicles.BUMP:
 					shake = maxf(shake, 2.5)  # (felt at once; the server says how bad)
 			elif me.alive() and me.on_car >= 0 and me.on_car < world.street_props.size() and move.length() > 0.1:
 				me.position = StreetProp.roof_clamp(world.street_props[me.on_car], me.position + move * Player.SPEED * Player.ROOF_SPEED * delta)
 			elif me.alive() and me.riding < 0 and not me.vaulting() and me.grabbed_by < 0 and not me.sleeping and me.sitting == -1 and me.rest_k < 0.05 and me.on_car < 0:
-				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof, false, me.storey, me.prone, me.floats())
+				me.walk(move, delta)
+			else:
+				me.walk_v = Vector2.ZERO  # (not on your own feet)
 		# On a bike the camera looks ahead of where you're going, to see what's coming.
 		var lead := Vector2.ZERO
 		if me.riding >= 0 and me.riding < world.vehicles.size() and me.alive():
 			var d: Player = players.get(world.vehicles[me.riding].rider)
 			if d:
 				lead = d.ride_seen * CAM_LEAD
-		cam_lead = cam_lead.lerp(lead.limit_length(CAM_LEAD_MAX), minf(1.0, 2.5 * delta))
-		camera.position = me.position + Look.CHEST + Vector2(0, -me.lift) + me.climb_offset() + cam_lead
+		# On foot it looks a little the way you're looking (further with a gun raised).
+		if me.riding < 0 and me.alive() and not ui.gear.visible:
+			lead = me.aim.limit_length(220.0) * (CAM_AIM_GUN if me.aiming else CAM_AIM)
+		cam_lead = cam_lead.lerp(lead.limit_length(CAM_LEAD_MAX), minf(1.0, (2.5 if me.riding >= 0 else 4.0) * delta))
+		# The camera follows a moment behind, easing in, rather than nailed to you;
+		# a jump (the stairs, a new zone, waking up) it just cuts to.
+		var want := me.position + Look.CHEST + Vector2(0, -me.lift) + me.climb_offset() + cam_lead
+		if cam_pos == Vector2.INF or cam_pos.distance_to(want) > CAM_CUT:
+			cam_pos = want
+		cam_pos = cam_pos.lerp(want, 1.0 - exp(-CAM_FOLLOW * delta))
+		camera.position = cam_pos
 		camera.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake
 		shake = move_toward(shake, 0.0, delta * 14.0)
 		if not me.on_roof:
@@ -1136,11 +1154,11 @@ func _update_inside(me: Player) -> void:
 		b = null
 	if b != hidden_building:
 		if hidden_building:
-			hidden_building.visible = true
+			hidden_building.fade(true)
 			hidden_building.show_storey(0)
 		hidden_building = b
 		if b:
-			b.visible = false
+			b.fade(false, world.update_bulbs)
 		decals_up.queue_redraw()
 		world.update_bulbs()  # (a big building's rooms light up only from inside)
 	# Up the stairs: the floor up there instead of the one below.

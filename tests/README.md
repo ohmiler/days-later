@@ -72,8 +72,11 @@ out, and fails if either goes over its budget. Run it after visual work.
 `tests/horde.gd` (also in a window) measures a horde night: 40, 100 and 160
 zombies closing in on you in the same city every run, and where the frame's
 time goes (the server's tick, the zombies' thinking and moving, pushing them
-apart, their updates and drawing, and the rest). On 2026-09-27, 160 zombies:
-before 17-20 ms a frame, after the collision fast path and the rest ~11 ms.
+apart, their updates and drawing, and the rest). The mouse is held to your
+right, so you always face the same way (how many zombies are in view changes
+the numbers a lot). On 2026-09-27, 160 zombies: 22.5 ms a frame before the
+horde work, 16.5 after the collision fast path, 14.5 once every shape drew
+as the same kind of command (draw calls 1,700 -> 300).
 
 ## Writing a new one
 

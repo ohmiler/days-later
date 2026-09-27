@@ -76,6 +76,24 @@ func _ready() -> void:
 	offset_top = -H / 2 - 30
 	offset_bottom = H / 2 - 30
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	visibility_changed.connect(_on_shown)
+
+
+var _pop: Tween
+
+
+## Opening, it grows into place and fades in (a tenth of a second); closing is at once.
+func _on_shown() -> void:
+	if not visible or not is_inside_tree():
+		return
+	if _pop:
+		_pop.kill()
+	pivot_offset = size * 0.5
+	modulate.a = 0.0
+	scale = Vector2.ONE * 0.97
+	_pop = create_tween().set_parallel().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	_pop.tween_property(self, "modulate:a", 1.0, 0.12)
+	_pop.tween_property(self, "scale", Vector2.ONE, 0.12)
 
 
 # --- Layout ------------------------------------------------------------------
