@@ -201,8 +201,11 @@ func _draw_body(ci: MeshCanvas) -> void:
 	var tw := _twitch(t)
 	if tw > 0.0:
 		Look.lift += Vector2(0, -tw)  # a jerk through the body
+	var hs: float = lk.get("height", 1.0)
+	Look.body_xf = Transform2D(0.0, Vector2(hs, hs), 0.0, Vector2.ZERO)  # (as tall lying there as it stood)
 	Look.draw(ci, {view = [Look.SIDE, fall_dir > 0], zombie = zombie, fall = clampf(t / FALL_TIMES.get(style, FALL_TIME), 0.001, 1.0),
 			fall_dir = fall_dir, fall_kind = style if Rig.FALLS.has(style) else "normal", face_down = style in Combat.FACE_DOWN}, body)
+	Look.body_xf = Transform2D.IDENTITY
 	Look.lift = Vector2.ZERO
 
 
