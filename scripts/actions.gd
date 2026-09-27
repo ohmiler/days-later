@@ -362,7 +362,7 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			main.doors._reinforce(p, t.id)
 		"stomp":
 			var z: Zombie = main.zombies.get(t.id)
-			if z == null or z.down_t <= 0.0:
+			if z == null or (z.down_t <= 0.0 and not z.crawler()):
 				return
 			main.combat.fx_melee.rpc(p.peer_id, Look.KICK)
 			main._make_noise(z.position, main.NOISE_HIT)

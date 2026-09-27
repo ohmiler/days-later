@@ -7,7 +7,7 @@ extends Node2D
 const LIFE := 40.0
 const GRAVITY := 260.0
 
-var kind := "chunk"  # "head", "arm" or "chunk"
+var kind := "chunk"  # "head", "arm", "leg" or "chunk"
 var lk := {}  # look of the body it came from (skin, shirt, hair, hair_style, wear)
 var vel := Vector2.ZERO  # along the ground
 var h := 0.0  # height above the ground
@@ -73,6 +73,13 @@ func _draw() -> void:
 					lk.get("long_sleeves", false))
 			draw_circle(Vector2(0, -4.0), 1.5, Look.BLOOD)
 			draw_circle(Vector2(0, -4.0), 0.6, Color("d8d0c0"))
+		"leg":
+			var trouser: Color = lk.get("pants", Look.PANTS[0])
+			Look._limb(self, Vector2(0, -5.0), Vector2(0.3, 0.5), 3.0, 2.8, trouser)
+			Look._limb(self, Vector2(0.3, 0.5), Vector2(0.2, 5.0), 2.8, 2.5, trouser.darkened(0.08))
+			draw_rect(Rect2(-1.2, 4.4, 3.4, 1.8), lk.get("shoes", Color("2a2a2c")))
+			draw_circle(Vector2(0, -5.0), 1.5, Look.BLOOD)
+			draw_circle(Vector2(0, -5.0), 0.6, Color("d8d0c0"))
 		_:
 			var c := Look.BLOOD if int(spin) % 2 == 0 else skin.darkened(0.3)
 			draw_colored_polygon(PackedVector2Array([Vector2(-1.4, -0.6), Vector2(0.2, -1.4), Vector2(1.5, -0.2),

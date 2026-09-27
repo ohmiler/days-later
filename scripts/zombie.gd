@@ -20,6 +20,7 @@ const KINDS := {
 	# The evening aerobics class never stopped: dancing on the spot till it hears you.
 	"aerobic": {speed = 42.0, hp = 50.0, dmg = 7.0, girth = 0.9, door = 0.8},
 }
+const CRAWL_SPEED := 0.3  # a crawler (a leg cut off) moves at this much of its speed
 const FRENZY := 9.0  # a junkie chases this long, then burns out...
 const SPENT := 3.5  # ...and lies there spent this long
 const WAKE := 30.0  # a faker gets up when someone comes this close
@@ -180,7 +181,7 @@ func server_tick(delta: float) -> void:
 		# Someone it was after went up (or down) the stairs: after them, a
 		# floor at a time. Else whoever it can see on its own floor.
 		climb = NO_STAIRS
-		if target and target.alive() and not target.on_roof and target.storey != storey \
+		if target and target.alive() and not target.on_roof and target.storey != storey and not crawler() \
 				and position.distance_to(target.position) < 160.0:
 			climb = _stairs_after(target)
 		if climb == NO_STAIRS:
@@ -267,6 +268,19 @@ func server_tick(delta: float) -> void:
 			attack_cd = randf_range(0.9, 1.5)
 			if get_parent() is Main:
 				get_parent().actions.bang_car(target.on_car, position)
+		return
+	if crawler():
+		# Dragging itself along: it can only get at your ankles.
+		if d < 11.0:
+			facing = (target.position - position).angle()
+			if attack_cd <= 0.0 and target.on_car < 0 and target.riding < 0:
+				attack_cd = GROUND_BITE_CD
+				target.bite(bite_damage() * 0.7, "legs")
+				_jolt(target)
+		elif path.is_empty() or d < 20:
+			_move((target.position - position).normalized(), delta)
+		else:
+			_follow(delta)
 		return
 	if d < 12:
 		if attack_cd <= 0:
@@ -368,6 +382,11 @@ func _sham(on: bool) -> void:
 		down_el = 0.7  # (already lying there, not falling)
 
 
+## A leg cut off: it can't stand, it drags itself along the ground.
+func crawler() -> bool:
+	return missing & Look.LOST_LEG != 0
+
+
 ## Server: knocked flat by a kick.
 func knock_down() -> void:
 	down_t = DOWN_TIME
@@ -429,7 +448,8 @@ func sense(pos: Vector2, look := 9.0) -> void:
 
 func _move(dir: Vector2, delta: float) -> void:
 	var t0 := Time.get_ticks_usec() if Main.profiling else 0
-	position = world.slide(position, dir * speed * (1.0 if storey > 0 else world.slow_at(position)) * delta, RADIUS, false, false, storey)
+	var sp := speed * (CRAWL_SPEED if crawler() else 1.0)
+	position = world.slide(position, dir * sp * (1.0 if storey > 0 else world.slow_at(position)) * delta, RADIUS, false, false, storey)
 	if Main.profiling:
 		_prof("move", t0)
 
@@ -776,6 +796,12 @@ func _draw_body() -> void:
 	elif up_el >= 0.0:
 		st.rise = lerpf(_risen, 1.0, clampf(up_el / 0.2, 0.0, 1.0))
 		st.fall_dir = fall_side
+	if crawler() and down_el < 0.0 and up_el < 0.0:
+		# Side-on, pulling itself along on its forearms (a survivor's crawl).
+		st.view = [Look.SIDE, cos(facing) < 0.0]
+		st.anchors = Player.crawl_anchors(sin(phase * 0.8))
+		st.lean = Player.CRAWL_LEAN
+		st.erase("bite")
 	if _dancing():
 		st.moving = true
 		st.scream = fmod(dance_t * 0.8, 1.0)  # arms up and down with the beat

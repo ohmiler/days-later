@@ -109,14 +109,14 @@ static func read_own(data: PackedByteArray) -> Dictionary:
 
 ## A zombie in 11 bytes: id, where, health, what it's up to (state 0-2 and
 ## flags 1 lunging, 2 down, 8 holding someone, 16 staying down), and one byte for what it's
-## lost (bits 1, 2, 4) and which storey it is on (the 5 bits above them).
+## lost (bits 1, 2, 4, 8) and which storey it is on (the 4 bits above them).
 static func zombie_bytes(z: Zombie) -> PackedByteArray:
 	var b := StreamPeerBuffer.new()
 	b.put_u32(z.zid)
 	put_pos(b, z.position)
 	b.put_u8(clampi(ceili(z.hp), 0, 255))
 	b.put_u8((z.state & 3) | ((z.flags & 31) << 2))
-	b.put_u8((z.missing & 7) | (clampi(z.storey, 0, 31) << 3))
+	b.put_u8((z.missing & 15) | (clampi(z.storey, 0, 15) << 4))
 	return b.data_array
 
 
@@ -126,8 +126,8 @@ static func get_zombie(b: StreamPeerBuffer) -> Dictionary:
 	d.state = s & 3
 	d.flags = s >> 2
 	var m := b.get_u8()
-	d.missing = m & 7
-	d.storey = m >> 3
+	d.missing = m & 15
+	d.storey = m >> 4
 	return d
 
 

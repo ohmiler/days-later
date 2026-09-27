@@ -25,6 +25,8 @@ const FADE := 10.0
 const FALL_TIME := 0.75
 const FALL_TIMES := {slump = 0.95, kneel = 1.35, flung = 0.55}
 const SLIDE := 16.0  # flung: thrown this far back along the ground as it goes down
+const TWITCH := 2.4  # some go on twitching this long after they're down
+const TWITCH_ONE_IN := 3  # (one body in this many)
 
 var lk := {}  # look of the body (Look.draw's look dictionary)
 var zombie := true
@@ -137,7 +139,7 @@ func _process(delta: float) -> void:
 	# pool spreads, then only as it slowly rots or chars; the flies and flames
 	# on their own, 12 a second.
 	_redraw_t -= delta
-	var falling: bool = t < FALL_TIMES.get(style, FALL_TIME) + 0.05 or (spurts and t < SPURT_TIME)
+	var falling: bool = t < FALL_TIMES.get(style, FALL_TIME) + 0.05 or (spurts and t < SPURT_TIME) or _twitch(t) >= 0.0
 	var every := 0.0 if falling else (1.0 / 12.0 if t < 3.0 else (0.5 if burn >= 0.0 and burn < BURN_TIME + 22.0 else 1.0))
 	var busy := t < 3.0 or (t > ROT and t < BONES + 1.0) or (burn >= 0.0 and burn < BURN_TIME + 22.0)
 	if busy and _redraw_t <= 0.0:
@@ -194,9 +196,25 @@ func _draw_body(ci: MeshCanvas) -> void:
 				col = col.lerp(Color("4a5040") if key == "skin" else col.darkened(0.5), rot * (0.7 if key == "skin" else 0.5))
 				body[key] = col.lerp(Color("1a1612"), burnt * 0.85)
 	Look.lift = lift
+	var tw := _twitch(t)
+	if tw > 0.0:
+		Look.lift += Vector2(0, -tw)  # a jerk through the body
 	Look.draw(ci, {view = [Look.SIDE, fall_dir > 0], zombie = zombie, fall = clampf(t / FALL_TIMES.get(style, FALL_TIME), 0.001, 1.0),
-			fall_dir = fall_dir, fall_kind = style if Rig.FALLS.has(style) else "normal"}, body)
+			fall_dir = fall_dir, fall_kind = style if Rig.FALLS.has(style) else "normal", face_down = style in Combat.FORWARD}, body)
 	Look.lift = Vector2.ZERO
+
+
+## Twitching once it's down (-1: not now; else how far this frame's jerk lifts
+## it). Not everyone does; nothing whose head is gone.
+func _twitch(at: float) -> float:
+	if not zombie or burn >= 0.0 or style in ["behead", "burst"] or int(lk.get("spurt_seed", 1)) % TWITCH_ONE_IN != 0:
+		return -1.0
+	var from: float = FALL_TIMES.get(style, FALL_TIME) + 0.2
+	if at < from or at > from + TWITCH:
+		return -1.0
+	var k := 1.0 - (at - from) / TWITCH  # dying away
+	var beat := sin((at - from) * 19.0) * sin((at - from) * 5.3 + float(lk.spurt_seed))
+	return maxf(0.0, beat - 0.55) * 1.6 * k
 
 
 func _draw_fx() -> void:

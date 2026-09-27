@@ -68,7 +68,9 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var tip := 0.0
 	var base := Transform2D.IDENTITY
 	if fall > 0.0:
-		vf = [Look.SIDE, fall_dir > 0]  # seen side-on, falling backwards
+		# Seen side-on, falling backwards (face_down: forwards, onto its face; the
+		# head still ends up on the fall_dir side).
+		vf = [Look.SIDE, (fall_dir > 0) != st.get("face_down", false)]
 		moving = false
 		attack = Look.NONE
 		weapon = {}
