@@ -63,7 +63,7 @@ var picked: Array = []  # ref clicked: its card stays while the mouse moves on
 var menu_ref: Array = []
 var menu_pos := Vector2.ZERO
 var menu_items: Array = []  # [label, action]
-var tab := "ground"  # the right-hand column: "ground", "box", "craft" or "body"
+var tab := "ground"  # the right-hand column: "ground", "box", "craft", "body" or "skills"
 var crafting := false  # (tab == "craft", for anyone asking)
 var doll_view := 0  # 0 front, 1 side, 2 back, 3 other side: click the doll to turn it
 var _last_box := -1
@@ -161,7 +161,7 @@ func _ref_at(p: Vector2) -> Array:
 			if _recipe_rect(i).has_point(p):
 				return ["recipe", Crafting.RECIPES.keys()[i]]
 		return []
-	if tab == "body":
+	if tab in ["body", "skills"]:
 		return []
 	if Rect2(X_FAR - 10, 50, W - X_FAR, CARD_Y - 60).has_point(p):
 		return _far()  # anywhere over the far column: into the cupboard, or onto the ground
@@ -174,6 +174,7 @@ func _tabs() -> Array:
 		out.append(["box", box_title])
 	out.append(["craft", "ทำของ"])
 	out.append(["body", "ร่างกาย"])
+	out.append(["skills", "ฝีมือ"])
 	return out
 
 
@@ -525,6 +526,9 @@ func _draw_far_side(head: Font, body: Font) -> void:
 	if tab == "body":
 		_draw_body(head, body)
 		return
+	if tab == "skills":
+		_draw_skills(head, body)
+		return
 	if tab == "craft":
 		_draw_recipes(head, body)
 		return
@@ -745,6 +749,11 @@ func _tab_icon(c: Vector2, kind: String, col: Color) -> void:
 		"craft":  # a hammer
 			draw_line(c + Vector2(-4, 5), c + Vector2(2, -1), col, 2.0)
 			draw_rect(Rect2(c + Vector2(-1, -6), Vector2(8, 4)), col)
+		"skills":  # a star
+			var pts := PackedVector2Array()
+			for k in 10:
+				pts.append(c + Vector2.from_angle(-PI / 2 + k * PI / 5) * (6.0 if k % 2 == 0 else 2.6))
+			draw_colored_polygon(pts, col)
 
 
 ## What a recipe uses, with how many of each you have: "เศษผ้า 1/2 · ...".
@@ -810,6 +819,40 @@ func _body_row_rect(i: int) -> Rect2:
 func _body_button(i: int) -> Rect2:
 	var r := _body_row_rect(i)
 	return Rect2(r.end.x - 74, r.position.y + 8, 66, 28)
+
+
+## Skills: the survivor level, then each skill's level, how far to the next,
+## what it does and what the next level opens (Skills, data/skills.cfg).
+func _draw_skills(head: Font, body: Font) -> void:
+	if me == null:
+		return
+	draw_string(head, Vector2(X_FAR, 76), "ระดับผู้รอด %d" % Skills.total(me.skills), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, UiTheme.WARN)
+	draw_string(body, Vector2(X_FAR + 150, 76), "เก่งขึ้นจากการทำจริง", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, DIM)
+	var i := 0
+	for id in Skills.DEFS:
+		var d: Dictionary = Skills.DEFS[id]
+		var xp: float = me.skills.get(id, 0.0)
+		var lvl := Skills.level_of(xp)
+		var r := Rect2(X_FAR, 90 + i * 50, W - X_FAR - 24, 44)
+		if r.end.y > CARD_Y - 10:
+			break
+		draw_style_box(UiTheme.box(Color(0.91, 0.88, 0.81, 0.05), 6, SLOT_EDGE, 1), r)
+		draw_string(head, r.position + Vector2(10, 19), d.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UiTheme.PAPER)
+		draw_string(head, r.position + Vector2(r.size.x - 70, 19), "Lv %d" % lvl, HORIZONTAL_ALIGNMENT_RIGHT, 60, 14, UiTheme.WARN)
+		var bar := Rect2(r.position + Vector2(10, 27), Vector2(r.size.x - 20, 5))
+		draw_rect(bar, Color(1, 1, 1, 0.08))
+		draw_rect(Rect2(bar.position, Vector2(bar.size.x * Skills.progress(xp), bar.size.y)), UiTheme.WARN)
+		# The next thing it opens, if any is still ahead.
+		var next := ""
+		var unlocks: Dictionary = d.get("unlocks", {})
+		for k in unlocks:
+			if int(k) > lvl and (next == "" or int(k) < int(next.get_slice(":", 0))):
+				next = "%s:%s" % [k, unlocks[k]]
+		var sub := "เลเวลสูงสุดแล้ว" if lvl >= Skills.MAX_LEVEL else ("อีก %d EXP" % ceili(Skills.xp_for(lvl + 1) - xp))
+		if next != "":
+			sub += " · Lv %s: %s" % [next.get_slice(":", 0), next.get_slice(":", 1)]
+		draw_string(body, r.position + Vector2(10, 41), _fit(sub, body, 10, r.size.x - 20), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, DIM)
+		i += 1
 
 
 func _draw_body(head: Font, body: Font) -> void:

@@ -173,6 +173,7 @@ func run() -> void:
 
 	# Fighting tires you: every blow costs breath, none comes back for a moment
 	# after, and worn out the blows come slower and softer.
+	me.skills = {}  # (a fresh hand: the fights above taught it some, and a practised one tires less)
 	me.stamina = 100.0
 	me.exhausted = false
 	me.swing_hand = "r"

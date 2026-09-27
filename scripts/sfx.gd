@@ -203,6 +203,16 @@ static func _build(name: String) -> AudioStreamWAV:
 				var gap := PackedFloat32Array()
 				gap.resize(int(0.05 * RATE))
 				samples.append_array(gap)
+		"levelup":  # a skill going up a level: three notes rising, bright
+			for f in [523.0, 659.0, 784.0]:
+				var note := _tone(0.11, f, 0.28)
+				for i in note.size():
+					note[i] *= exp(-float(i) / RATE * 9.0)
+				samples.append_array(note)
+			var last := _tone(0.35, 1047.0, 0.22)
+			for i in last.size():
+				last[i] *= exp(-float(i) / RATE * 5.0)
+			samples.append_array(last)
 		"siren":  # horde warning drifting over the city
 			samples = _siren(2.6)
 		"crash":  # a bike into a wall: a heavy thud and bent metal ringing

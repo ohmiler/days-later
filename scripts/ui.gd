@@ -373,10 +373,14 @@ func toggle_gear() -> void:
 
 
 ## A big message across the top of the screen for a few seconds.
-func announce(text: String) -> void:
+## A line across the middle of the screen: red for danger (a horde coming),
+## `good` gold for something won (a level up).
+func announce(text: String, good := false) -> void:
 	banner.text = text
-	banner_t = 5.0
-	push_feed(text, "kill")
+	banner_t = 3.0 if good else 5.0
+	banner.add_theme_color_override("font_color", UiTheme.WARN if good else Color("ff6a5a"))
+	push_feed(text.replace("
+", " · "), "kill")
 
 
 func toggle_help() -> void:
@@ -445,7 +449,7 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	if me == null:
 		return
 	vitals.t += delta
-	vitals.pname = me.pname if me.pname != "" else player_name()
+	vitals.pname = "%s · %d" % [me.pname if me.pname != "" else player_name(), Skills.total(me.skills)]  # (and your survivor level)
 	vitals.hp = me.hp
 	vitals.ghost = move_toward(vitals.ghost, me.hp, delta * 18.0) if vitals.ghost > me.hp else me.hp
 	vitals.hunger = me.hunger

@@ -212,7 +212,7 @@ static func save_player(p: Player) -> void:
 		return
 	_write(path, {
 		version = VERSION, name = p.pname, alive = p.alive(),
-		pos = p.position, on_roof = p.on_roof, storey = p.storey, hp = p.hp, kills = p.kills,
+		pos = p.position, on_roof = p.on_roof, storey = p.storey, hp = p.hp, kills = p.kills, skills = p.skills,
 		hunger = p.hunger, thirst = p.thirst, infection = p.infection, bleeding = p.bleeding, stamina = p.stamina,
 		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash, bed = p.bed, wounds = p.wounds, conditions = p.conditions,
 		city = p.world.city_seed if p.world else 0, zone = p.world.zone if p.world else "",
@@ -250,6 +250,10 @@ static func load_player_into(p: Player, name: String) -> bool:
 	p.storey = storey if same_city and storey > 0 and p.world.storeys.get(storey, {}).has(p.world.to_cell(p.position)) else 0
 	p.hp = d.hp
 	p.kills = d.kills
+	p.skills = d.get("skills", {})  # (older saves: every skill from the start)
+	p.skills_dirty = true
+	if p.get_parent() is Main:
+		p.get_parent().skills.tell_level(p)
 	p.hunger = d.hunger
 	p.thirst = d.thirst
 	p.infection = d.infection

@@ -214,10 +214,12 @@ func _do_tap_fill(p: Player, th: Dictionary) -> void:
 
 
 func _do_stove_boil(p: Player, th: Dictionary) -> void:
+	main.skills.gain(p, "cook", "boil")
 	_stove_on(p, th, _pot_with_water(p, 1), "boil", BOIL_HOURS)
 
 
 func _do_stove_cook(p: Player, th: Dictionary) -> void:
+	main.skills.gain(p, "cook", "cook")
 	var slot := -1
 	for i in p.inv.size():
 		if p.inv[i] != null and Items.def(p.inv[i].id).has("cooks"):

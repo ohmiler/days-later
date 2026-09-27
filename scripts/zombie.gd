@@ -520,7 +520,7 @@ func _nearest_player() -> Player:
 		var lit := world.is_lit(p.position) or p.lamp_lit() or (p.riding >= 0 and p.riding < world.vehicles.size() and Vehicles.headlight_on(world.vehicles[p.riding], world))  # (a headlight shows you up)
 		var reach := SIGHT_DAY if lit else SIGHT_DARK * p.seen_in_dark()
 		if p.sneak:
-			reach *= 0.5
+			reach *= 0.5 * Skills.mult(p, "sneak_seen")
 		elif p.sitting != -1 or p.sleeping:
 			reach *= 0.65  # (low down, harder to spot)
 		if d > reach or d > best_d:
