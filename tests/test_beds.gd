@@ -14,12 +14,12 @@ func _bed() -> FurnitureProp:
 ## Stand beside the bed, inside, where E points at it.
 func _stand_by(f: FurnitureProp) -> void:
 	var w: World = main.world
-	var up: bool = f.data.get("up", false)  # (bedrooms are upstairs)
-	me.up = up
+	var storey: int = f.data.get("storey", 0)  # (bedrooms are upstairs)
+	me.storey = storey
 	var cells := [f.data.cell, w.to_cell(f.position - Vector2(0, 4))]  # (a long bed covers two)
 	for i in 8:
 		var c: Vector2i = cells[i / 4] + [Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP][i % 4]
-		if not (w.is_solid_up(c) if up else w.is_solid(c)) and w.building_at.get(c) == w.building_at.get(f.data.cell):
+		if not w.is_solid_on(c, storey) and w.building_at.get(c) == w.building_at.get(f.data.cell):
 			me.position = w.to_pos(c)
 			me.aim = f.position - me.position
 			var tt := Interact.target(main, me)
@@ -128,11 +128,11 @@ func run() -> void:
 	# A sofa, a bench, a stool: E sits you on it.
 	var seat := {}
 	for d in main.world.decor:
-		if d.kind in Interact.SEATS and not d.get("up", false):
+		if d.kind in Interact.SEATS and d.get("storey", 0) == 0:
 			seat = d
 			break
 	check(not seat.is_empty(), "the city has things to sit on")
-	me.up = false
+	me.storey = 0
 	me.position = main.world.to_pos(seat.cell) + Vector2(0, 12)
 	var st := {kind = "seat", id = seat.id, pos = me.position}
 	check(Interact.actions(main, me, st).any(func(x): return x.verb == "sit"), "E on a %s offers a seat" % seat.kind)

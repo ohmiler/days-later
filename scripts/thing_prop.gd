@@ -29,6 +29,14 @@ func _process(delta: float) -> void:
 		queue_redraw()  # the flame, the steam
 
 
+## Water in the tank on this tap's roof (see Buildings)?
+func _tap_wet() -> bool:
+	var m = get_tree().current_scene if is_inside_tree() else null
+	if m == null or m.get("world_state") == null or m.world == null:
+		return true
+	return Buildings.tank(m, Buildings.at(m.world, thing.cell)) >= 1.0
+
+
 ## Still cooking (by the game clock)?
 func _cooking() -> bool:
 	var m = get_tree().current_scene if is_inside_tree() else null
@@ -62,10 +70,11 @@ func _draw() -> void:
 			# A sink on the back wall with a tap over it.
 			draw_rect(Rect2(-6, -12, 12, 2), Color("c8c8c0"))
 			draw_rect(Rect2(-5, -10, 10, 5), Color("a8aca8"))
-			draw_rect(Rect2(-4, -9, 8, 3), Color("5a6a70") if s.water > 0 else Color("7a6a5a"))
+			var wet := _tap_wet()
+			draw_rect(Rect2(-4, -9, 8, 3), Color("5a6a70") if wet else Color("7a6a5a"))
 			draw_line(Vector2(0, -16), Vector2(0, -12), Color("8a8e92"), 1.2)
 			draw_line(Vector2(0, -16), Vector2(2.5, -16), Color("8a8e92"), 1.2)
-			if s.water <= 0:
+			if not wet:
 				draw_circle(Vector2(-2, -8), 1.0, Color(0.45, 0.25, 0.1, 0.8))  # rust where water used to sit
 		"radio":
 			draw_set_transform(Vector2(0, -1), 0, Vector2(1, 0.35))

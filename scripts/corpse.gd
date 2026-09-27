@@ -26,7 +26,7 @@ var style := ""
 var t := 0.0
 var spurts := false
 var burn := -1.0  # seconds since it was set alight (-1: not burning)
-var up := false  # on the floor upstairs (drawn a storey up)
+var storey := 0  # on a floor upstairs (drawn this many storeys up)
 var _redraw_t := 0.0
 var _fx_t := 0.0
 var _fx: Node2D  # the flies and flames, redrawn often; the body itself seldom
@@ -156,7 +156,7 @@ func _draw() -> void:
 
 
 func _draw_body(ci: MeshCanvas) -> void:
-	var lift := Vector2(0, -BuildingProp.GROUND_H if up else 0.0)
+	var lift := Vector2(0, -BuildingProp.GROUND_H * storey)
 	ci.draw_set_transform(lift)
 	var burnt := clampf(burn / BURN_TIME, 0.0, 1.0) if burn >= 0.0 else 0.0
 	if burn >= BURN_TIME:
@@ -186,7 +186,7 @@ func _draw_body(ci: MeshCanvas) -> void:
 
 func _draw_fx() -> void:
 	var ci := MeshCanvas.new(_fx, Look.dot_tex())
-	ci.draw_set_transform(Vector2(0, -BuildingProp.GROUND_H if up else 0.0))
+	ci.draw_set_transform(Vector2(0, -BuildingProp.GROUND_H * storey))
 	if t > ROT and t < BONES and burn < 0.0:
 		_draw_flies(ci, clampf((t - ROT) / (BONES - ROT), 0.0, 1.0))
 	elif burn >= 0.0 and burn < BURN_TIME:
@@ -222,10 +222,10 @@ func _draw_fire(ci: MeshCanvas) -> void:
 
 ## What the fire leaves: ash and a few embers still glowing.
 func _draw_ash(ci: MeshCanvas) -> void:
-	ci.draw_set_transform(Vector2(fall_dir * 12.0, -1 - (BuildingProp.GROUND_H if up else 0.0)), 0, Vector2(1, 0.35))
+	ci.draw_set_transform(Vector2(fall_dir * 12.0, -1 - BuildingProp.GROUND_H * storey), 0, Vector2(1, 0.35))
 	ci.draw_circle(Vector2.ZERO, 15.0, Color(0.08, 0.07, 0.06, 0.8))
 	ci.draw_circle(Vector2(fall_dir * -3, 1), 10.0, Color(0.2, 0.19, 0.18, 0.8))
-	ci.draw_set_transform(Vector2(0, -BuildingProp.GROUND_H if up else 0.0))
+	ci.draw_set_transform(Vector2(0, -BuildingProp.GROUND_H * storey))
 	var embers := clampf(1.0 - (burn - BURN_TIME) / 20.0, 0.0, 1.0)
 	for i in 4:
 		ci.draw_circle(Vector2(fall_dir * (4.0 + i * 5.0), -1.0 + (i % 2)), 0.9, Color(1.0, 0.45, 0.1, embers))
@@ -235,9 +235,9 @@ func _draw_ash(ci: MeshCanvas) -> void:
 func _draw_bones(ci: MeshCanvas) -> void:
 	var bone := Color("d8d0bc")
 	var f := fall_dir
-	ci.draw_set_transform(Vector2(f * 12.0, -1 - (BuildingProp.GROUND_H if up else 0.0)), 0, Vector2(1, 0.35))
+	ci.draw_set_transform(Vector2(f * 12.0, -1 - BuildingProp.GROUND_H * storey), 0, Vector2(1, 0.35))
 	ci.draw_circle(Vector2.ZERO, 16.0, Color(0.12, 0.08, 0.06, 0.55))
-	ci.draw_set_transform(Vector2(0, -BuildingProp.GROUND_H if up else 0.0))
+	ci.draw_set_transform(Vector2(0, -BuildingProp.GROUND_H * storey))
 	ci.draw_line(Vector2(f * 4, -2), Vector2(f * 17, -2), bone, 1.2)  # spine
 	for i in 4:
 		var x := f * (9.0 + i * 2.2)

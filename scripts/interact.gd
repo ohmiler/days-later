@@ -46,17 +46,17 @@ static func _candidates(main: Node, p: Player) -> Array:
 		# On a car roof: only getting down again.
 		out.append({kind = "car", id = p.on_car, pos = p.position + Vector2(0, 1), title = "หลังคารถ"})
 		return out
-	if p.up:
+	if p.storey > 0:
 		# Upstairs: the stairs, and what's up here with you.
 		for pid in main.pickups:
 			var pos: Vector2 = main.pickups[pid].pos
-			if main.pickups[pid].get("up", false) and p.position.distance_to(pos) < PICKUP_REACH:
+			if main.pickups[pid].get("storey", 0) == p.storey and p.position.distance_to(pos) < PICKUP_REACH:
 				out.append({kind = "pickup", id = pid, pos = pos, title = Items.display_name(main.pickups[pid].item.id)})
 		for z: Zombie in main.zombies.values():
-			if z.up and z.flags & 2 and p.position.distance_to(z.position) < STOMP_REACH:
+			if z.storey == p.storey and z.flags & 2 and p.position.distance_to(z.position) < STOMP_REACH:
 				out.append({kind = "zombie", id = z.zid, pos = z.position, title = "ซอมบี้ล้มอยู่"})
 		for f in w.near(p.position):
-			if f is FurnitureProp and f.data.get("up", false) and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == w.building_at.get(w.to_cell(p.position)):
+			if f is FurnitureProp and f.data.get("storey", 0) == p.storey and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == w.building_at.get(w.to_cell(p.position)):
 				out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
 		_corpses(main, p, out)
 		_seats(w, p, w.building_at.get(w.to_cell(p.position)), out)
@@ -68,11 +68,11 @@ static func _candidates(main: Node, p: Player) -> Array:
 		return out
 	for pid in main.pickups:
 		var pos: Vector2 = main.pickups[pid].pos
-		if p.position.distance_to(pos) < PICKUP_REACH and not main.pickups[pid].get("up", false):
+		if p.position.distance_to(pos) < PICKUP_REACH and main.pickups[pid].get("storey", 0) == 0:
 			out.append({kind = "pickup", id = pid, pos = pos, title = Items.display_name(main.pickups[pid].item.id)})
 	# A zombie knocked flat right at your feet: finish it.
 	for z: Zombie in main.zombies.values():
-		if z.flags & 2 and not z.up and p.position.distance_to(z.position) < STOMP_REACH:
+		if z.flags & 2 and z.storey == 0 and p.position.distance_to(z.position) < STOMP_REACH:
 			out.append({kind = "zombie", id = z.zid, pos = z.position, title = "ซอมบี้ล้มอยู่"})
 	var trap := trap_near(w, p.position)
 	if trap >= 0:
@@ -102,16 +102,16 @@ static func _candidates(main: Node, p: Player) -> Array:
 		out.append({kind = "canal", id = 0, pos = w.to_pos(wc), title = "น้ำคลอง"})
 	for e in w.exits:
 		var r: Rect2i = e.rect
-		if Rect2(r.position * World.TILE, r.size * World.TILE).grow(12.0).has_point(p.position) and not p.up:
+		if Rect2(r.position * World.TILE, r.size * World.TILE).grow(12.0).has_point(p.position) and p.storey == 0:
 			out.append({kind = "exit", id = e.id, pos = p.position + Vector2(0, -2), title = "ทางไป" + Zones.name_of(e.to)})
 	for n in w.near(p.position):
-		if n is StreetProp and n.data.kind in StreetProp.CLIMB and not p.up \
+		if n is StreetProp and n.data.kind in StreetProp.CLIMB and p.storey == 0 \
 				and p.position.distance_to(StreetProp.middle(n.data)) < CAR_REACH:
 			out.append({kind = "car", id = n.data.id, pos = StreetProp.middle(n.data), title = "รถ"})
 	_seats(w, p, here, out)
 	for f in w.near(p.position):
 		# Furniture in the same building as you: no reaching through walls.
-		if f is FurnitureProp and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here and not f.data.get("up", false):
+		if f is FurnitureProp and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here and f.data.get("storey", 0) == 0:
 			out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
 	return out
 
@@ -120,14 +120,14 @@ static func _candidates(main: Node, p: Player) -> Array:
 static func _corpses(main: Node, p: Player, out: Array) -> void:
 	for cid in main.corpse_nodes:
 		var cn: Corpse = main.corpse_nodes[cid]
-		if is_instance_valid(cn) and cn.up == p.up and cn.burn < 0.0 and p.position.distance_to(cn.position) < CORPSE_REACH:
+		if is_instance_valid(cn) and cn.storey == p.storey and cn.burn < 0.0 and p.position.distance_to(cn.position) < CORPSE_REACH:
 			out.append({kind = "corpse", id = cid, pos = cn.position + Vector2(cn.fall_dir * 8.0, -4), title = cn.title()})
 
 
 ## Sofas, benches and chairs on your floor, in the building you are in.
 static func _seats(w: World, p: Player, here: BuildingProp, out: Array) -> void:
 	for d in w.near(p.position):
-		if d is DecorProp and d.data.kind in SEATS and d.data.get("up", false) == p.up and p.position.distance_to(d.position) < CONTAINER_REACH \
+		if d is DecorProp and d.data.kind in SEATS and d.data.get("storey", 0) == p.storey and p.position.distance_to(d.position) < CONTAINER_REACH \
 				and w.building_at.get(d.data.cell) == here:
 			out.append({kind = "seat", id = d.data.id, pos = d.position, title = SEATS[d.data.kind]})
 
@@ -146,15 +146,16 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 	var out := []
 	match t.get("kind", ""):
 		"stairs":
-			# Stairs go up to the floor above (if there is one), and on up to the roof.
-			var has_up: bool = w.upper.has(t.id)
+			# Stairs go up floor by floor (as far as this stairwell reaches), and on up to the roof.
+			var above: bool = w.storey_map(p.storey + 1).has(t.id)
 			if p.on_roof:
-				out.append(_act("down", "ลงชั้น 2" if has_up else "ลงบันได"))
-			elif p.up:
-				out.append(_act("up", "ขึ้นดาดฟ้า"))
-				out.append(_act("down", "ลงชั้นล่าง"))
+				var top := w.top_storey(t.id)
+				out.append(_act("down", "ลงชั้น %d" % (top + 1) if top > 0 else "ลงบันได"))
+			elif p.storey > 0:
+				out.append(_act("up", "ขึ้นชั้น %d" % (p.storey + 2) if above else "ขึ้นดาดฟ้า"))
+				out.append(_act("down", "ลงชั้นล่าง" if p.storey == 1 else "ลงชั้น %d" % p.storey))
 			else:
-				out.append(_act("up", "ขึ้นชั้น 2" if has_up else "ขึ้นดาดฟ้า"))
+				out.append(_act("up", "ขึ้นชั้น 2" if above else "ขึ้นดาดฟ้า"))
 		"edge":
 			out.append(_act("jump", "กระโดดลง (เจ็บ · เสียงดัง)"))
 		"pickup":

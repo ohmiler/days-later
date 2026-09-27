@@ -16,6 +16,7 @@ const INFECTION_RATE := 0.2  # a bite's infection runs its course in about two d
 const REST_HEAL := 0.05  # health a second while awake, fed, watered and whole...
 const REST_HEAL_UP_TO := 60.0  # ...back up to this much (the rest takes sleep or medicine)
 const STARVE_DAMAGE := 0.6
+const BLOOD_SMELL := 90.0  # px: an open, bleeding wound, smelt this far every few seconds
 const BLEED_DAMAGE := 0.8
 const BITE_INFECT_CHANCE := 0.2
 const BITE_BLEED_CHANCE := 0.3
@@ -120,7 +121,7 @@ func start_sleep(p: Player, bed: int) -> void:
 	p.rest_face = Player.face_of(p.aim)  # (on the floor: the way you face, head behind you)
 	if bed >= 0:
 		var f: FurnitureProp = main.world.container_nodes[bed]
-		p.up = f.data.get("up", false)
+		p.storey = f.data.get("storey", 0)
 		if f.data.get("long", 0) == 2:
 			p.rest_face = 2  # down the room: feet at the foot end, head on the pillow up the room
 			p.position = f.position + Vector2(0, 0.1)
@@ -153,7 +154,7 @@ func _tick_sleep(p: Player, delta: float) -> void:
 	# A rotting body close by: you hardly sleep for the smell.
 	var reek := false
 	for c in main.corpses.values():
-		if c.burn < 0.0 and c.age > Corpse.ROT and c.get("up", false) == p.up and c.pos.distance_to(p.position) < REEK:
+		if c.burn < 0.0 and c.age > Corpse.ROT and c.get("storey", 0) == p.storey and c.pos.distance_to(p.position) < REEK:
 			reek = true
 			break
 	if reek and not p.warned.has("reek"):
@@ -198,7 +199,12 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 	p.step_t -= real_delta
 	if p.move.length() > 0.1 and not p.sneak and not p.prone and p.step_t <= 0.0 and p.riding < 0:  # (a bike makes its own noise)
 		p.step_t = 0.5
-		main._make_noise(p.position, main.NOISE_RUN if running else main.NOISE_WALK)
+		main._make_noise(p.position, main.NOISE_RUN if running else main.NOISE_WALK, p.storey)
+	# Bleeding, you leave a smell of fresh blood that brings them after you.
+	p.scent_t -= real_delta
+	if p.bleeding and p.scent_t <= 0.0:
+		p.scent_t = 3.0
+		main.stimulus("smell", p.position, BLOOD_SMELL, p.storey)
 	var slow := SLEEP_NEEDS if p.sleeping else 1.0
 	p.hunger = maxf(0.0, p.hunger - HUNGER_RATE * delta * slow * (1.6 if running else 1.0) * Body.mod(p, "hunger"))
 	# Heavy clothes in Bangkok's heat: sweat it out (less so at night).
@@ -374,7 +380,7 @@ func _spawn_horde_zombie() -> void:
 		if main.world.can_stand(pos, 5):
 			var z := main._add_zombie(main.next_zid, pos)
 			main.next_zid += 1
-			z.hear(p.position)
+			z.sense(p.position)
 			return
 
 

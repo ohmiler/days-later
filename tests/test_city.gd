@@ -68,10 +68,11 @@ func run() -> void:
 		if d.kind in ["door", "shutter"] and not World.DIRS.any(func(dir): return reached.has(d.cell + dir) and not a.door_at.has(d.cell + dir)):
 			unreachable.append(d.cell)
 	for f in a.containers:
-		if f.get("up", false):
+		if f.get("storey", 0) > 0:
 			# Upstairs: from the top of the stairs.
 			var st: Vector2i = a.building_at[f.cell].data.stairs
-			if not World.DIRS.any(func(dir): return not a.is_solid_up(f.cell + dir) and (f.cell + dir == st or not a.path_up(a.to_pos(st), a.to_pos(f.cell + dir)).is_empty())):
+			var s: int = f.storey
+			if not World.DIRS.any(func(dir): return not a.is_solid_on(f.cell + dir, s) and (f.cell + dir == st or not a.path_on(s, a.to_pos(st), a.to_pos(f.cell + dir)).is_empty())):
 				unreachable.append(f.cell)
 		elif not World.DIRS.any(func(dir): return reached.has(f.cell + dir) and not a.is_solid(f.cell + dir)):
 			unreachable.append(f.cell)

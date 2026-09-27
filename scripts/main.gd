@@ -42,6 +42,8 @@ const MAX_GIBS := 40  # loose heads and arms; the oldest fade out first
 var gibs: Array = []
 var map_t := 0.0
 var raining := false  # the server rolls the weather; clients get it in every snapshot
+var rain_total := 0.0  # game seconds it has rained, ever (rooftop tanks fill by it: see Buildings)
+var world_state: WorldState
 var rain_fx: Control
 var bar_click := false  # a mouse button went down on the hotbar: do not punch until it is let go
 ## Bodies of zombies killed (server keeps them; everyone draws them as they
@@ -116,6 +118,7 @@ func _ready() -> void:
 	crafting = _module(Crafting.new(), "Crafting")
 	admin = _module(Admin.new(), "Admin")
 	vehicles = _module(Vehicles.new(), "Vehicles")
+	world_state = _module(WorldState.new(), "WorldState")
 	y_sort_enabled = true  # characters and trees are drawn back-to-front by their feet
 	shade = CanvasModulate.new()
 	add_child(shade)
@@ -311,6 +314,10 @@ func _make_world(seed_val: int, zone_id := "") -> void:
 	add_child(world)
 	move_child(world, 0)
 	world.generate(seed_val, zone_id if zone_id != "" else zone)
+	# What can change in this world, kept the one way (see WorldState).
+	world_state.clear()
+	world_state.register("thing", func(id): return Things.start_state(world, id), things.on_changed)
+	world_state.register("building", func(id): return Buildings.start(world, id), things.on_building_changed)
 	ui.city_map.setup(world, ui.cfg, seed_val)
 	decals = Node2D.new()
 	decals.draw.connect(_draw_decals)
@@ -427,7 +434,7 @@ func switch_zone(dest: String, arrive: String) -> void:
 		q.world = world
 		q.position = world.slide(at, Vector2(i % 3 - 1, i / 3) * 10.0, Player.RADIUS)
 		q.net_pos = q.position
-		q.up = false
+		q.storey = 0
 		q.on_roof = false
 		q.on_car = -1
 		q.sleeping = false
@@ -502,6 +509,8 @@ func _server_tick(delta: float) -> void:
 		autosave_t = AUTOSAVE_EVERY
 		_save_all()
 	time += delta * survival.time_speed() / DAY_LENGTH
+	if raining:
+		rain_total += delta * survival.time_speed()
 	if time >= 1.0:
 		time -= 1.0
 		day += 1
@@ -577,24 +586,40 @@ func _separate() -> void:
 						continue  # each pair once
 					var v := b.position - a.position
 					var dist := v.length()
-					if dist < 9.0 and dist > 0.01 and a.up == b.up:
+					if dist < 9.0 and dist > 0.01 and a.storey == b.storey:
 						var push := v / dist * (9.0 - dist) * 0.5
-						a.position = world.slide(a.position, -push, Zombie.RADIUS, false, false, a.up)
-						b.position = world.slide(b.position, push, Zombie.RADIUS, false, false, b.up)
+						a.position = world.slide(a.position, -push, Zombie.RADIUS, false, false, a.storey)
+						b.position = world.slide(b.position, push, Zombie.RADIUS, false, false, b.storey)
 		for p: Player in players.values():
 			var v := a.position - p.position
 			var dist := v.length()
-			if p.alive() and not p.on_roof and p.on_car < 0 and p.up == a.up and dist < 10.0 and dist > 0.01:
-				a.position = world.slide(a.position, v / dist * (10.0 - dist), Zombie.RADIUS, false, false, a.up)
+			if p.alive() and not p.on_roof and p.on_car < 0 and p.storey == a.storey and dist < 10.0 and dist > 0.01:
+				a.position = world.slide(a.position, v / dist * (10.0 - dist), Zombie.RADIUS, false, false, a.storey)
 
 
 ## Every zombie within `radius` goes to look.
-func _make_noise(pos: Vector2, radius: float) -> void:
+func _make_noise(pos: Vector2, radius: float, storey := 0) -> void:
+	stimulus("sound", pos, radius, storey)
+
+
+## What the dead can sense, all through one door (ROADMAP core 4): a sound
+## or a smell at `pos` on `storey`, carrying `radius` px. The rain covers
+## sounds and washes smells away; from another floor it carries less far. A
+## zombie that isn't after anyone goes to see (see Zombie.sense): a smell
+## keeps it looking longer than a bang. Light isn't an event: it's how far
+## they see (World.is_lit).
+const SENSES := {sound = {rain = 0.65, look = 9.0}, smell = {rain = 0.4, look = 18.0}}
+const OTHER_FLOOR := 0.5  # heard or smelt through a floor: this much of the distance
+
+
+func stimulus(kind: String, pos: Vector2, radius: float, storey := 0) -> void:
+	var sense: Dictionary = SENSES[kind]
 	if raining:
-		radius *= 0.65  # the rain covers a lot
+		radius *= sense.rain
 	for z: Zombie in zombies.values():
-		if z.position.distance_to(pos) < radius:
-			z.hear(pos)
+		var r := radius * (1.0 if z.storey == storey else OTHER_FLOOR)
+		if z.position.distance_to(pos) < r:
+			z.sense(pos, sense.look)
 
 
 # --- Inventory, searching and pickups (server) ------------------------------
@@ -685,8 +710,8 @@ func zombies_for(p: Player) -> Array:
 	return zombies.values().filter(func(z): return p.position.distance_to(z.position) < NEAR or z.target == p)
 
 
-func _spawn_pickup(pos: Vector2, item: Dictionary, up := false) -> void:
-	pickup_add.rpc(next_pickup, pos, item, up)
+func _spawn_pickup(pos: Vector2, item: Dictionary, storey := 0) -> void:
+	pickup_add.rpc(next_pickup, pos, item, storey)
 	next_pickup += 1
 
 
@@ -701,8 +726,8 @@ func show_toast(text: String) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func pickup_add(id: int, pos: Vector2, item: Dictionary, up := false) -> void:
-	pickups[id] = {pos = pos, item = item, up = up}
+func pickup_add(id: int, pos: Vector2, item: Dictionary, storey := 0) -> void:
+	pickups[id] = {pos = pos, item = item, storey = storey}
 	decals.queue_redraw()
 	decals_up.queue_redraw()
 
@@ -737,11 +762,11 @@ func splatter(pos: Vector2, dir: Vector2, n: int) -> void:
 
 ## Server: a zombie's body left where it fell, for everyone to see rot away
 ## (and for someone to burn).
-func add_corpse(pos: Vector2, fall_dir: float, body: Dictionary, style: String, up := false) -> void:
+func add_corpse(pos: Vector2, fall_dir: float, body: Dictionary, style: String, storey := 0) -> void:
 	var cid := next_cid
 	next_cid += 1
-	corpses[cid] = {pos = pos, fall_dir = fall_dir, body = body, style = style, age = 0.0, burn = -1.0, up = up}
-	combat.fx_death.rpc(pos, fall_dir, body, style, cid, up)
+	corpses[cid] = {pos = pos, fall_dir = fall_dir, body = body, style = style, age = 0.0, burn = -1.0, storey = storey}
+	combat.fx_death.rpc(pos, fall_dir, body, style, cid, storey)
 	if corpses.size() > MAX_CORPSES:
 		var oldest: int = corpses.keys().reduce(func(a, b): return a if corpses[a].age > corpses[b].age else b)
 		_drop_corpse(oldest)
@@ -763,7 +788,7 @@ func _tick_corpses(delta: float) -> void:
 			if floori(c.burn / 3.0) != floori(before / 3.0) and c.burn < Corpse.BURN_TIME:
 				_make_noise(c.pos, NOISE_BURN)  # smoke and the crackle: things come to see
 			for p: Player in players.values():
-				if c.burn < Corpse.BURN_TIME and p.alive() and p.up == c.up and p.position.distance_to(c.pos) < 9.0:
+				if c.burn < Corpse.BURN_TIME and p.alive() and p.storey == c.storey and p.position.distance_to(c.pos) < 9.0:
 					p.take_damage(3.0 * delta)  # (stood in the fire)
 			if c.burn > Corpse.BURN_TIME + Corpse.ASH_TIME:
 				_drop_corpse(cid)
@@ -820,13 +845,13 @@ func corpse_list() -> Array:
 	var out := []
 	for cid in corpses:
 		var c: Dictionary = corpses[cid]
-		out.append([cid, c.pos, c.fall_dir, c.body, c.style, c.age, c.burn, c.get("up", false)])
+		out.append([cid, c.pos, c.fall_dir, c.body, c.style, c.age, c.burn, c.get("storey", 0)])
 	return out
 
 
 ## A fallen body on the ground; `age` lets a respawned player's body carry on where it was.
 func leave_corpse(pos: Vector2, fall_dir: float, body: Dictionary, zombie: bool, age: float, style := "", cid := 0,
-		burn := -1.0, up := false) -> void:
+		burn := -1.0, storey := 0) -> void:
 	var c := Corpse.new()
 	c.position = pos
 	c.lk = body
@@ -835,7 +860,7 @@ func leave_corpse(pos: Vector2, fall_dir: float, body: Dictionary, zombie: bool,
 	c.fall_dir = fall_dir
 	c.t = age
 	c.burn = burn
-	c.up = up
+	c.storey = storey
 	if cid > 0:
 		if corpse_nodes.has(cid) and is_instance_valid(corpse_nodes[cid]):
 			corpse_nodes[cid].queue_free()
@@ -893,7 +918,7 @@ func _process(delta: float) -> void:
 			# What lies on the ground within reach, for the bag screen's "nearby" column.
 			var near := []
 			for pid in pickups:
-				if me.position.distance_to(pickups[pid].pos) < inventory.GROUND_REACH - 4.0 and pickups[pid].get("up", false) == me.up:
+				if me.position.distance_to(pickups[pid].pos) < inventory.GROUND_REACH - 4.0 and pickups[pid].get("storey", 0) == me.storey:
 					near.append([pid, pickups[pid].item])
 			ui.gear.ground = near
 			ui.gear.doll_look = me.look  # the bag screen shows you as you are
@@ -930,7 +955,7 @@ func _process(delta: float) -> void:
 			elif me.alive() and me.on_car >= 0 and me.on_car < world.street_props.size() and move.length() > 0.1:
 				me.position = StreetProp.roof_clamp(world.street_props[me.on_car], me.position + move * Player.SPEED * Player.ROOF_SPEED * delta)
 			elif me.alive() and me.riding < 0 and not me.vaulting() and me.grabbed_by < 0 and not me.sleeping and me.sitting == -1 and me.rest_k < 0.05 and me.on_car < 0:
-				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof, false, me.up, me.prone)
+				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof, false, me.storey, me.prone)
 		# On a bike the camera looks ahead of where you're going, to see what's coming.
 		var lead := Vector2.ZERO
 		if me.riding >= 0 and me.riding < world.vehicles.size() and me.alive():
@@ -1028,14 +1053,14 @@ func _update_roof_view(me: Player, delta: float) -> void:
 		p.modulate = Color(up, up, up, p.modulate.a)
 
 
-## A floor between you: someone upstairs is seen only from up there in the
-## same building; from upstairs, whoever is downstairs in it is under your feet.
-func _on_view_floor(me: Player, pos: Vector2, up: bool) -> bool:
+## A floor between you: someone upstairs is seen only from their own floor in
+## the same building; from upstairs, whoever is below you in it is under your feet.
+func _on_view_floor(me: Player, pos: Vector2, storey: int) -> bool:
 	var mine = world.building_at.get(world.to_cell(me.position))
 	var theirs = world.building_at.get(world.to_cell(pos))
-	if up:
-		return me.up and theirs == mine
-	return not (me.up and theirs == mine)
+	if storey > 0:
+		return me.storey == storey and theirs == mine
+	return not (me.storey > 0 and theirs == mine)
 
 
 ## Don't show who is out of your character's sight.
@@ -1044,9 +1069,9 @@ func _update_sight(me: Player, delta: float) -> void:
 	sight.update(me, delta, r)
 	var k := delta * 6.0
 	for z: Zombie in zombies.values():
-		z.sight_k = move_toward(z.sight_k, 1.0 if sight.sees(z.position + Vector2(0, -8)) and _on_view_floor(me, z.position, z.up) else 0.0, k)
+		z.sight_k = move_toward(z.sight_k, 1.0 if sight.sees(z.position + Vector2(0, -8)) and _on_view_floor(me, z.position, z.storey) else 0.0, k)
 	for p: Player in players.values():
-		if p != me and not _on_view_floor(me, p.position, p.up):
+		if p != me and not _on_view_floor(me, p.position, p.storey):
 			p.sight_k = move_toward(p.sight_k, 0.0, k)
 		elif p != me:
 			p.sight_k = move_toward(p.sight_k, 1.0 if sight.sees(p.position + Vector2(0, -8)) else 0.0, k)
@@ -1068,19 +1093,19 @@ func _update_death_screen(me: Player, delta: float) -> void:
 ## Walking into a building lifts its roof and front wall off so you can see inside.
 func _update_inside(me: Player) -> void:
 	var b: BuildingProp = world.building_at.get(world.to_cell(me.position))
-	if b and (not b.data.get("enter", false) or me.on_roof or me.lift > 1.0 and not me.up):
+	if b and (not b.data.get("enter", false) or me.on_roof or me.lift > 1.0 and me.storey == 0):
 		b = null
 	if b != hidden_building:
 		if hidden_building:
 			hidden_building.visible = true
-			hidden_building.show_upstairs(false)
+			hidden_building.show_storey(0)
 		hidden_building = b
 		if b:
 			b.visible = false
 		decals_up.queue_redraw()
 	# Up the stairs: the floor up there instead of the one below.
-	if b and b.showing_upstairs != me.up:
-		b.show_upstairs(me.up)
+	if b and b.showing_storey != me.storey:
+		b.show_storey(me.storey)
 		decals_up.queue_redraw()
 
 
@@ -1296,21 +1321,21 @@ func _draw_decals() -> void:
 	for b in blood:
 		Look._dot(decals, b[0], b[1], b[2])  # fast circles: this redraws on every hit
 	for pid in pickups:
-		if not pickups[pid].get("up", false):
+		if pickups[pid].get("storey", 0) == 0:
 			_draw_pickup(decals, pickups[pid], 0.0)
 
 
-## Things dropped on the floor upstairs, a storey up, only in the building
-## you're up in (everywhere else it is under a roof).
+## Things dropped on the floor you're up on, drawn that many storeys up, only
+## in the building you're up in (everywhere else it is under a roof).
 func _draw_decals_up() -> void:
 	var me: Player = players.get(multiplayer.get_unique_id())
-	if me == null or not me.up:
+	if me == null or me.storey == 0:
 		return
 	var here = world.building_at.get(world.to_cell(me.position))
 	for pid in pickups:
 		var pu: Dictionary = pickups[pid]
-		if pu.get("up", false) and world.building_at.get(world.to_cell(pu.pos)) == here:
-			_draw_pickup(decals_up, pu, BuildingProp.GROUND_H)
+		if pu.get("storey", 0) == me.storey and world.building_at.get(world.to_cell(pu.pos)) == here:
+			_draw_pickup(decals_up, pu, BuildingProp.GROUND_H * me.storey)
 
 
 func _draw_pickup(ci: Node2D, pu: Dictionary, lift: float) -> void:

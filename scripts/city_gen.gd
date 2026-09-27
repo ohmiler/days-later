@@ -387,6 +387,7 @@ static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGen
 		plans.sort()
 		if not plans.is_empty():
 			_build_plan(w, rec, PREFABS[plans[rng.randi() % plans.size()]], rng)
+	rec.id = w.buildings.size()  # (its index: Buildings, WorldState)
 	w.buildings.append(rec)
 
 
@@ -428,34 +429,36 @@ static func _fit(plan_rows: Array, plan: Dictionary, r: Rect2i) -> Array:
 	return rows
 
 
-## The floor upstairs (World.upper): its walls and floor, the beds and
-## cupboards up there (containers with `up`), what's on the floor. Doorways
-## upstairs are open; the stairs are the same cell as below.
+## The floor upstairs (World.storey_map(1)): its walls and floor, the beds and
+## cupboards up there (containers with `storey` 1), what's on the floor.
+## Doorways upstairs are open; the stairs are the same cell as below.
 static func _build_upper(w: World, rec: Dictionary, plan: Dictionary, rng: RandomNumberGenerator) -> void:
 	var r: Rect2i = rec.rect
 	var rows := _fit(plan.upper, plan, r)
+	var upper := w.storey_map(1)
+	var upper_blocked := w.storey_blocked(1)
 	rec.upper = true
 	for y in rows.size():
 		for x in r.size.x:
 			var ch: String = rows[y][x]
 			var c := r.position + Vector2i(x, y)
 			if ch in "WwUDB":
-				w.upper[c] = World.IWALL
+				upper[c] = World.IWALL
 				continue
-			w.upper[c] = World.FLOOR
+			upper[c] = World.FLOOR
 			if ch == "b" and y > 0 and rows[y - 1][x] == "b":
 				continue  # the foot of the bed above
 			if PLAN_FURNITURE.has(ch) or ch == "b":
-				var data := {id = w.containers.size(), kind = PLAN_FURNITURE.get(ch, "bed"), cell = c, table = "home", sign = rec.sign, up = true}
+				var data := {id = w.containers.size(), kind = PLAN_FURNITURE.get(ch, "bed"), cell = c, table = "home", sign = rec.sign, storey = 1}
 				if ch == "b" and y + 1 < rows.size() and rows[y + 1][x] == "b":
 					data.long = 2
-					w.upper_blocked[c + Vector2i.DOWN] = true
-				w.upper_blocked[c] = true
+					upper_blocked[c + Vector2i.DOWN] = true
+				upper_blocked[c] = true
 				w.containers.append(data)
 			elif PLAN_DECOR.has(ch) and ch != "S":
-				w.decor.append({kind = PLAN_DECOR[ch], cell = c, seed = rng.randi(), building = rec, up = true})
+				w.decor.append({kind = PLAN_DECOR[ch], cell = c, seed = rng.randi(), building = rec, storey = 1})
 				if PLAN_DECOR[ch] in DECOR_BLOCKS:
-					w.upper_blocked[c] = true
+					upper_blocked[c] = true
 
 
 ## Build the inside of a shop or home from its plan (see data/prefabs/README.txt).
@@ -1089,7 +1092,7 @@ static func _size_beds(w: World) -> void:
 				owner[Vector2i(x, y)] = i
 	var beds_in := {}
 	for f in w.containers:
-		if f.kind == "bed" and not f.has("long") and not f.get("up", false) and owner.has(f.cell):
+		if f.kind == "bed" and not f.has("long") and f.get("storey", 0) == 0 and owner.has(f.cell):
 			if not beds_in.has(owner[f.cell]):
 				beds_in[owner[f.cell]] = []
 			beds_in[owner[f.cell]].append(f)

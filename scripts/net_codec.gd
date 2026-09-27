@@ -33,7 +33,7 @@ const P_SNEAK := 2
 const P_ROOF := 4
 const P_SLEEP := 8
 const P_AIM := 16
-const P_UP := 32
+# (32 was upstairs: the storey is a byte of its own now)
 const P_PRONE := 64
 const P_SPENT := 128
 const P_BLEED := 256
@@ -47,9 +47,10 @@ static func put_player(b: StreamPeerBuffer, p: Player) -> void:
 	b.put_u16(Items.index_of(p.weapon_id))
 	b.put_u8(clampi(roundi(p.stamina), 0, 255))
 	var f := (P_SPRINT if p.sprint else 0) | (P_SNEAK if p.sneak else 0) | (P_ROOF if p.on_roof else 0) \
-			| (P_SLEEP if p.sleeping else 0) | (P_AIM if p.aiming else 0) | (P_UP if p.up else 0) \
+			| (P_SLEEP if p.sleeping else 0) | (P_AIM if p.aiming else 0) \
 			| (P_PRONE if p.prone else 0) | (P_SPENT if p.exhausted else 0) | (P_BLEED if p.bleeding else 0)
 	b.put_u16(f)
+	b.put_u8(clampi(p.storey, 0, 255))
 	b.put_16(p.riding)
 	b.put_u8(p.seat)
 	b.put_16(p.sitting)
@@ -69,10 +70,10 @@ static func get_player(b: StreamPeerBuffer) -> Dictionary:
 	d.on_roof = f & P_ROOF != 0
 	d.sleeping = f & P_SLEEP != 0
 	d.aiming = f & P_AIM != 0
-	d.up = f & P_UP != 0
 	d.prone = f & P_PRONE != 0
 	d.exhausted = f & P_SPENT != 0
 	d.bleeding = f & P_BLEED != 0
+	d.storey = b.get_u8()
 	d.riding = b.get_16()
 	d.seat = b.get_u8()
 	d.sitting = b.get_16()
@@ -106,15 +107,16 @@ static func read_own(data: PackedByteArray) -> Dictionary:
 
 # --- Zombies ------------------------------------------------------------------------
 
-## A zombie in 13 bytes: id, where, health, what it's up to (state 0-2 and
-## flags 1 lunging, 2 down, 4 upstairs, 8 holding someone) and what it's lost.
+## A zombie in 11 bytes: id, where, health, what it's up to (state 0-2 and
+## flags 1 lunging, 2 down, 8 holding someone), and one byte for what it's
+## lost (bits 1, 2, 4) and which storey it is on (the 5 bits above them).
 static func zombie_bytes(z: Zombie) -> PackedByteArray:
 	var b := StreamPeerBuffer.new()
 	b.put_u32(z.zid)
 	put_pos(b, z.position)
 	b.put_u8(clampi(ceili(z.hp), 0, 255))
 	b.put_u8((z.state & 3) | ((z.flags & 15) << 2))
-	b.put_u8(z.missing & 255)
+	b.put_u8((z.missing & 7) | (clampi(z.storey, 0, 31) << 3))
 	return b.data_array
 
 
@@ -123,16 +125,18 @@ static func get_zombie(b: StreamPeerBuffer) -> Dictionary:
 	var s := b.get_u8()
 	d.state = s & 3
 	d.flags = s >> 2
-	d.missing = b.get_u8()
+	var m := b.get_u8()
+	d.missing = m & 7
+	d.storey = m >> 3
 	return d
 
 
-const ZOMBIE_BYTES := 13
+const ZOMBIE_BYTES := 11
 
 
 ## A zombie that has only moved and changed what it's doing since `was`
 ## (the bytes last sent): 7 bytes, the id and how far it went in half pixels.
-## Empty when that won't do (its health or limbs changed, or it went too far).
+## Empty when that won't do (its health, limbs or storey changed, or it went too far).
 static func nudge(was: PackedByteArray, now: PackedByteArray) -> PackedByteArray:
 	if was[8] != now[8] or was[10] != now[10]:
 		return PackedByteArray()

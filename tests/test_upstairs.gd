@@ -30,8 +30,8 @@ func run() -> void:
 	check(not b.is_empty(), "shophouses have a floor upstairs")
 	var st: Vector2i = b.stairs
 	var at := w.to_pos(st)
-	check(w.upper.get(st) == World.FLOOR, "the stairs come up onto its floor")
-	var beds := w.containers.filter(func(f): return f.get("up", false) and f.kind == "bed" and b.rect.has_point(f.cell))
+	check(w.storey_map(1).get(st) == World.FLOOR, "the stairs come up onto its floor")
+	var beds := w.containers.filter(func(f): return f.get("storey", 0) == 1 and f.kind == "bed" and b.rect.has_point(f.cell))
 	check(not beds.is_empty(), "the bedrooms are up there (%d beds)" % beds.size())
 
 	# Up the stairs.
@@ -42,7 +42,7 @@ func run() -> void:
 	var t := {kind = "stairs", id = st, pos = at}
 	check("up" in _verbs(t), "at the stairs, E goes up")
 	main.actions._do_action(me, t, "up")
-	check(me.up and not me.on_roof, "to the floor upstairs, not the roof")
+	check(me.storey == 1 and not me.on_roof, "to the floor upstairs, not the roof")
 	await frames(30)
 	check(me.lift > BuildingProp.GROUND_H * 0.8, "drawn a storey up (%.0f)" % me.lift)
 
@@ -52,7 +52,7 @@ func run() -> void:
 	simulate(1.5)
 	me.move = Vector2.ZERO
 	var c := w.to_cell(me.position)
-	check(me.position != start and w.upper.get(c) == World.FLOOR, "you walk on the floor up there")
+	check(me.position != start and w.storey_map(1).get(c) == World.FLOOR, "you walk on the floor up there")
 	me.move = Vector2.UP
 	simulate(2.0)
 	me.move = Vector2.ZERO
@@ -61,7 +61,7 @@ func run() -> void:
 	# A zombie right below you can't get at you.
 	me.position = at
 	var below := zombie_at(at + Vector2(6, 0))
-	below.up = false
+	below.storey = 0
 	var hp0 := me.hp
 	simulate(1.5)
 	check(me.hp == hp0, "a zombie on the floor below can't bite you")
@@ -74,15 +74,15 @@ func run() -> void:
 	me.sel = 0
 	main.inventory.req_drop()
 	var dropped: Array = main.pickups.values().filter(func(pu): return pu.item.id == "rag")
-	check(dropped.size() == 1 and dropped[0].up, "a thing dropped upstairs lies upstairs")
+	check(dropped.size() == 1 and dropped[0].storey == 1, "a thing dropped upstairs lies upstairs")
 
 	# Up to the roof and back down to the floor upstairs.
 	main.actions._do_action(me, t, "up")
-	check(me.on_roof and not me.up, "on up the stairs to the roof")
+	check(me.on_roof and me.storey == 0, "on up the stairs to the roof")
 	main.actions._do_action(me, t, "down")
-	check(me.up and not me.on_roof, "down from the roof to the floor upstairs")
+	check(me.storey == 1 and not me.on_roof, "down from the roof to the floor upstairs")
 	main.actions._do_action(me, t, "down")
-	check(not me.up and not me.on_roof, "and down again to the ground floor")
+	check(me.storey == 0 and not me.on_roof, "and down again to the ground floor")
 
 	# A zombie that sees you go up comes up the stairs after you.
 	for d in w.doors:
@@ -96,7 +96,7 @@ func run() -> void:
 	simulate(0.8)
 	check(z.target == me, "the zombie has seen you")
 	main.actions._do_action(me, t, "up")
-	me.position = at + Vector2(0, -20) if not w.is_solid_up(st + Vector2i.UP) else at
+	me.position = at + Vector2(0, -20) if not w.is_solid_on(st + Vector2i.UP, 1) else at
 	simulate(5.0)
-	check(z.up, "it comes up the stairs after you")
+	check(z.storey == 1, "it comes up the stairs after you")
 	check(z.position.distance_to(me.position) < 24.0 or me.hp < Player.MAX_HP, "and finds you up there")

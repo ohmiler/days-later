@@ -51,7 +51,7 @@ var exert_t := 0.0  # server: just threw a blow; no getting your breath back unt
 var sprint := false
 var sneak := false  # Ctrl / C: slow, quiet, harder to spot
 var on_roof := false  # up on the shophouse roofs: zombies can't follow
-var up := false  # upstairs in a shophouse (World.upper): zombies can follow, by the stairs
+var storey := 0  # 0 on the ground, else the floor upstairs you're on (World.storey_map): zombies can follow, by the stairs
 var lift := 0.0  # current drawn height above the street (eases between roofs)
 var _pose := {}  # what the body last showed, for easing between poses (Rig.build_eased)
 var _ghost: Node2D  # your own outline over whatever hides you (under a bus), on your screen only
@@ -60,12 +60,13 @@ var _crawl_way := 0  # crawling: 0 side-on, -1 up the screen (away), 1 down it (
 var _crawl_turn := 0.0  # seconds since that changed (the body squashes thin as it turns)
 var _crawl_top := {}  # crawling up or down: the TopRig pose last drawn (for the ghost)
 var step_t := 0.0  # server: time to the next footstep noise
+var scent_t := 0.0  # server: time to the next whiff of your blood, bleeding
 var bitten := false  # server: set by a zombie bite, handled by main
 var turned := false  # died of the infection and got back up as a zombie
 var warned := {}  # server: which low-need warnings were already sent
 var fall_dir := 1.0
 var last_death_pos := Vector2.ZERO
-var last_death_up := false  # died upstairs: the body stays up there
+var last_death_storey := 0  # died upstairs: the body stays up there
 var shoot_cd := 0.0
 var punch_buf := 0.0  # a click that came while still busy: acted on when ready (see set_attack_input)
 var kick_buf := 0.0
@@ -253,7 +254,7 @@ func server_tick(delta: float) -> void:
 			refresh_wear()  # the clothes stayed on the body; the new survivor starts in their own
 			inv.resize(bag_size())
 			position = home_spawn()
-			up = bed >= 0 and bed < world.container_nodes.size() and world.container_nodes[bed].data.get("up", false)
+			storey = world.container_nodes[bed].data.get("storey", 0) if bed >= 0 and bed < world.container_nodes.size() else 0
 			on_roof = false
 			on_car = -1
 		return
@@ -283,7 +284,7 @@ func server_tick(delta: float) -> void:
 		return
 	if riding >= 0:
 		return  # the bike moves them (Vehicles.server_tick)
-	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof, false, up, prone)
+	position = world.slide(position, move.limit_length(1.0) * SPEED * speed_mult() * world.slow_at(position) * delta, RADIUS, on_roof, false, storey, prone)
 
 
 ## The way the body faces: where you aim, or, held by a zombie, at it.
@@ -305,7 +306,7 @@ func push_sample(t: float, pos: Vector2) -> void:
 ## Under a bus, a songthaew, a truck (World.is_under), even partly: hidden,
 ## and no room to stand up (standing, you'd be inside it).
 func under_vehicle() -> bool:
-	return prone and not up and not on_roof and world != null and not world.can_stand(position, RADIUS)
+	return prone and storey == 0 and not on_roof and world != null and not world.can_stand(position, RADIUS)
 
 
 ## In the middle of a running jump (see Actions.req_jump).
@@ -595,10 +596,10 @@ func stand_up() -> void:
 	sitting = -1
 
 
-## Is `other` (a player or zombie) on the same floor as you: both upstairs or
-## both down (the roof is its own place again: see on_roof)?
+## Is `other` (a player or zombie) on the same floor as you: the same storey
+## (the roof is its own place again: see on_roof)?
 func same_floor(other) -> bool:
-	return other.up == up
+	return other.storey == storey
 
 
 func home_spawn() -> Vector2:
@@ -754,7 +755,7 @@ func _process(delta: float) -> void:
 		if on_car >= 0:
 			lift = climb_h  # (up: carry on from where the climb left you, no drop)
 			climb_dur = 0.0
-	var want_lift: float = world.roof_height(position) if on_roof else (BuildingProp.GROUND_H if up else 0.0)
+	var want_lift: float = world.roof_height(position) if on_roof else BuildingProp.GROUND_H * storey
 	if on_car >= 0 and on_car < world.street_props.size():
 		want_lift = StreetProp.roof_spot(world.street_props[on_car])[1]
 	lift = lerpf(lift, want_lift, minf(1.0, 12.0 * delta))
@@ -769,14 +770,14 @@ func _process(delta: float) -> void:
 		if death_t > 0.0:
 			# Respawned: leave the old body where it fell (unless it got up and walked off).
 			if not turned and get_parent().has_method("leave_corpse"):
-				get_parent().leave_corpse(last_death_pos, fall_dir, look, false, death_t, "", 0, -1.0, last_death_up)
+				get_parent().leave_corpse(last_death_pos, fall_dir, look, false, death_t, "", 0, -1.0, last_death_storey)
 			death_t = 0.0
 			turned = false  # cleared here, on every peer, once the old body is dealt with
 	else:
 		if death_t == 0.0:
 			fall_dir = -1.0 if aim.x > 0 else 1.0  # topple backwards, away from where we faced
 			last_death_pos = position
-			last_death_up = up
+			last_death_storey = storey
 		death_t += delta
 	night_eyes.energy = move_toward(night_eyes.energy, 0.55 if world.is_night and alive() and is_local else 0.0, delta * 0.5)
 	night_eyes.visible = night_eyes.energy > 0.01

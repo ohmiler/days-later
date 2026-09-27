@@ -14,7 +14,8 @@ var main: Main
 
 const REACH := 18.0
 const DEFS := {
-	"tap": {name = "ก๊อกน้ำ", state = {water = 10}, solid = true},
+	# A tap runs from its building's rooftop tank (Buildings.tank), not its own supply.
+	"tap": {name = "ก๊อกน้ำ", state = {}, solid = true},
 	"radio": {name = "วิทยุ", state = {on = false}, solid = false},
 	"vending": {name = "ตู้กดน้ำ", state = {broken = false}, solid = true},
 	# The gas stove in a shophouse's back kitchen (the decor draws the stove;
@@ -27,6 +28,7 @@ const BOIL_HOURS := 0.5  # game hours to boil a pot of water
 const COOK_HOURS := 0.75  # ...to cook rice
 const COOK_SMELL := 110.0  # cooking smells: zombies this far come to see, every few seconds
 const GAS := [2, 6]  # goes a gas bottle has left, the least and the most
+const TAP_GULP := 2  # sips drunk straight from a tap
 const RADIO_NOISE := 95.0  # a playing radio calls zombies this far, every few seconds
 
 var _radio_t := 0.0
@@ -41,8 +43,9 @@ func actions_for(p: Player, id: int) -> Array:
 	var s: Dictionary = th.state
 	match th.kind:
 		"tap":
-			return [_act("drink", "ดื่มน้ำจากก๊อก (ไม่ได้ต้ม)", s.water > 0 and p.thirst < 98.0,
-					"น้ำไม่ไหลแล้ว" if s.water <= 0 else "ยังไม่กระหาย"), _tap_extra(p, s)]
+			var wet := _tap_water(th) >= 1.0
+			return [_act("drink", "ดื่มน้ำจากก๊อก (ไม่ได้ต้ม)", wet and p.thirst < 98.0,
+					"แท็งก์บนดาดฟ้าแห้ง · รอฝน" if not wet else "ยังไม่กระหาย"), _tap_extra(p, th)]
 		"radio":
 			return [_act("toggle", "ปิดวิทยุ" if s.on else "เปิดวิทยุ (ซอมบี้ได้ยิน)")]
 		"vending":
@@ -54,9 +57,15 @@ func actions_for(p: Player, id: int) -> Array:
 
 
 ## Tap: drink, or fill what you carry.
-func _tap_extra(p: Player, s: Dictionary) -> Dictionary:
+func _tap_extra(p: Player, th: Dictionary) -> Dictionary:
 	var room := _room_for(p, "tap")
-	return _act("fill", "เติมน้ำใส่ขวด/หม้อ", s.water > 0 and room, "น้ำไม่ไหลแล้ว" if s.water <= 0 else "ไม่มีขวดหรือหม้อที่ว่าง")
+	var wet := _tap_water(th) >= 1.0
+	return _act("fill", "เติมน้ำใส่ขวด/หม้อ", wet and room, "แท็งก์บนดาดฟ้าแห้ง · รอฝน" if not wet else "ไม่มีขวดหรือหม้อที่ว่าง")
+
+
+## Sips left for a tap: its building's rooftop tank.
+func _tap_water(th: Dictionary) -> float:
+	return Buildings.tank(main, Buildings.at(main.world, th.cell))
 
 
 ## Anything in `p`'s bag with room for `what` water?
@@ -108,7 +117,7 @@ static func title_of(th: Dictionary) -> String:
 	var s: Dictionary = th.state
 	match th.kind:
 		"tap":
-			return name + (" · แห้งแล้ว" if s.water <= 0 else "")
+			return name
 		"radio":
 			return name + (" · เปิดอยู่" if s.on else "")
 		"vending":
@@ -142,24 +151,24 @@ func act(p: Player, id: int, verb: String) -> void:
 
 
 func _do_tap_drink(p: Player, th: Dictionary) -> void:
-	p.thirst = minf(100.0, p.thirst + 35.0)
-	var s: Dictionary = th.state.duplicate()
-	s.water -= 1
-	set_state(th.id, s)
+	var bid := Buildings.at(main.world, th.cell)
+	var got := Buildings.draw_water(main, bid, TAP_GULP)
+	if got <= 0:
+		return
+	p.thirst = minf(100.0, p.thirst + Items.LIQUIDS.tap.drink * got)
 	main.fx_sound.rpc("eat", p.position)
 	if randf() < Items.LIQUIDS.tap.sick:
 		main._toast(p, Body.add_condition(p, "diarrhea", main.now()))
 	else:
-		main._toast(p, "ดื่มน้ำจากก๊อก" + (" · น้ำหยดสุดท้ายแล้ว" if s.water <= 0 else ""))
+		main._toast(p, "ดื่มน้ำจากก๊อก" + (" · น้ำในแท็งก์ใกล้หมด" if Buildings.tank(main, bid) < 4.0 else ""))
 
 
 func _do_tap_fill(p: Player, th: Dictionary) -> void:
-	var s: Dictionary = th.state.duplicate()
-	var got: int = main.inventory.fill_containers(p, "tap", 12)
+	var bid := Buildings.at(main.world, th.cell)
+	var got: int = main.inventory.fill_containers(p, "tap", floori(Buildings.tank(main, bid)))
 	if got <= 0:
 		return
-	s.water -= 1
-	set_state(th.id, s)
+	Buildings.draw_water(main, bid, got)
 	main.fx_sound.rpc("eat", p.position)
 	main._toast(p, "เติมน้ำประปา %d ส่วน · ควรต้มก่อนดื่ม" % got)
 
@@ -263,57 +272,44 @@ func server_tick(delta: float) -> void:
 		if th.kind == "radio" and th.state.on:
 			main._make_noise(main.world.to_pos(th.cell), RADIO_NOISE)
 		elif th.kind == "stove" and not th.state.pot.is_empty() and now < th.state.ready:
-			main._make_noise(main.world.to_pos(th.cell), COOK_SMELL)  # (a smell, until there's a way to say so: see ROADMAP core 4)
+			main.stimulus("smell", main.world.to_pos(th.cell), COOK_SMELL, th.get("storey", 0))
 
 
-# --- State: set, send, save ------------------------------------------------------
+# --- State (kept by WorldState, kind "thing") ------------------------------------
+
+## How thing `id` starts (WorldState asks).
+static func start_state(w: World, id: int) -> Dictionary:
+	return DEFS[w.things[id].kind].state.duplicate() if id >= 0 and id < w.things.size() else {}
+
 
 ## Change a thing's state for everyone (server).
 func set_state(id: int, state: Dictionary) -> void:
-	thing_state.rpc(id, state)
+	main.world_state.set_state("thing", id, state)
 
 
-@rpc("authority", "call_local", "reliable")
-func thing_state(id: int, state: Dictionary) -> void:
+## Told by WorldState whenever one changes, on every machine.
+func on_changed(id: int, state: Dictionary) -> void:
 	var w: World = main.world
 	if w == null or id < 0 or id >= w.things.size():
 		return
-	var th: Dictionary = w.things[id]
-	th.state = _with_defaults(th.kind, state)
+	w.things[id].state = state
 	if id < w.thing_nodes.size():
 		w.thing_nodes[id].refresh()
 
 
-## Every thing that is not as it started, for a save or a player joining.
-func changed() -> Dictionary:
-	var out := {}
-	for th in main.world.things:
-		if th.state != DEFS[th.kind].state:
-			out[th.id] = th.state
-	return out
+## A building's state changed (its tank): its taps show it.
+func on_building_changed(id: int, _state: Dictionary) -> void:
+	var w: World = main.world
+	if w == null:
+		return
+	for th in w.things:
+		if th.kind == "tap" and Buildings.at(w, th.cell) == id and th.id < w.thing_nodes.size():
+			w.thing_nodes[th.id].refresh()
 
 
-## Put saved (or sent) states back.
+## Old saves kept things on their own: put them back the new way.
 func restore(states: Dictionary) -> void:
-	for id in states:
-		if id is int and id >= 0 and id < main.world.things.size():
-			thing_state(id, states[id])
-
-
-## A newly joined player gets everything that has changed.
-func send_all(peer_id: int) -> void:
-	things_sync.rpc_id(peer_id, changed())
-
-
-@rpc("authority", "call_remote", "reliable")
-func things_sync(states: Dictionary) -> void:
-	restore(states)
-
-
-static func _with_defaults(kind: String, state: Dictionary) -> Dictionary:
-	var s: Dictionary = DEFS[kind].state.duplicate()
-	s.merge(state, true)
-	return s
+	main.world_state.restore({thing = states})
 
 
 # --- Placing them in the city (generation) ---------------------------------------
@@ -343,7 +339,7 @@ static func place_all(w: World, rng: RandomNumberGenerator) -> void:
 ## numbers, and after everything else: older saved cities keep their things.
 static func place_stoves(w: World) -> void:
 	for d in w.decor:
-		if d.kind == "stove" and not d.get("up", false):
+		if d.kind == "stove" and d.get("storey", 0) == 0:
 			_add(w, "stove", d.cell)
 
 

@@ -45,8 +45,8 @@ func run() -> void:
 			"a %s picked up joins the one in the bag" % food)
 
 	# Upstairs: a body can be burned, and a player's body stays up there.
-	me.up = true
-	main.add_corpse(me.position + Vector2(10, 0), 1.0, zombie_at(me.position + Vector2(300, 300)).body_look(), "", true)
+	me.storey = 1
+	main.add_corpse(me.position + Vector2(10, 0), 1.0, zombie_at(me.position + Vector2(300, 300)).body_look(), "", 1)
 	await frames(1)
 	var cid: int = main.corpses.keys().max()
 	check(Interact._candidates(main, me).any(func(c): return c.kind == "corpse" and c.id == cid),
@@ -56,10 +56,10 @@ func run() -> void:
 	simulate(Player.RESPAWN_TIME + 0.5)
 	await frames(2)
 	var bodies := _player_bodies()
-	check(bodies.size() == 1 and bodies[0].up, "died upstairs, the body stays upstairs")
+	check(bodies.size() == 1 and bodies[0].storey == 1, "died upstairs, the body stays upstairs")
 
 	# Turned: no body left behind, and the next death is an ordinary one.
-	me.up = false
+	me.storey = 0
 	main.survival._turn(me)
 	await frames(2)
 	check(me.turned, "the infection won: turned")
