@@ -24,6 +24,19 @@ class_name Rig
 ## and vary: {tilt, arm_y, droop, limp} so no two shamble quite the same.
 
 
+## Ways of going down (a Corpse's style picks one: Corpse.FALL_KINDS):
+##   sink    how far the upper body drops as the knees give
+##   buckle  how soon (0..1 of the fall) they have given
+##   hold    how long it stays on its knees before tipping over
+## (Thrown back along the ground: the Corpse itself moves, see Corpse.SLIDE.)
+const FALLS := {
+	normal = {sink = 3.0, buckle = 0.25, hold = 0.25},
+	slump = {sink = 4.5, buckle = 0.3, hold = 0.45},  # legs gone at once: drops where it stood
+	kneel = {sink = 5.5, buckle = 0.22, hold = 0.62},  # on its knees a moment, then over
+	flung = {sink = 1.0, buckle = 0.1, hold = 0.05},  # knocked off its feet
+}
+
+
 static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var vf: Array = st.view
 	var angle: float = st.get("angle", 0.0)
@@ -48,7 +61,9 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var run: float = clampf(st.get("run", 0.0), 0.0, 1.0)
 
 	# Dying: knees buckle, then the body topples like a plank around the feet
-	# (accelerating as it goes) and settles with a small bounce.
+	# (accelerating as it goes) and settles with a small bounce. How it goes
+	# down (fall_kind, see FALLS): how far the knees give and for how long
+	# before it tips.
 	var sink := 0.0
 	var tip := 0.0
 	var base := Transform2D.IDENTITY
@@ -57,8 +72,9 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 		moving = false
 		attack = Look.NONE
 		weapon = {}
-		sink = 3.0 * clampf(fall / 0.25, 0, 1)
-		var u := clampf((fall - 0.25) / 0.75, 0, 1)
+		var fk: Dictionary = FALLS.get(st.get("fall_kind", "normal"), FALLS.normal)
+		sink = fk.sink * clampf(fall / fk.buckle, 0, 1)
+		var u := clampf((fall - fk.hold) / (1.0 - fk.hold), 0, 1)
 		tip = u * u
 		var bounce := sin(clampf((u - 0.85) / 0.15, 0, 1) * PI) * 0.08
 		base = Transform2D(fall_dir * PI * 0.5 * (tip - bounce), Vector2(0, -2.0 * tip))
@@ -102,6 +118,13 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	walk.run = run
 	walk.c = c
 	r.legs = _legs(view, s, angle, sx, attack, ext, walk)
+	if fall > 0.0 and sink > 1.0:
+		# Going down: the knees fold forward to take the drop (hips lower, the
+		# feet slide back under it), all the way to kneeling for a big `sink`.
+		var down := sink * (1.0 - tip)
+		r.hips = Vector2(0, down)
+		r.legs = [_leg(Vector2(-0.3, HIP_Y + down), Vector2(-0.3 - down * 0.9, 0), true),
+				_leg(Vector2(0.3, HIP_Y + down), Vector2(0.3 - down * 0.9, 0), false)]
 
 	# The upper body bobs with the walk, lunges into punches, rocks back from
 	# kicks and hits, and drops when crouching. Zombies lean and throw
