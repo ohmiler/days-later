@@ -61,6 +61,7 @@ var _crawl_turn := 0.0  # seconds since that changed (the body squashes thin as 
 var _crawl_top := {}  # crawling up or down: the TopRig pose last drawn (for the ghost)
 var step_t := 0.0  # server: time to the next footstep noise
 var scent_t := 0.0  # server: time to the next whiff of your blood, bleeding
+var god := false  # server: admin god mode (Admin): nothing hurts
 var bitten := false  # server: set by a zombie bite, handled by main
 var turned := false  # died of the infection and got back up as a zombie
 var warned := {}  # server: which low-need warnings were already sent
@@ -219,7 +220,7 @@ func hurt(dir: Vector2) -> void:
 
 
 func take_damage(amount: float) -> void:
-	if not alive():
+	if not alive() or god:
 		return
 	hp -= amount
 	if sleeping or sitting != -1:
@@ -731,6 +732,8 @@ func set_wear(ids: Dictionary) -> void:
 ## Server: a zombie bite landing on `part`. What guards that part soaks up
 ## its share and wears down doing so: the most protective piece there first.
 func bite(dmg: float, part := "torso") -> void:
+	if god:
+		return
 	if part == "head" and wear_ids.has("head") and Items.def(wear_ids.head).get("clang", false) and get_parent() is Main:
 		get_parent()._make_noise(position, CLANG_NOISE)  # (a pot on your head, rung like a gong)
 		get_parent().fx_sound.rpc("hit", position)

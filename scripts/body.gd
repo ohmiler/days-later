@@ -45,6 +45,14 @@ const CONDITIONS := {
 			mods = {thirst = 1.8, hunger = 1.3, stamina_regen = 0.5, speed = 0.88}, damage = 0.03},
 	# Soaked (rain, the canal): clothes heavy, tiring, not hot. Set straight
 	# from the weather (Survival), not added up: it dries off after a while.
+	# The pills a junkie zombie had on it: no tiredness for a while, things
+	# that aren't there (Phantoms, on your screen only), then the crash.
+	high = {name = "ยาเข้าหัว", hours = 1.0, level = 1, then = "crash",
+			text = "ไม่รู้จักเหนื่อย · แต่เห็นภาพหลอน อะไรที่เห็นอาจไม่มีจริง · หมดฤทธิ์แล้วจะหมดแรง",
+			mods = {stamina_regen = 3.0, speed = 1.08, hunger = 1.3}},
+	crash = {name = "หมดฤทธิ์ยา", hours = 6.0, level = 2,
+			text = "หมดแรง มือสั่น หิวน้ำ · พักผ่อน ดื่มน้ำ แล้วจะดีขึ้น",
+			mods = {stamina_regen = 0.35, speed = 0.9, thirst = 1.5}},
 	wet = {name = "ตัวเปียก", hours = 0.5, level = 0, icon = "wet",
 			text = "เสื้อผ้าหนักขึ้น เหนื่อยง่ายขึ้นนิด แต่ไม่ร้อน · หลบฝนแล้วจะแห้ง (ผ้าหนาแห้งช้า)",
 			mods = {stamina_regen = 0.85, hunger = 1.1}},
@@ -77,6 +85,8 @@ static func tick_conditions(p: Player, now: float, delta: float) -> String:
 			p.conditions.erase(kind)
 			p.body_dirty = true
 			msg = "หาย%sแล้ว" % CONDITIONS[kind].name
+			if CONDITIONS[kind].has("then"):
+				msg = add_condition(p, CONDITIONS[kind].then, now)
 			continue
 		var dmg: float = CONDITIONS[kind].get("damage", 0.0)
 		if dmg > 0.0:

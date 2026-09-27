@@ -314,6 +314,15 @@ func zombie_scream(z: Zombie) -> void:
 	main._make_noise(z.position, 260.0)
 
 
+const WHISTLE_NOISE := 300.0  # how far a whistle calls (a guard's, or yours)
+
+
+## A guard zombie still doing its job: a whistle, and the others come.
+func zombie_whistle(z: Zombie) -> void:
+	main.fx_sound.rpc("whistle", z.position)
+	main._make_noise(z.position, WHISTLE_NOISE, z.storey)
+
+
 ## Send a warning once when a condition becomes true; re-arm when it clears.
 func _warn(p: Player, key: String, cond: bool, text: String) -> void:
 	if cond and not p.warned.has(key):

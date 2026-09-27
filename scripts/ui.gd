@@ -168,7 +168,7 @@ func set_volume(v: float, remember := true) -> void:
 
 ## Something that takes the keyboard or the whole screen is open.
 func typing() -> bool:
-	return chat.visible
+	return chat.visible or admin.searching()
 
 
 func overlay_open() -> bool:

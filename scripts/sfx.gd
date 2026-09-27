@@ -165,6 +165,21 @@ static func _build(name: String) -> AudioStreamWAV:
 			samples = _rustle(rng, 0.35)
 		"scream":  # a screamer calling the others
 			samples = _sweep_tone(rng, 1.1, 700.0, 1300.0, 0.45)
+		"whistle":  # a pea whistle: a shrill note, trilling
+			var n := int(0.7 * RATE)
+			samples.resize(n)
+			for i in n:
+				var t := float(i) / RATE
+				var trill := 0.6 + 0.4 * sin(TAU * 28.0 * t)
+				var env := clampf(t / 0.02, 0, 1) * clampf((0.7 - t) / 0.08, 0, 1)
+				samples[i] = (sin(TAU * (2900.0 + 120.0 * sin(TAU * 28.0 * t)) * t) * 0.3 + rng.randf_range(-1, 1) * 0.05) * trill * env
+		"cackle":  # a junkie's laugh: short high barks, rising
+			for k in 6:
+				var bark := _sweep_tone(rng, 0.09, 520.0 + k * 40.0, 780.0 + k * 50.0, 0.4)
+				samples.append_array(bark)
+				var gap := PackedFloat32Array()
+				gap.resize(int(0.05 * RATE))
+				samples.append_array(gap)
 		"siren":  # horde warning drifting over the city
 			samples = _siren(2.6)
 		"crash":  # a bike into a wall: a heavy thud and bent metal ringing

@@ -277,7 +277,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		how = "kick" if kind == Look.KICK else "punch"
 	for z: Zombie in hits:
 		z.hp -= stats[1]
-		z.stun = stats[3]
+		z.stun = stats[3] * Zombie.KINDS[z.kind].get("stun", 1.0)
 		z.push += dir * stats[4]  # (played out over a moment: Zombie.server_tick)
 		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), stats[1])
 		main._make_noise(z.position, main.NOISE_HIT)
@@ -365,6 +365,11 @@ func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
 			var hp := full if not z.outfit.is_empty() or special else maxi(1, int(full * randf_range(0.3, 0.8)))
 			main._spawn_pickup(z.position + Vector2.from_angle(i * 1.3) * 7, Items.from_key(id, hp), z.storey)
 		i += 1
+	# What some kinds had on them.
+	if z.kind == "junkie" and randf() < 0.6:
+		main._spawn_pickup(z.position + Vector2(-6, 4), Items.make("pills"), z.storey)
+	if z.kind == "guard" and z.wear.get("neck", "") == "whistle" and randf() < 0.65:
+		main._spawn_pickup(z.position + Vector2(6, 4), Items.make("whistle"), z.storey)
 	main.survival.trapped_died(z)
 	main.zombies.erase(z.zid)
 	z.queue_free()
