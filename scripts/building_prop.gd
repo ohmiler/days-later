@@ -596,9 +596,9 @@ func _draw_big() -> void:
 				c.draw_rect(Rect2(0, b.position.y + 2, w, 1.5), col.darkened(0.12))
 				if f % 2 == 1:
 					for x in range(6, int(w) - 20, 40):
-						var br := Rect2(x + e.randf_range(0, 10), b.position.y + 5, 16, b.size.y - 8)
+						var br := Rect2(x + e.randf_range(0, 8), b.position.y + 5, 22, b.size.y - 8)
 						c.draw_rect(br, Color.from_hsv(e.randf(), 0.6, 0.75))
-						_text(br, MALL_BANNERS[e.randi() % MALL_BANNERS.size()], Color.WHITE, 5)
+						_text(br, MALL_BANNERS[e.randi() % MALL_BANNERS.size()], Color.WHITE, 4)
 	_big_ground(col)
 	_big_sign(col)
 	if data.kind == "flats" and data.floors > 3 and e.randf() < 0.5:

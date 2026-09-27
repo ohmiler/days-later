@@ -64,6 +64,15 @@ const TEMPLATES := {
 	gasmask = ["face"],
 	lifejacket = ["torso"],
 	armband = ["arm"],
+	mascot = ["coat", "torso", "back_head"],
+	dino = ["back_side", "coat", "torso", "back_head"],
+	likay = ["torso"],
+	swimring = ["waist"],
+	mongkol = ["hat"],
+	pothelm = ["hat"],
+	wig = ["hat"],
+	shako = ["hat"],
+	phitakhon = ["face"],
 }
 
 
@@ -197,6 +206,54 @@ static func _draw(ci, layer: String, shape: String, p: Dictionary, r: Dictionary
 				var c2: Color = p.get("col2", col.darkened(0.3))
 				Look._line(ci, Vector2(-w, -9.0), Vector2(w, -9.0), c2, 0.6)
 				Look._line(ci, Vector2(0, -11.6), Vector2(0, bot), c2, 0.6)
+		["mascot", "coat"], ["dino", "coat"]:
+			# A costume's legs: fat, furry (or blown up), down over the trousers.
+			var col: Color = p.col
+			var w := (3.4 if view == Look.SIDE else 4.6) * Look._girth
+			Look._poly(ci, PackedVector2Array([Vector2(-w, -11.6), Vector2(w, -11.6), Vector2(w * 1.1, -2.0), Vector2(-w * 1.1, -2.0)]), col.darkened(0.08))
+			if view != Look.SIDE:
+				Look._line(ci, Vector2(0, -8.0), Vector2(0, -2.0), col.darkened(0.3), 0.5)  # between the legs
+		["mascot", "torso"], ["dino", "torso"]:
+			# The body of it: round and big, the belly lighter.
+			var col: Color = p.col
+			var w := (4.0 if view == Look.SIDE else 5.6) * Look._girth
+			Look._poly(ci, PackedVector2Array([Vector2(-w + 1.2, -20.6), Vector2(w - 1.2, -20.6), Vector2(w, -17.0), Vector2(w * 1.05, -12.0),
+					Vector2(w * 0.9, -10.0), Vector2(-w * 0.9, -10.0), Vector2(-w * 1.05, -12.0), Vector2(-w, -17.0)]), col)
+			if view != Look.BACK:
+				Look._dot(ci, Vector2(0.6 if view == Look.SIDE else 0.0, -14.5), w * 0.55, p.get("col2", col.lightened(0.3)))  # the belly
+			if shape == "mascot" and p.get("style", "") == "durian":
+				for i in 6:  # the durian's thorns
+					var a := -PI * 0.5 + (i - 2.5) * 0.45
+					Look._dot(ci, Vector2(0, -15.0) + Vector2.from_angle(a) * Vector2(w, 5.4), 0.8, col.darkened(0.35))
+		["mascot", "back_head"], ["dino", "back_head"]:
+			_costume_head(ci, view, r.head, shape, p)
+		["dino", "back_side"]:
+			if view != Look.FRONT:  # the tail behind
+				Look._poly(ci, PackedVector2Array([Vector2(-3.0, -12.0), Vector2(-9.5, -5.0), Vector2(-8.5, -3.8), Vector2(-1.0, -9.5)]), (p.col as Color).darkened(0.1))
+		["likay", "torso"]:
+			# A likay costume: glittering sequins all over, gold braid, big shoulders.
+			var w := (3.2 if view == Look.SIDE else 4.6) * Look._girth
+			var col: Color = p.col
+			var gold: Color = p.get("col2", Color("e0c040"))
+			Look._poly(ci, PackedVector2Array([Vector2(-w - 0.8, -20.4), Vector2(w + 0.8, -20.4), Vector2(w, -18.0), Vector2(w * 0.88, -10.6),
+					Vector2(-w * 0.88, -10.6), Vector2(-w, -18.0)]), col)
+			Look._rect(ci, Rect2(-w - 0.8, -20.6, (w + 0.8) * 2, 1.4), gold)  # the shoulders
+			Look._rect(ci, Rect2(-w * 0.88, -11.6, w * 1.76, 1.0), gold)  # the sash
+			for s: Vector2 in _SPOTS:
+				_spot(ci, Vector2(-w * 0.8 + s.x * w * 1.6, -19.0 + s.y * 7.6), 0.35, Color("f8f0d0") if int(s.x * 10) % 2 else gold)
+			if view == Look.FRONT:
+				Look._poly(ci, PackedVector2Array([Vector2(-1.4, -19.6), Vector2(1.4, -19.6), Vector2(0, -15.4)]), gold)  # the breastplate
+		["swimring", "waist"]:
+			# A rubber duck ring round the waist, the duck's head at the front.
+			var col: Color = p.col
+			var w := (3.8 if view == Look.SIDE else 5.4) * Look._girth
+			Look._rect(ci, Rect2(-w, -12.8, w * 2, 3.2), col)
+			Look._rect(ci, Rect2(-w, -12.8, w * 2, 0.9), col.lightened(0.2))
+			if view != Look.BACK:
+				var hx := w - 0.6 if view == Look.SIDE else 0.0
+				Look._dot(ci, Vector2(hx, -14.6), 1.8, col)  # the duck's head
+				Look._rect(ci, Rect2(hx + (0.8 if view == Look.SIDE else -0.8), -14.4, 1.6, 0.8), Color("e07a2a"))  # its beak
+				Look._dot(ci, Vector2(hx + (0.6 if view == Look.SIDE else 0.5), -15.2), 0.3, Color("1e1e1e"))
 		["lifejacket", "torso"]:
 			# A bulky orange life jacket: fat panels, a reflective strip, the buckles.
 			var w := (3.6 if view == Look.SIDE else 5.0) * Look._girth
@@ -288,6 +345,59 @@ static func hat(ci, view: int, c: Vector2, h: Dictionary) -> void:
 					var lx := 0.0 if view == Look.FRONT else 3.4
 					Look._rect(ci, Rect2(c.x + lx - 1.3, c.y - 3.0, 2.6, 2.2), col)
 					Look._dot(ci, c + Vector2(lx, -1.9), 0.7, Color("fff6c8") if p.get("lit", true) else Color("5a5a52"))
+			"mongkol":
+				# A mongkol: the Muay Thai fighter's sacred headband, the tail at the back.
+				Look._rect(ci, Rect2(c.x - 4.4, c.y - 2.6, 8.8, 1.3), col)
+				Look._rect(ci, Rect2(c.x - 4.4, c.y - 2.6, 8.8, 0.5), (p.get("col2", Color("e0c040")) as Color))
+				if view == Look.BACK or view == Look.SIDE:
+					var tx := -3.8 if view == Look.SIDE else 0.0
+					Look._line(ci, c + Vector2(tx, -2.0), c + Vector2(tx - 1.2, 3.0), col, 0.9)
+			"pothelm":
+				# A cooking pot on the head, the handles out either side.
+				Look._rect(ci, Rect2(c.x - 4.6, c.y - 5.6, 9.2, 4.6), col)
+				Look._rect(ci, Rect2(c.x - 5.0, c.y - 1.4, 10.0, 0.9), col.darkened(0.2))  # the rim
+				Look._rect(ci, Rect2(c.x - 4.2, c.y - 5.2, 2.0, 3.6), col.lightened(0.3))  # the shine
+				if view != Look.SIDE:
+					for sx in [-1.0, 1.0]:
+						Look._rect(ci, Rect2(c.x + 4.6 * sx - (1.6 if sx < 0 else 0.0), c.y - 4.0, 1.6, 0.8), Color("2a2a2a"))
+				Look._line(ci, c + Vector2(-3.8, -0.6), c + Vector2(-2.6, 3.8), Color("c8c0a0"), 0.5)  # tape under the chin
+			"wig":
+				# A wig from the salon: an afro, a bob, a big auntie perm.
+				match p.get("pattern", "afro"):
+					"bob":
+						Look._poly(ci, Look._arc(c + Vector2(0, -0.4), 4.8, PI, TAU), col)
+						if view != Look.BACK:
+							Look._rect(ci, Rect2(c.x - 4.8, c.y - 0.6, 1.6, 4.6), col)
+							Look._rect(ci, Rect2(c.x + 3.2, c.y - 0.6, 1.6, 4.6), col)
+						else:
+							Look._rect(ci, Rect2(c.x - 4.8, c.y - 0.6, 9.6, 4.6), col)
+						if view == Look.FRONT:
+							Look._rect(ci, Rect2(c.x - 3.4, c.y - 2.6, 6.8, 1.4), col)  # the fringe
+					"poof":
+						for k in 7:
+							var a := PI + k * PI / 6.0
+							Look._dot(ci, c + Vector2(0, -1.4) + Vector2.from_angle(a) * 4.4, 2.0, col)
+						Look._dot(ci, c + Vector2(0, -3.4), 3.0, col)
+					_:
+						# The afro: a big round crown, down the sides of the face (not over it).
+						match view:
+							Look.BACK:
+								Look._dot(ci, c + Vector2(0, -1.6), 6.6, col)
+							Look.SIDE:
+								Look._dot(ci, c + Vector2(-2.2, -2.2), 5.8, col)
+							_:
+								Look._poly(ci, Look._arc(c + Vector2(0, -1.0), 6.6, PI, TAU), col)
+								Look._dot(ci, c + Vector2(-5.0, -0.2), 2.4, col)
+								Look._dot(ci, c + Vector2(5.0, -0.2), 2.4, col)
+						Look._dot(ci, c + Vector2(-1.8, -4.8), 1.8, col.lightened(0.12))
+			"shako":
+				# A marching band's tall hat, a plume, a peak, a chin strap.
+				Look._rect(ci, Rect2(c.x - 3.8, c.y - 9.0, 7.6, 7.6), col)
+				Look._rect(ci, Rect2(c.x - 4.0, c.y - 9.4, 8.0, 1.2), (p.get("col2", Color("e0c040")) as Color))
+				Look._rect(ci, Rect2(c.x - 4.0, c.y - 2.4, 8.0, 1.0), (p.get("col2", Color("e0c040")) as Color))
+				Look._dot(ci, c + Vector2(0, -10.6), 1.4, Color("f0ece4"))  # the plume
+				if view != Look.BACK:
+					Look._rect(ci, Rect2(c.x - 3.6 if view == Look.FRONT else c.x + 2.6, c.y - 1.6, 7.2 if view == Look.FRONT else 3.2, 0.8), Color("1e1e1e"))
 			"fullface":
 				# A full-face helmet: a shell over the whole head, a dark visor where the face is.
 				Look._dot(ci, c + Vector2(0, 0.2), 5.1, col)
@@ -323,6 +433,19 @@ static func face(ci, view: int, c: Vector2, f: Dictionary) -> void:
 					Look.BACK:
 						for sx in [-1.0, 1.0]:
 							Look._line(ci, c + Vector2(3.9 * sx, 0.4), c + Vector2(3.3 * sx, 1.4), col.darkened(0.2), 0.35)
+			"phitakhon":
+				# A Phi Ta Khon mask (Dan Sai's ghost festival): a painted face with
+				# a long nose, a tall curled crest above.
+				var c2: Color = p.get("col2", Color("e0c040"))
+				if view != Look.BACK:
+					var fx := 0.0 if view == Look.FRONT else 1.6
+					Look._dot(ci, c + Vector2(fx, 0.4), 4.4, col)
+					Look._poly(ci, PackedVector2Array([c + Vector2(fx - 3.6, -3.0), c + Vector2(fx + 3.6, -3.0), c + Vector2(fx + 2.2, -9.4), c + Vector2(fx - 2.2, -9.4)]), c2)  # the crest
+					Look._line(ci, c + Vector2(fx - 2.4, -5.0), c + Vector2(fx + 2.4, -5.0), col.darkened(0.3), 0.6)
+					Look._dot(ci, c + Vector2(fx - 1.6, -0.2), 0.8, Color("1e1e1e"))
+					Look._dot(ci, c + Vector2(fx + 1.6, -0.2), 0.8, Color("1e1e1e"))
+					Look._line(ci, c + Vector2(fx, 0.6), c + Vector2(fx + (1.8 if view == Look.SIDE else 0.0), 4.2), c2, 1.2)  # the long nose
+					Look._line(ci, c + Vector2(fx - 2.0, 2.8), c + Vector2(fx + 2.0, 2.8), Color("c83a2e"), 0.5)
 			"gasmask":
 				# A gas mask: a rubber face, two round eyes, a filter at the mouth.
 				match view:
@@ -511,6 +634,40 @@ static func _coat(ci, view: int, r: Dictionary, p: Dictionary) -> void:
 	Look._line(ci, Vector2(-w * 1.08, bot), Vector2(w * 1.08, bot), col.darkened(0.25), 0.5)  # hem
 
 
+## A costume's big head, over the wearer's: a durian or an elephant for the
+## mall's mascots, a green dinosaur's snout for the blow-up suit.
+static func _costume_head(ci, view: int, hc: Vector2, shape: String, p: Dictionary) -> void:
+	var col: Color = p.col
+	var c := hc + Vector2(0, -1.2)
+	Look._dot(ci, c, 6.2, col)
+	Look._dot(ci, c + Vector2(-1.6, -2.0), 2.4, col.lightened(0.12))
+	if view == Look.BACK:
+		return
+	var fx := 0.0 if view == Look.FRONT else 2.6
+	match [shape, p.get("style", "")]:
+		["mascot", "durian"]:
+			for i in 8:
+				var a := i * TAU / 8.0
+				Look._dot(ci, c + Vector2.from_angle(a) * 5.6, 1.0, col.darkened(0.35))  # thorns
+			Look._dot(ci, c + Vector2(fx - 1.8, -0.4), 1.0, Color("1e1e1e"))
+			Look._dot(ci, c + Vector2(fx + 1.8, -0.4), 1.0, Color("1e1e1e"))
+			Look._rect(ci, Rect2(c.x + fx - 1.8, c.y + 2.0, 3.6, 0.8), Color("8a2a26"))  # a grin
+		["mascot", _]:  # the elephant
+			Look._dot(ci, c + Vector2(-5.2, 0.4), 3.0, col.darkened(0.1))  # ears
+			Look._dot(ci, c + Vector2(5.2, 0.4), 3.0, col.darkened(0.1))
+			Look._dot(ci, c + Vector2(fx - 1.8, -0.8), 0.9, Color("1e1e1e"))
+			Look._dot(ci, c + Vector2(fx + 1.8, -0.8), 0.9, Color("1e1e1e"))
+			Look._line(ci, c + Vector2(fx, 1.0), c + Vector2(fx + (3.0 if view == Look.SIDE else 0.6), 6.4), col.darkened(0.05), 2.0)  # the trunk
+		_:  # the dinosaur
+			Look._rect(ci, Rect2(c.x - 4.0 + fx, c.y + 0.8, 8.0, 3.2), col.darkened(0.08))  # the snout
+			for x in [-2.6, -0.8, 1.0, 2.8]:
+				Look._rect(ci, Rect2(c.x + x + fx - 0.3, c.y + 3.4, 0.6, 0.9), Color("f0ece4"))  # felt teeth
+			Look._dot(ci, c + Vector2(fx - 2.0, -1.6), 1.0, Color("f0ece4"))
+			Look._dot(ci, c + Vector2(fx + 2.0, -1.6), 1.0, Color("f0ece4"))
+			Look._dot(ci, c + Vector2(fx - 2.0, -1.6), 0.5, Color("1e1e1e"))
+			Look._dot(ci, c + Vector2(fx + 2.0, -1.6), 0.5, Color("1e1e1e"))
+
+
 ## Round the waist: a pha khao ma (checked cloth, knotted at the side), a bum
 ## bag (a pouch at the front), a tool belt (pouches, a hammer's handle).
 static func _waist(ci, view: int, shape: String, p: Dictionary) -> void:
@@ -587,6 +744,15 @@ const TOP_TEMPLATES := {
 	gasmask = ["head"],
 	lifejacket = ["back"],
 	armband = ["arms"],
+	mascot = ["back", "over_head"],
+	dino = ["back", "over_head"],
+	likay = ["back"],
+	swimring = ["waist"],
+	mongkol = ["head"],
+	pothelm = ["head"],
+	wig = ["head"],
+	shako = ["head"],
+	phitakhon = ["head"],
 }
 
 
@@ -655,6 +821,18 @@ static func _top(ci, layer: String, shape: String, p: Dictionary, r: Dictionary,
 			var end := k0 if shape == "skirt" else k0.lerp(f0, 0.8)
 			var hw := 4.2 if shape == "skirt" else 3.6
 			Look._poly(ci, PackedVector2Array([w + Vector2(-3.8, 0), w + Vector2(3.8, 0), end + Vector2(hw, 0), end + Vector2(-hw, 0)]), col)
+		["mascot", "back"], ["dino", "back"]:
+			Look._poly(ci, PackedVector2Array([w + Vector2(-5.2, 0.4 * dn), w + Vector2(5.2, 0.4 * dn), n + Vector2(6.0, -0.6 * dn), n + Vector2(-6.0, -0.6 * dn)]), col)
+			if r.mode == "supine":
+				Look._dot(ci, mid, 3.2, p.get("col2", col.lightened(0.3)))
+		["mascot", "over_head"], ["dino", "over_head"]:
+			_costume_head(ci, Look.BACK if (prone and not r.toward) else Look.FRONT, hc, shape, p)
+		["likay", "back"]:
+			Look._poly(ci, PackedVector2Array([w + Vector2(-4.0, 0.3 * dn), w + Vector2(4.0, 0.3 * dn), n + Vector2(5.2, -0.4 * dn), n + Vector2(-5.2, -0.4 * dn)]), col)
+			for s: Vector2 in _SPOTS:
+				_spot(ci, w.lerp(n, s.y) + Vector2((s.x - 0.5) * 8.0, 0), 0.35, p.get("col2", Color("e0c040")))
+		["swimring", "waist"]:
+			Look._rect(ci, Rect2(w.x - 5.4, w.y - 1.6, 10.8, 3.2), col)
 		["lifejacket", "back"]:
 			Look._poly(ci, PackedVector2Array([w + Vector2(-4.6, 0.3 * dn), w + Vector2(4.6, 0.3 * dn), n + Vector2(5.6, -0.4 * dn), n + Vector2(-5.6, -0.4 * dn)]), col)
 			Look._line(ci, mid + Vector2(-4.4, 0), mid + Vector2(4.4, 0), Color("e8e4d0"), 0.7)
@@ -789,6 +967,13 @@ static func shirt_marks(ci, q: Array, lk: Dictionary, front: bool, side := false
 					Look._rect(ci, Rect2(at + Vector2(x - 0.7, -2.0), Vector2(1.4, 4.0)), c2)
 			else:
 				_spot(ci, _at(q, 0.7, 0.25), 0.6, c2)  # the club's crest
+		"band":
+			if front:
+				for v in [0.25, 0.42, 0.59]:
+					_band(ci, q, 0.22, v, 0.78, v + 0.05, c2)  # the braid across the chest
+				Look._line(ci, _at(q, 0.5, 0.02), _at(q, 0.5, 0.88), c2, 0.4)
+			_band(ci, q, 0.0, 0.0, 0.18, 0.12, c2)  # epaulettes
+			_band(ci, q, 0.82, 0.0, 1.0, 0.12, c2)
 		"badge":
 			if front:
 				_spot(ci, _at(q, 0.72, 0.28), 0.7, Color("d8b040"))  # a guard's badge

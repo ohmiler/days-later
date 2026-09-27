@@ -17,6 +17,7 @@ var eye := Vector2.INF
 var facing := 0.0
 var reach := 400.0  # how far you see (about the screen)
 var on := 0.0  # off up on the roofs (you see over everything), asleep, or dead
+var cone := CONE  # a mascot's big head, a mask: less of it
 var mirror := false  # a mirror on the helmet: a narrow glimpse behind (see MIRROR)
 const MIRROR := deg_to_rad(40.0)
 const MIRROR_REACH := 0.45  # of the usual reach
@@ -32,6 +33,7 @@ func update(me: Player, delta: float, view_radius: float) -> void:
 	eye = me.position + Vector2(0, -2)
 	facing = me.aim.angle()
 	mirror = me.has_mirror()
+	cone = CONE * me.wear_mult("view")
 
 
 ## Is `pos` in view (for showing a zombie or another player there)?
@@ -43,7 +45,7 @@ func sees(pos: Vector2) -> bool:
 	if d < NEAR:
 		return true
 	var behind := mirror and absf(angle_difference(v.angle(), facing + PI)) < MIRROR * 0.5 and d < reach * MIRROR_REACH
-	if not behind and (absf(angle_difference(v.angle(), facing)) > CONE * 0.5 or d > reach):
+	if not behind and (absf(angle_difference(v.angle(), facing)) > cone * 0.5 or d > reach):
 		return false
 	var hit: Array = world.sight_ray(eye, v / d, d)
 	return hit[0] >= d - 6.0

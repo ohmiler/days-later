@@ -201,3 +201,4 @@ static func _head(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 	var away: bool = r.mode == "prone" and not r.toward
 	Look._head(ci, Look.BACK if away else Look.FRONT, r.head, dl.skin, dl.hair, lk.get("hair_style", "short"), false,
 			r.get("closed", false), wear.get("head", {}), 0.0, false, false, wear.get("face", {}))
+	Clothes.top(ci, "over_head", r, lk)  # (a costume's big head, over the real one)

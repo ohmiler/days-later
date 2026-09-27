@@ -360,8 +360,9 @@ func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
 	for slot in z.wear:
 		var id: String = z.wear[slot]
 		var full: int = Items.def(id).get("hp", 1)
-		if not z.outfit.is_empty() or randf() < 0.35:
-			var hp := full if not z.outfit.is_empty() else maxi(1, int(full * randf_range(0.3, 0.8)))
+		var special: bool = Items.def(id).get("special", false)  # (the rare costumes always come off)
+		if not z.outfit.is_empty() or special or randf() < 0.35:
+			var hp := full if not z.outfit.is_empty() or special else maxi(1, int(full * randf_range(0.3, 0.8)))
 			main._spawn_pickup(z.position + Vector2.from_angle(i * 1.3) * 7, Items.from_key(id, hp), z.storey)
 		i += 1
 	main.zombies.erase(z.zid)
