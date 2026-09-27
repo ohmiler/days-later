@@ -104,4 +104,6 @@ func run() -> void:
 	check(Combat.body_hit(Vector2(100, 100 - 3), Vector2.RIGHT, feet) > 0, "a shot at the legs hits")
 	check(Combat.body_hit(Vector2(100, 100 - 45), Vector2.RIGHT, feet) < 0, "a shot over the head misses")
 	var snapped := Combat.snap_aim(Vector2.ZERO, feet + Vector2(4, -26), [{position = feet}])
-	check(snapped.is_equal_approx(feet + Vector2(0, -14)), "the cursor on a zombie aims at its middle")
+	check(snapped.is_equal_approx(feet + Vector2(0, -27)), "the cursor on a zombie's head aims at its head")
+	snapped = Combat.snap_aim(Vector2.ZERO, feet + Vector2(4, -15), [{position = feet}])
+	check(snapped.is_equal_approx(feet + Vector2(0, -15)), "on its body, at its body")

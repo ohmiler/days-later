@@ -123,8 +123,8 @@ func run() -> void:
 	for i in 400:
 		styles[main.combat.death_style("axe")] = true
 	check(styles.has("behead") and styles.has("arm"), "axes behead and take arms")
-	check(main.combat.death_style("knife") == "stab", "knives stab")
-	check(main.combat.death_style("gun") == "burst", "a shot to the head bursts it")
+	check(main.combat.death_style("knife", "legs") == "stab", "knives stab")
+	check(main.combat.death_style("gun", "head") == "burst", "a shot to the head bursts it")
 	var n0: int = main.zombies.size()
 	w.hp = 1
 	w.position = home + Vector2(14, 0)

@@ -9,6 +9,9 @@ extends Node2D
 ##   arm     an arm comes away                            (axe, machete)
 ##   crush   skull caved in                               (bat, pipe, hammer, plank)
 ##   burst   head blown apart into pieces                 (a shot to the head)
+##   slump   drops where it stood, legs gone              (a blow or point to the head)
+##   kneel   on its knees a moment, then over             (a blade or point in the body)
+##   flung   thrown back along the ground                 (a finishing kick, a shotgun up close)
 ##   stab, cut, blunt, fall: an ordinary fall, some more blood
 
 const SPURT_TIME := 1.6
@@ -18,6 +21,10 @@ const GONE := 300.0
 const BURN_TIME := 14.0
 const ASH_TIME := 60.0
 const FADE := 10.0
+## How long each way of going down takes (s); the rest take FALL_TIME.
+const FALL_TIME := 0.75
+const FALL_TIMES := {slump = 0.95, kneel = 1.35, flung = 0.55}
+const SLIDE := 16.0  # flung: thrown this far back along the ground as it goes down
 
 var lk := {}  # look of the body (Look.draw's look dictionary)
 var zombie := true
@@ -68,8 +75,10 @@ func _ready() -> void:
 				_throw("chunk", up, randf_range(25.0, 70.0), randf_range(40.0, 90.0), randf_range(-1.2, 1.2))
 			_splat(10)
 			spurts = true
-		"stab", "cut":
+		"stab", "cut", "slump", "kneel":
 			_splat(3)
+		"flung":
+			_splat(6)
 	lk.missing = missing
 
 
@@ -102,6 +111,11 @@ func title() -> String:
 
 
 func _process(delta: float) -> void:
+	if style == "flung" and t < 0.5:
+		# (fast at first, dragging to a stop: SLIDE px in all over the first half second)
+		var k0 := 1.0 - (1.0 - t / 0.5) ** 2
+		var k1 := 1.0 - (1.0 - minf(t + delta, 0.5) / 0.5) ** 2
+		position.x += fall_dir * SLIDE * (k1 - k0)
 	t += delta
 	# (A zombie's body goes when the server says: see Main.corpse_gone. Anyone
 	# else's, left by a survivor who died, just goes in its own time.)
@@ -123,7 +137,7 @@ func _process(delta: float) -> void:
 	# pool spreads, then only as it slowly rots or chars; the flies and flames
 	# on their own, 12 a second.
 	_redraw_t -= delta
-	var falling := t < 0.8 or (spurts and t < SPURT_TIME)
+	var falling: bool = t < FALL_TIMES.get(style, FALL_TIME) + 0.05 or (spurts and t < SPURT_TIME)
 	var every := 0.0 if falling else (1.0 / 12.0 if t < 3.0 else (0.5 if burn >= 0.0 and burn < BURN_TIME + 22.0 else 1.0))
 	var busy := t < 3.0 or (t > ROT and t < BONES + 1.0) or (burn >= 0.0 and burn < BURN_TIME + 22.0)
 	if busy and _redraw_t <= 0.0:
@@ -180,7 +194,8 @@ func _draw_body(ci: MeshCanvas) -> void:
 				col = col.lerp(Color("4a5040") if key == "skin" else col.darkened(0.5), rot * (0.7 if key == "skin" else 0.5))
 				body[key] = col.lerp(Color("1a1612"), burnt * 0.85)
 	Look.lift = lift
-	Look.draw(ci, {view = [Look.SIDE, fall_dir > 0], zombie = zombie, fall = clampf(t / 0.75, 0.001, 1.0), fall_dir = fall_dir}, body)
+	Look.draw(ci, {view = [Look.SIDE, fall_dir > 0], zombie = zombie, fall = clampf(t / FALL_TIMES.get(style, FALL_TIME), 0.001, 1.0),
+			fall_dir = fall_dir, fall_kind = style if Rig.FALLS.has(style) else "normal"}, body)
 	Look.lift = Vector2.ZERO
 
 

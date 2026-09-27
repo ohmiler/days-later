@@ -50,7 +50,7 @@ func run() -> void:
 
 	# Rules go by tags, so a new blade works without code.
 	check(Items.has_tag("axe", "sever") and not Items.has_tag("bat", "blade"), "tags say what cuts")
-	check(Combat.death_style("knife") == "stab", "a weapon's death styles come from the table")
+	check(Combat.death_style("knife", "legs") == "stab", "a weapon's death styles come from the table")
 
 	# Weight slows you down past what you can carry, and a bag carries more.
 	await host(9360)

@@ -8,7 +8,18 @@ var main: Main
 
 const PUNCH := [18.0, 12.0, 0.35, 0.35, 2.5]
 const KICK := [20.0, 22.0, 0.8, 0.7, 8.0]  # (knock: half a cell, a stagger back, not a shove across the street)
-const MELEE_SLACK := 3.0  # extra reach so a blow that looks like it lands, lands
+const MELEE_SLACK := 3.0
+## Where a blow or a shot lands on a zombie, by how high on its drawn body
+## (feet at 0, the top of the head at -31): head, body or legs. What you hit
+## with and where decides the damage and how it dies (death_style).
+const HEAD_Y := -23.0  # above this: the head
+const LEGS_Y := -9.0  # below this: the legs
+const ZONE_DMG := {head = 1.8, body = 1.0, legs = 0.7}
+const GUN_HEAD := 2.0  # a shot to the head (instead of ZONE_DMG.head)
+const LEG_KNOCK := 0.35  # a blunt blow to the legs: the chance it goes down
+const KILL_STOP := 0.12  # the killing blow holds a little longer (HITSTOP)
+## Deaths that go down toward whoever did it, not away.
+const FORWARD := ["slump", "kneel"]  # extra reach so a blow that looks like it lands, lands
 const PUNCH_WINDUP := 0.08  # the hit lands when the fist is out, not on the click
 const KICK_WINDUP := 0.18  # matches the foot snapping out in Look.kick_pose
 
@@ -243,14 +254,16 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	# drawn body (head to feet), that is the one they meant, whichever part they hit.
 	var cursor := p.position + Look.CHEST + p.aim
 	var picked: Zombie = null
+	var zone := "body"
 	var hits: Array = []
 	for z: Zombie in main.zombies.values():
 		var v := z.position - p.position
 		if v.length() > reach or z.storey != p.storey or _wall_between(p.position, z.position, p.storey):
 			continue
-		if Rect2(z.position + Vector2(-8, -31), Vector2(16, 35)).has_point(cursor):
+		if Rect2(z.position + Vector2(-8, -31 - z.lift), Vector2(16, 35)).has_point(cursor):
 			if picked == null or v.length() < (picked.position - p.position).length():
 				picked = z
+				zone = zone_at(cursor.y - z.position.y + z.lift, z)
 		# In front of you, or so close it is pressed against you.
 		var facing := v.normalized().dot(dir)
 		if facing > 0.3 or (v.length() < 12.0 and facing > -0.3):
@@ -276,13 +289,15 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	if how == "":
 		how = "kick" if kind == Look.KICK else "punch"
 	for z: Zombie in hits:
-		z.hp -= stats[1]
+		var where := zone if z == picked and kind != Look.KICK else "body"
+		var dmg: float = stats[1] * ZONE_DMG[where]
+		z.hp -= dmg
 		z.stun = stats[3] * Zombie.KINDS[z.kind].get("stun", 1.0)
 		z.push += dir * stats[4]  # (played out over a moment: Zombie.server_tick)
-		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), stats[1])
+		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), dmg, where, z.hp <= 0)
 		main._make_noise(z.position, main.NOISE_HIT)
 		if z.hp <= 0:
-			_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0, how)
+			_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0, how, where)
 			p.kills += 1
 			continue
 		if kind == Look.KICK:
@@ -290,6 +305,8 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		# A good kick can put it on the ground (not the fat ones); a blade can take an arm.
 		if kind == Look.KICK and z.kind != "fat" and randf() < (0.5 if z.kind == "runner" else 0.3):
 			z.knock_down()
+		elif where == "legs" and not Items.has_tag(how, "blade") and z.kind != "fat" and z.down_t <= 0.0 and randf() < LEG_KNOCK:
+			z.knock_down()  # its legs taken out from under it
 		elif Items.has_tag(how, "sever") and randf() < SEVER_CHANCE:
 			var bit := z.arm_left_to_cut()
 			if bit > 0:
@@ -333,7 +350,45 @@ func fx_bump(zid: int, dir: Vector2) -> void:
 
 
 ## How a zombie dies depends on what killed it (see Corpse for what each style looks like).
-static func death_style(how: String) -> String:
+## Head, body or legs, from how high up a zombie (`dy` from its feet) it was hit.
+## One on the ground is all body.
+static func zone_at(dy: float, z = null) -> String:
+	if z is Zombie and z.flags & 2:
+		return "body"
+	return "head" if dy < HEAD_Y else ("legs" if dy > LEGS_Y else "body")
+
+
+## How it dies: what hit it (`how`: a weapon's draw kind, "gun", "kick",
+## "stomp"...) and where (`zone`), before the weapon's own `death` table:
+##   head   a blunt blow caves the skull or drops it where it stands (slump),
+##          a blade takes the head off, a point goes in (slump), a shot bursts it
+##   body   a blade or point: down on its knees, then over (kneel); a shot, back
+##   kick   a finishing kick throws it back (flung); so does a shotgun up close
+static func death_style(how: String, zone := "body", close := false) -> String:
+	var r0 := randf()
+	var blade := Items.has_tag(how, "sever")
+	var point: bool = Items.def(how).get("death", {}).has("stab")
+	var fist := how in ["", "punch"]
+	var blunt := Items.has_tag(how, "blunt") or fist
+	match zone:
+		"head":
+			if how == "gun":
+				return "burst"
+			if blade:
+				return "behead" if r0 < 0.75 else "slump"
+			if point:
+				return "slump"
+			if blunt:
+				return "crush" if r0 < 0.55 and not fist else "slump"
+		"body":
+			if how == "gun":
+				return "flung" if close else "blunt"
+			if how == "kick":
+				return "flung"
+			if (blade or point) and r0 < 0.5:
+				return "kneel"
+	if how == "gun":
+		return "blunt"
 	# A weapon's `death` in data/items.cfg: style -> chance.
 	var r := randf()
 	var styles: Dictionary = Items.def(how).get("death", {})
@@ -351,9 +406,12 @@ static func death_style(how: String) -> String:
 	return "fall"
 
 
-func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
+func _kill_zombie(z: Zombie, fall_dir: float, how := "", zone := "body", close := false) -> void:
 	z.release()
-	main.add_corpse(z.position, fall_dir, z.body_look(), death_style(how), z.storey)
+	var style := death_style(how, zone, close)
+	if style in FORWARD:
+		fall_dir = -fall_dir  # (these go down toward whoever did it)
+	main.add_corpse(z.position, fall_dir, z.body_look(), style, z.storey)
 	# What it wore can be taken off the body: always what a turned survivor had
 	# on, sometimes an ordinary zombie's (often worn half through).
 	var i := 0
@@ -402,12 +460,18 @@ func _wear_weapon(p: Player) -> void:
 ## a shot at the head or the legs lands.
 const BODY_W := 8.0
 static func body_hit(from: Vector2, dir: Vector2, feet: Vector2) -> float:
-	var best := -1.0
+	return body_hit_at(from, dir, feet).x
+
+
+## Where a shot meets a body: (distance along it, -1 for a miss; how high up,
+## dy from the feet, for zone_at): the nearest of the body's circles it passes through.
+static func body_hit_at(from: Vector2, dir: Vector2, feet: Vector2) -> Vector2:
+	var best := Vector2(-1.0, 0.0)
 	for y in [-3.0, -9.0, -15.0, -21.0, -27.0]:
 		var c := feet + Vector2(0, y)
 		var t := (c - from).dot(dir)
-		if t > 0 and (from + dir * t).distance_to(c) < BODY_W and (best < 0 or t < best):
-			best = t
+		if t > 0 and (from + dir * t).distance_to(c) < BODY_W and (best.x < 0 or t < best.x):
+			best = Vector2(t, y)
 	return best
 
 
@@ -419,7 +483,8 @@ static func snap_aim(from: Vector2, mouse: Vector2, zombies: Array) -> Vector2:
 		var d: Vector2 = mouse - z.position
 		if absf(d.x) < 12.0 and d.y > -32.0 and d.y < 4.0 and d.length() < best_d:
 			best_d = d.length()
-			best = z.position + Vector2(0, -14)
+			# (the middle of the part under the cursor: the head if it's on the head)
+			best = z.position + Vector2(0, {head = -27.0, body = -15.0, legs = -5.0}[zone_at(d.y, z)])
 	return best - from
 
 
@@ -469,25 +534,29 @@ func fire(p: Player, hand: String) -> void:
 		var dir := base.rotated(randf_range(-spread, spread))
 		var length: float = d.range if p.on_roof else main.world.ray_length(from, dir, d.range)  # (from a roof you shoot over the street)
 		var hit: Zombie = null
+		var hit_dy := 0.0
 		for z: Zombie in main.zombies.values():
 			if p.on_roof and (z.storey > 0 or main.world.building_at.has(main.world.to_cell(z.position))):
 				continue  # indoors, under the roof: out of sight
 			if not p.on_roof and z.storey != p.storey:
 				continue  # (a floor between you)
-			var t := body_hit(from, dir, z.position)
-			if t > 0 and t < length:
-				length = t
+			var bh := body_hit_at(from, dir, z.position)
+			if bh.x > 0 and bh.x < length:
+				length = bh.x
 				hit = z
+				hit_dy = bh.y
 		ends.append(from + dir * length)
 		if hit:
 			hit_any = true
+			var where := zone_at(hit_dy, hit)
 			var dmg: float = d.dmg * (1.0 if length < d.range * 0.5 else 0.6)  # (pellets lose their bite far out)
+			dmg *= GUN_HEAD if where == "head" else ZONE_DMG[where]
 			hit.hp -= dmg
 			hit.stun = maxf(hit.stun, 0.25)
 			hit.position = main.world.slide(hit.position, dir * 3.0, Zombie.RADIUS, false, false, hit.storey)
-			fx_hit.rpc(hit.zid, hit.position, dir, true, p.peer_id, "", dmg)
+			fx_hit.rpc(hit.zid, hit.position, dir, true, p.peer_id, "", dmg, where, hit.hp <= 0)
 			if hit.hp <= 0 and main.zombies.has(hit.zid):
-				_kill_zombie(hit, 1.0 if dir.x >= 0 else -1.0, "gun")
+				_kill_zombie(hit, 1.0 if dir.x >= 0 else -1.0, "gun", where, int(d.pellets) > 1 and length < 60.0)
 				p.kills += 1
 	fx_shots.rpc(from, ends, gun.id, p.peer_id)
 	main._make_noise(p.position, d.noise)
@@ -559,15 +628,16 @@ func predict(me: Player, delta: float) -> void:
 
 
 @rpc("authority", "call_local", "unreliable")
-func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, weapon_kind := "", dmg := 0.0) -> void:
+func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, weapon_kind := "", dmg := 0.0,
+		zone := "body", kill := false) -> void:
 	if dmg > 0:
-		main.dmg_numbers.append([pos + Vector2(randf_range(-4, 4), -30), str(int(dmg)), dmg >= 30, 0.0])
+		main.dmg_numbers.append([pos + Vector2(randf_range(-4, 4), -30), str(int(dmg)) + ("!" if zone == "head" else ""), dmg >= 30 or zone == "head", 0.0])
 	var z: Zombie = main.zombies.get(zid)
 	if z:
 		z.flinch(dir, strong)
 	var who: Player = main.players.get(attacker)
 	if who and who.anim_t < 0.4:
-		who.hitstop = HITSTOP  # the blow lands: a beat of stillness sells its weight
+		who.hitstop = KILL_STOP if kill else HITSTOP  # the blow lands: a beat of stillness sells its weight
 	main.sparks.append([pos + Look.CHEST - dir * 3.0, 0.14, strong])
 	for i in 4 if strong else 2:
 		main.blood.append([pos + dir * randf_range(2, 8) + Vector2(randf_range(-3, 3), randf_range(-2, 2)),
@@ -576,7 +646,7 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, w
 	var blade := Items.has_tag(weapon_kind, "blade")
 	Sfx.play(main, "blade" if blade else ("kick" if strong else "hit"), pos)
 	if attacker == multiplayer.get_unique_id():
-		main.shake = maxf(main.shake, 2.2 if strong or weapon_kind != "" else 1.3)
+		main.shake = maxf(main.shake, 3.2 if kill else (2.2 if strong or weapon_kind != "" else 1.3))
 
 
 ## Everyone sees `peer_id` jolted by a bite from direction `dir` (toward them).
