@@ -1,8 +1,8 @@
 extends "res://tests/test_base.gd"
 ## Everything worn shows in every way the game draws a body: each item's
 ## `draw` names templates that exist; each template draws both on the rig
-## (standing, walking, crawling side-on...) and seen from above (TopRig: crawling
-## up or down the screen, asleep). The lookbook (tests/lookbook.gd) shows it.
+## (standing, walking, a crawler side-on...) and seen from above (TopRig:
+## asleep). The lookbook (tests/lookbook.gd) shows it.
 
 
 func run() -> void:

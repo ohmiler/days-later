@@ -771,16 +771,12 @@ static func _top(ci, layer: String, shape: String, p: Dictionary, r: Dictionary,
 	var n: Vector2 = r.neck
 	var w: Vector2 = r.waist
 	var face: bool = r.face  # (the face is turned up or toward you)
-	var prone: bool = r.mode == "prone"
 	var mid := w.lerp(n, 0.6)  # the middle of the upper back (or chest)
 	var dn := 1.0 if n.y > w.y else -1.0  # which way the shoulders lie from the waist
 	match [shape, layer]:
 		["hoodie", "neck"], ["hood", "neck"]:
 			var hood := ((lk.shirt as Color) if shape == "hoodie" else col).darkened(0.18)
-			if prone and not r.toward:
-				Look._poly(ci, _half(n + Vector2(0, 0.6), 3.8, false), hood)  # lying on the back of the neck
-			else:
-				Look._dot(ci, hc + Vector2(0, -1.6), 4.3, hood)  # behind the head
+			Look._dot(ci, hc + Vector2(0, -1.6), 4.3, hood)  # behind the head
 		["scarf", "neck"]:
 			Look._rect(ci, Rect2(n.x - 3.4, n.y - 1.2, 6.8, 2.4), col)
 			Look._rect(ci, Rect2(n.x - 3.4, n.y - 1.2, 6.8, 0.7), col.lightened(0.15))
@@ -788,24 +784,9 @@ static func _top(ci, layer: String, shape: String, p: Dictionary, r: Dictionary,
 			Look._poly(ci, PackedVector2Array([w + Vector2(-3.9, 0.3 * dn), w + Vector2(3.9, 0.3 * dn), n + Vector2(5.0, -0.4 * dn), n + Vector2(-5.0, -0.4 * dn)]), col)
 			if p.get("plate", false):
 				Look._rect(ci, Rect2(mid.x - 2.6, mid.y - 2.2, 5.2, 4.4), col.darkened(0.2))
-		["vest", "front"]:
-			Look._poly(ci, PackedVector2Array([n + Vector2(-5.2, -0.6), n + Vector2(5.2, -0.6), n + Vector2(4.6, 1.4), n + Vector2(-4.6, 1.4)]), col.darkened(0.2))
 		["pack", "under"]:
-			if not prone:
-				var hw := 5.4 if p.get("big", false) else 4.6
-				Look._rect(ci, Rect2(mid.x - hw - 1.4, mid.y - 3.0, (hw + 1.4) * 2.0, 6.0), col.darkened(0.25))  # peeking out either side
-		["pack", "back"]:
-			if prone:
-				var big: bool = p.get("big", false)
-				var hw := 3.8 if big else 3.2
-				var hh := 4.6 if big else 3.6
-				var c := n.lerp(w, 0.42)
-				for s in [-1.0, 1.0]:
-					Look._line(ci, c + Vector2(s * hw * 0.7, -hh * dn), n + Vector2(s * 3.4, 0), col.darkened(0.3), 0.9)  # straps
-				Look._rect(ci, Rect2(c.x - hw, c.y - hh, hw * 2.0, hh * 2.0), col)
-				Look._rect(ci, Rect2(c.x - hw, c.y - hh * dn - (1.4 if dn > 0 else 0.0), hw * 2.0, 1.4), col.lightened(0.18))  # the flap
-				if big:
-					Look._rect(ci, Rect2(c.x - hw + 1.0, c.y + (hh - 2.6) * dn - (1.6 if dn < 0 else 0.0), hw * 2.0 - 2.0, 1.6), col.darkened(0.15))  # a pocket
+			var hw := 5.4 if p.get("big", false) else 4.6
+			Look._rect(ci, Rect2(mid.x - hw - 1.4, mid.y - 3.0, (hw + 1.4) * 2.0, 6.0), col.darkened(0.25))  # peeking out either side
 		["satchel", "back"]:
 			var a: Vector2 = r.sh[0]
 			Look._line(ci, a, w + Vector2(3.6, 0), col.darkened(0.2), 1.0)
@@ -823,10 +804,9 @@ static func _top(ci, layer: String, shape: String, p: Dictionary, r: Dictionary,
 			Look._poly(ci, PackedVector2Array([w + Vector2(-3.8, 0), w + Vector2(3.8, 0), end + Vector2(hw, 0), end + Vector2(-hw, 0)]), col)
 		["mascot", "back"], ["dino", "back"]:
 			Look._poly(ci, PackedVector2Array([w + Vector2(-5.2, 0.4 * dn), w + Vector2(5.2, 0.4 * dn), n + Vector2(6.0, -0.6 * dn), n + Vector2(-6.0, -0.6 * dn)]), col)
-			if r.mode == "supine":
-				Look._dot(ci, mid, 3.2, p.get("col2", col.lightened(0.3)))
+			Look._dot(ci, mid, 3.2, p.get("col2", col.lightened(0.3)))
 		["mascot", "over_head"], ["dino", "over_head"]:
-			_costume_head(ci, Look.BACK if (prone and not r.toward) else Look.FRONT, hc, shape, p)
+			_costume_head(ci, Look.FRONT, hc, shape, p)
 		["likay", "back"]:
 			Look._poly(ci, PackedVector2Array([w + Vector2(-4.0, 0.3 * dn), w + Vector2(4.0, 0.3 * dn), n + Vector2(5.2, -0.4 * dn), n + Vector2(-5.2, -0.4 * dn)]), col)
 			for s: Vector2 in _SPOTS:

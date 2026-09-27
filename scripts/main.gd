@@ -1501,8 +1501,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			_request(&"req_drop", [])
 		elif k == KEY_T:
 			_request(&"req_throw", [])
-		elif k == KEY_V:
-			_request(&"req_prone", [])
 		elif k == KEY_SPACE and not event.echo:
 			# At a run, Space jumps (over sandbags, a bin, a car's bonnet); standing, it kicks.
 			var me: Player = players.get(multiplayer.get_unique_id())

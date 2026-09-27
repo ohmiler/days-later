@@ -4,7 +4,6 @@ extends Node2D
 ## player and interpolate everyone else toward the server snapshot.
 
 const SPEED := 55.0  # walking; zombies shamble at 25-38, runners at 64, so only sprinting outruns those
-const CRAWL_SPEED := 0.3  # on hands and knees, a fraction of walking
 const ROOF_SPEED := 0.5  # careful steps up on a car roof
 const RADIUS := 5.0
 const MAX_HP := 100.0
@@ -54,11 +53,6 @@ var on_roof := false  # up on the shophouse roofs: zombies can't follow
 var storey := 0  # 0 on the ground, else the floor upstairs you're on (World.storey_map): zombies can follow, by the stairs
 var lift := 0.0  # current drawn height above the street (eases between roofs)
 var _pose := {}  # what the body last showed, for easing between poses (Rig.build_eased)
-var _ghost: Node2D  # your own outline over whatever hides you (under a bus), on your screen only
-var _ghost_on := false  # it was drawn last frame (so it's wiped the frame you come out)
-var _crawl_way := 0  # crawling: 0 side-on, -1 up the screen (away), 1 down it (toward you)
-var _crawl_turn := 0.0  # seconds since that changed (the body squashes thin as it turns)
-var _crawl_top := {}  # crawling up or down: the TopRig pose last drawn (for the ghost)
 var step_t := 0.0  # server: time to the next footstep noise
 var scent_t := 0.0  # server: time to the next whiff of your blood, bleeding
 var god := false  # server: admin god mode (Admin): nothing hurts
@@ -118,7 +112,6 @@ var climb_to := Vector2.ZERO
 var climb_h := 0.0
 var climb_t := 0.0
 var climb_dur := 0.0  # 0: not climbing
-var prone := false  # down on hands and knees, crawling (V): slow, silent, hard to spot, fits under a bus
 var grabbed_by := -1  # a zombie (zid) has hold of you: no moving or fighting, only struggling (every peer: >= 0)
 var grab_t := 0.0  # server: time before it bites
 var struggle := 0.0  # 0..1 toward breaking free (every peer, for the bar)
@@ -254,11 +247,11 @@ func set_attack_input(punch: bool, kick: bool) -> void:
 
 
 func wants_punch() -> bool:
-	return (punching or punch_buf > 0.0) and not prone and grabbed_by < 0
+	return (punching or punch_buf > 0.0) and grabbed_by < 0
 
 
 func wants_kick() -> bool:
-	return (kicking or kick_buf > 0.0) and not prone and grabbed_by < 0
+	return (kicking or kick_buf > 0.0) and grabbed_by < 0
 
 
 ## Server only.
@@ -341,12 +334,6 @@ func push_sample(t: float, pos: Vector2) -> void:
 	NetCodec.push(samples, t, pos)
 
 
-## Under a bus, a songthaew, a truck (World.is_under), even partly: hidden,
-## and no room to stand up (standing, you'd be inside it).
-func under_vehicle() -> bool:
-	return prone and storey == 0 and not on_roof and world != null and not world.can_stand(position, RADIUS)
-
-
 ## In the middle of a running jump (see Actions.req_jump).
 ## Mid silent kill: held still, drawn by _draw_stab.
 func stabbing() -> bool:
@@ -373,9 +360,7 @@ func climbing() -> bool:
 ## Sprinting is faster; a bad infection drags your feet.
 func speed_mult() -> float:
 	var m := 1.0
-	if prone:
-		m = CRAWL_SPEED
-	elif sneak:
+	if sneak:
 		m = 0.5
 	elif sprint and not exhausted and stamina > 0.0 and not Body.sprained(wounds):
 		m = 1.75
@@ -450,7 +435,7 @@ func walk(dir: Vector2, delta: float) -> void:
 	if walk_v == Vector2.ZERO:
 		return
 	var was := position
-	position = world.slide(position, walk_v * delta, RADIUS, on_roof, false, storey, prone, floats())
+	position = world.slide(position, walk_v * delta, RADIUS, on_roof, false, storey, floats())
 	if delta > 0.0:
 		walk_v = (position - was) / delta  # (against a wall, you're not still pushing into it)
 
@@ -797,12 +782,6 @@ func set_appearance(code: int) -> void:
 
 
 func _ready() -> void:
-	_ghost = Node2D.new()
-	_ghost.z_as_relative = false
-	_ghost.z_index = 6  # (over the vehicles)
-	_ghost.modulate = Color(0.85, 0.95, 1.0, 0.42)
-	_ghost.draw.connect(_draw_ghost)
-	add_child(_ghost)
 	if app_code < 0:
 		# Until the player's chosen look arrives, pick one from the peer id.
 		var rng := RandomNumberGenerator.new()
@@ -963,10 +942,6 @@ func _draw_sat(hip_y: float, k: float, face: int, floor_sit: bool) -> void:
 
 
 func _draw() -> void:
-	var ghost := is_local and alive() and under_vehicle()
-	if ghost or _ghost_on:
-		_ghost.queue_redraw()  # (every frame while under; once more after, to clear it)
-	_ghost_on = ghost
 	if not alive():
 		if turned:
 			return  # the body got up and walked off as a zombie
@@ -1006,8 +981,6 @@ func _draw() -> void:
 		_draw_stab(wdef)
 	elif vaulting():
 		_draw_leap()
-	elif prone:
-		_draw_crawl()
 	elif _winded() and ext == 0.0 and wdef.get("draw", {}).is_empty() and ldef.get("draw", {}).is_empty():
 		# Out of breath and standing still: bent over, hands on the knees, panting.
 		var side: bool = view[0] == Look.SIDE
@@ -1036,45 +1009,6 @@ func _pant() -> float:
 	return 1.0 if exhausted else clampf((30.0 - stamina) / 20.0, 0.0, 1.0)
 
 
-## On hands and knees: side-on the body leans right over, hands out ahead and
-## knees under the hips, each hand and knee reaching forward in turn as you
-## go; from the front or back, low down between the hands.
-func _draw_crawl() -> void:
-	# Side-on crawling left or right; up or down the screen a body flat on
-	# the ground is drawn from above (TopRig). Which, with a little give so it
-	# doesn't flicker on the diagonal; turning, it squashes thin and back.
-	var a := sin(phase * 1.3) if moving else 0.0
-	var f := face()
-	var way := _crawl_way
-	if absf(f.y) > absf(f.x) * 1.3:
-		way = 1 if f.y > 0.0 else -1
-	elif absf(f.x) > absf(f.y) * 1.3:
-		way = 0
-	if way != _crawl_way:
-		_crawl_way = way
-		_crawl_turn = 0.0
-	_crawl_turn += get_process_delta_time()
-	var squash := maxf(0.25, smoothstep(0.0, CRAWL_TURN, _crawl_turn))
-	if way == 0:
-		_crawl_top = {}
-		Look.body_xf = Transform2D(0.0, Vector2(squash, 1.0), 0.0, Vector2.ZERO)
-		Look.draw_eased(self, {view = [Look.SIDE, f.x < 0.0], anchors = crawl_anchors(a), lean = CRAWL_LEAN, ease = 0.35}, look, _pose)
-		Look.body_xf = Transform2D.IDENTITY
-	else:
-		_pose.clear()
-		_crawl_top = TopRig.prone(way > 0, a)
-		TopRig.draw(self, _crawl_top, look, lift, squash)
-
-
-## A low crawl side-on, `a` (-1..1) through the stride: flat to the ground,
-## head up, forearms out ahead (one reaching as the other pulls back) and the
-## knee on the other side drawn up to push.
-const CRAWL_LEAN := 1.26
-const CRAWL_TURN := 0.14  # seconds to turn over between side-on and up/down the screen
-static func crawl_anchors(a: float) -> Dictionary:
-	return {seat = Vector2(-5.5, -3.6 + absf(a) * 0.25), head = Vector2(-3.5, 1.5),  # (head up, eyes ahead)
-			hands = [Vector2(12.0 + a * 2.4, -0.5), Vector2(12.0 - a * 2.4, -0.5)],
-			feet = [Vector2(-15.0 + maxf(0.0, -a) * 4.0, -0.4 - maxf(0.0, -a) * 1.4), Vector2(-15.0 + maxf(0.0, a) * 4.0, -0.4 - maxf(0.0, a) * 1.4)]}
 
 
 ## Where the drawn body is, from `position` and `lift`, climbing up onto a
@@ -1176,22 +1110,6 @@ static func leap_keys(side: bool) -> Array:
 	return [{seat = Vector2(0, Rig.HIP_Y + 1.4), hands = [Vector2(-4.5, -10.0), Vector2(4.5, -10.0)], feet = [Vector2(-1.8, 0.0), Vector2(1.8, -1.0)], lean = 0.0},
 			{seat = Vector2(0, Rig.HIP_Y), hands = [Vector2(-5.0, -19.0), Vector2(5.0, -19.0)], feet = [Vector2(-2.2, -4.5), Vector2(2.2, -3.5)], lean = 0.0},
 			{seat = Vector2(0, Rig.HIP_Y + 1.6), hands = [Vector2(-5.0, -13.0), Vector2(5.0, -13.0)], feet = [Vector2(-2.0, 0.0), Vector2(2.0, 0.0)], lean = 0.0}]
-
-
-## Under a bus or a truck: your own body, see-through, drawn over it so you
-## can tell where you are and which way you face (no one else sees it).
-func _draw_ghost() -> void:
-	if not (is_local and under_vehicle()):
-		return  # (and a ghost drawn before is wiped: nothing drawn this time)
-	if not _crawl_top.is_empty():
-		TopRig.draw(_ghost, _crawl_top, look)
-		return
-	if not _pose.has("shown"):
-		return
-	var r: Dictionary = _pose.shown.duplicate()
-	r.shadow = false
-	Look.lift = Vector2.ZERO
-	Look.draw_rig(_ghost, r, look)
 
 
 ## Out of breath (nearly spent, or spent) and standing about.

@@ -34,7 +34,7 @@ const P_ROOF := 4
 const P_SLEEP := 8
 const P_AIM := 16
 # (32 was upstairs: the storey is a byte of its own now)
-const P_PRONE := 64
+# (64 was crawling: gone)
 const P_SPENT := 128
 const P_BLEED := 256
 
@@ -48,7 +48,7 @@ static func put_player(b: StreamPeerBuffer, p: Player) -> void:
 	b.put_u8(clampi(roundi(p.stamina), 0, 255))
 	var f := (P_SPRINT if p.sprint else 0) | (P_SNEAK if p.sneak else 0) | (P_ROOF if p.on_roof else 0) \
 			| (P_SLEEP if p.sleeping else 0) | (P_AIM if p.aiming else 0) \
-			| (P_PRONE if p.prone else 0) | (P_SPENT if p.exhausted else 0) | (P_BLEED if p.bleeding else 0)
+			| (P_SPENT if p.exhausted else 0) | (P_BLEED if p.bleeding else 0)
 	b.put_u16(f)
 	b.put_u8(clampi(p.storey, 0, 255))
 	b.put_16(p.riding)
@@ -70,7 +70,6 @@ static func get_player(b: StreamPeerBuffer) -> Dictionary:
 	d.on_roof = f & P_ROOF != 0
 	d.sleeping = f & P_SLEEP != 0
 	d.aiming = f & P_AIM != 0
-	d.prone = f & P_PRONE != 0
 	d.exhausted = f & P_SPENT != 0
 	d.bleeding = f & P_BLEED != 0
 	d.storey = b.get_u8()
