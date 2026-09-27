@@ -10,7 +10,7 @@ extends Control
 
 signal give_requested(id: String, n: int)
 signal heal_requested
-signal zombie_requested(kind: String, n: int, special: bool)  # around you, placed by main
+signal zombie_requested(kind: String, n: int, special: bool, dummy: bool)  # around you, placed by main
 signal clear_requested(radius: float)
 signal time_requested(t: float)
 signal command_requested(rpc_name: StringName, args: Array)  # everything else (see Admin)
@@ -31,6 +31,7 @@ var tab := "items"
 var cat := "all"
 var scroll := 0
 var count := 1  # zombies at a time
+var still := false  # spawn practice dummies: standing still, backs to you
 var search: LineEdit
 var _buttons: Array = []  # [rect, label, callable, lit] for the current tab (rebuilt when it changes)
 
@@ -93,9 +94,11 @@ func _build() -> void:
 	var y := 100.0
 	match tab:
 		"zombies":
-			y = _row(y, "จำนวน", [1, 5, 20].map(func(n): return ["×%d" % n, func(): count = n, count == n]))
-			var kinds := Zombie.KINDS.keys().map(func(k): return [ZOMBIE_NAMES.get(k, k), func(): zombie_requested.emit(k, count, false)])
-			kinds.append(["ชุดพิเศษ (สุ่ม)", func(): zombie_requested.emit("", count, true)])
+			var opts: Array = [1, 5, 20].map(func(n): return ["×%d" % n, func(): count = n, count == n])
+			opts.append(["ยืนนิ่ง (หุ่นซ้อม)", func(): still = not still, still])
+			y = _row(y, "จำนวน", opts)
+			var kinds := Zombie.KINDS.keys().map(func(k): return [ZOMBIE_NAMES.get(k, k), func(): zombie_requested.emit(k, count, false, still)])
+			kinds.append(["ชุดพิเศษ (สุ่ม)", func(): zombie_requested.emit("", count, true, still)])
 			y = _row(y, "เสกรอบตัว", kinds)
 			var admin: Admin = _admin()
 			y = _row(y, "ควบคุม", [

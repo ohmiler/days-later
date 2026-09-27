@@ -29,6 +29,16 @@ func run() -> void:
 	check(main.zombies.values().any(func(z): return z.wear.values().any(func(w): return Items.def(Items.base_id(w)).get("special", false))),
 			"one in a rare costume")
 	a.req_clear(1e9)
+	a.req_zombie(me.position + Vector2(60, 0), "normal", 1, false, true)
+	var dz: Zombie = main.zombies.values().filter(func(q): return q.dummy)[0]
+	var dp := dz.position
+	var df := dz.facing
+	simulate(2.0)
+	check(dz.position == dp and dz.facing == df and dz.target == null, "a practice dummy stands still, its back to you")
+	me.sneak = true
+	check(Combat.can_backstab(me, dz, "knife"), "and can be crept up on")
+	me.sneak = false
+	a.req_clear(1e9)
 	a.req_toggle("god")
 	var hp := me.hp
 	me.bite(30.0, "arms")

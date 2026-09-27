@@ -23,7 +23,7 @@ const ASH_TIME := 60.0
 const FADE := 10.0
 ## How long each way of going down takes (s); the rest take FALL_TIME.
 const FALL_TIME := 0.75
-const FALL_TIMES := {slump = 0.95, kneel = 1.35, flung = 0.55}
+const FALL_TIMES := {slump = 0.95, kneel = 1.35, flung = 0.55, held = 1.4}
 const SLIDE := 16.0  # flung: thrown this far back along the ground as it goes down
 const TWITCH := 2.4  # some go on twitching this long after they're down
 const TWITCH_ONE_IN := 3  # (one body in this many)
@@ -79,6 +79,8 @@ func _ready() -> void:
 			spurts = true
 		"stab", "cut", "slump", "kneel":
 			_splat(3)
+		"held":
+			pass  # (a clean kill: hardly a drop)
 		"flung":
 			_splat(6)
 	lk.missing = missing
@@ -200,7 +202,7 @@ func _draw_body(ci: MeshCanvas) -> void:
 	if tw > 0.0:
 		Look.lift += Vector2(0, -tw)  # a jerk through the body
 	Look.draw(ci, {view = [Look.SIDE, fall_dir > 0], zombie = zombie, fall = clampf(t / FALL_TIMES.get(style, FALL_TIME), 0.001, 1.0),
-			fall_dir = fall_dir, fall_kind = style if Rig.FALLS.has(style) else "normal", face_down = style in Combat.FORWARD}, body)
+			fall_dir = fall_dir, fall_kind = style if Rig.FALLS.has(style) else "normal", face_down = style in Combat.FACE_DOWN}, body)
 	Look.lift = Vector2.ZERO
 
 
