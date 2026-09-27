@@ -70,7 +70,10 @@ func run() -> void:
 	k2.stun = 0.0
 	var was := k2.position
 	_aim_at(k1.position + Look.CHEST)
-	main.combat._resolve_melee(me, Look.KICK, [26.0, 10.0, 0.5, 0.1, 6.0])
+	main.combat._resolve_melee(me, Look.KICK, [26.0, 10.0, 0.5, 0.6, 6.0])  # (stunned long enough not to walk back meanwhile)
+	var k1_at := k1.position
+	simulate(0.3)
+	check(k1.position.x > k1_at.x + 3.0, "a kick knocks it back over a moment, not in a jump (%.1f px)" % (k1.position.x - k1_at.x))
 	check(k1.hp < 100 and k2.hp == 100 and k2.stun > 0.0 and k2.position.x > was.x,
 			"the zombie behind is bumped back and staggers, unhurt")
 	for kz in [k1, k2]:

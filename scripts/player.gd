@@ -72,6 +72,9 @@ var punch_buf := 0.0  # a click that came while still busy: acted on when ready 
 var kick_buf := 0.0
 var sight_k := 1.0  # someone else, on your screen: 0 when out of your character's sight (see Sight)
 var hitstop := 0.0  # the attack animation holds still this long when a blow lands
+var hurt_t := 0.0  # > 0 just after a bite (visual, every peer): the body jerks away, the arms come up
+var hurt_dir := Vector2.ZERO  # the way the bite pushed (from the zombie toward you)
+const HURT := 0.35
 var local_cd := 0.0  # client, local player: its own guess at shoot_cd, to swing on the click
 var predicted := 0  # client, local player: swings shown early, still to be confirmed by the server
 var respawn := 0.0
@@ -188,6 +191,12 @@ func holds(ids: Array) -> bool:
 
 func alive() -> bool:
 	return hp > 0
+
+
+## Bitten: a jolt away from it, arms up, a flush of red (see _draw_standing).
+func hurt(dir: Vector2) -> void:
+	hurt_t = HURT
+	hurt_dir = dir.normalized() if dir != Vector2.ZERO else Vector2.DOWN
 
 
 func take_damage(amount: float) -> void:
@@ -781,7 +790,9 @@ func _process(delta: float) -> void:
 		death_t += delta
 	night_eyes.energy = move_toward(night_eyes.energy, 0.55 if world.is_night and alive() and is_local else 0.0, delta * 0.5)
 	night_eyes.visible = night_eyes.energy > 0.01
-	modulate.a = sight_k
+	hurt_t = maxf(0.0, hurt_t - delta)
+	var red := clampf(hurt_t / HURT, 0.0, 1.0) ** 2
+	modulate = Color(1.0 + red * 0.3, 1.0 - red * 0.2, 1.0 - red * 0.2, sight_k)  # (a flush, not a red silhouette)
 	queue_redraw()
 
 
@@ -1050,7 +1061,13 @@ func _winded() -> bool:
 
 func _draw_standing(ext: float, wdef: Dictionary, ldef: Dictionary) -> void:
 	var leap := vaulting()
+	# Just bitten: jerked away from it at once, easing back (the arms come up to guard).
+	var jolt := 0.0
+	if hurt_t > 0.0:
+		var k := 1.0 - hurt_t / HURT
+		jolt = sin(clampf(k / 0.2, 0.0, 1.0) * PI * 0.5) * (1.0 - smoothstep(0.3, 1.0, k))
 	Look.draw_eased(self, {view = view, angle = face().angle(), phase = PI * 0.5 if leap else phase * (0.6 if sneak else 1.0), moving = (moving and ext == 0.0) or leap,
-			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = (anim != Look.NONE and anim_t < 1.2) or grabbed_by >= 0,
+			recoil = hurt_dir * 0.8 * jolt, reel = hurt_dir * 0.7 * jolt, hit = Vector2(hurt_dir.x * (-1.0 if view[1] else 1.0), hurt_dir.y) * 2.0 * jolt,
+			attack = anim if ext > 0.0 else Look.NONE, ext = ext, guard = (anim != Look.NONE and anim_t < 1.2) or grabbed_by >= 0 or jolt > 0.3,
 			crouch = 3.0 if sneak else 0.0, run = 1.0 if leap else run_k, pant = _pant(), weapon = wdef.get("draw", {}), weapon_l = ldef.get("draw", {}), aiming = aiming,
 			breath = Time.get_ticks_msec() * 0.0016 + get_instance_id() % 7}, look, _pose)

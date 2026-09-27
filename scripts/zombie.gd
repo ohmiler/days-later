@@ -41,6 +41,10 @@ var wander := Vector2.ZERO
 var stun := 0.0  # staggered after being hit
 var hit_t := 0.0  # > 0 while flinching from a hit (visual, every peer)
 var hit_dir := Vector2.ZERO
+var push := Vector2.ZERO  # server: how much further a blow is still knocking it back (it goes over a moment, not in a jump)
+var stagger_t := 0.0  # > 0 while it reels back from a kick (visual, every peer): stumbling steps backward, the body thrown back
+const STAGGER := 0.5
+const PUSH_RATE := 9.0  # how fast a knock-back plays out (most of it in the first ~0.25 s)
 var sight_k := 1.0  # client: 0 when out of your character's sight (see Sight), fading
 var freeze := 0.0  # client: the flinch holds still this long when struck (hitstop)
 var groan_t := randf_range(2.0, 10.0)
@@ -98,6 +102,11 @@ var _path_goal := Vector2.INF  # where the current path leads, to reuse it while
 
 ## Server only. Chase what it can see; otherwise go and look at what it heard.
 func server_tick(delta: float) -> void:
+	if push.length_squared() > 0.01:
+		var step := push * minf(1.0, PUSH_RATE * delta)
+		var was := position
+		position = world.slide(position, step, RADIUS, false, false, storey)
+		push = Vector2.ZERO if position.distance_squared_to(was) < 0.0001 else push - step  # (up against a wall: that's as far as it goes)
 	attack_cd -= delta
 	climb_t -= delta
 	repath -= delta
@@ -113,6 +122,7 @@ func server_tick(delta: float) -> void:
 				if p.alive() and not p.on_roof and p.on_car < 0 and p.storey == storey and p.riding < 0 and p.position.distance_to(position) < 11.0:
 					attack_cd = GROUND_BITE_CD
 					p.bite(bite_damage() * 0.6, "legs")
+					_jolt(p)
 					break
 		return
 	if stun > 0:
@@ -130,6 +140,7 @@ func server_tick(delta: float) -> void:
 				grab(target)
 			else:
 				target.bite(bite_damage(), target.bite_part(position, false))
+				_jolt(target)
 		return
 	if repath <= 0:
 		repath = randf_range(0.4, 0.7)  # spread out, so they do not all think on the same frame
@@ -258,6 +269,7 @@ func _hold(delta: float) -> void:
 	p.grab_t -= delta
 	if p.grab_t <= 0.0:
 		p.bite(bite_damage() * GRAB_BITE, p.bite_part(position, false))
+		_jolt(p)
 		release()
 		attack_cd = 1.5
 
@@ -498,8 +510,9 @@ func _process(delta: float) -> void:
 	if kind == "screamer" and state == 2 and shown_state != 2:
 		scream_t = 1.0
 	scream_t = maxf(0.0, scream_t - delta * 0.9)
-	if moving and hit_t <= 0:
+	if moving and hit_t <= 0 and stagger_t <= 0.0:  # (reeling back, it still faces who hit it)
 		facing = lerp_angle(facing, moved.angle(), minf(1.0, 8.0 * delta))
+	stagger_t = maxf(0.0, stagger_t - delta)
 	view = Look.pick_view(facing, view)
 	if freeze > 0.0:
 		freeze -= delta  # held at the moment of the blow
@@ -561,8 +574,16 @@ func _maybe_redraw(delta: float) -> void:
 	queue_redraw()
 
 
-func flinch(dir: Vector2) -> void:
+## Everyone sees whoever it just bit jolt away from it.
+func _jolt(p: Player) -> void:
+	if get_parent() is Main:
+		get_parent().combat.fx_bitten.rpc(p.peer_id, (p.position - position).normalized())
+
+
+func flinch(dir: Vector2, strong := false) -> void:
 	hit_t = 0.25
+	if strong:
+		stagger_t = STAGGER
 	freeze = Combat.HITSTOP
 	hit_dir = dir
 	facing = (-dir).angle()  # stay facing whoever hit it while being knocked back
@@ -570,9 +591,16 @@ func flinch(dir: Vector2) -> void:
 
 func _draw() -> void:
 	var snap := sin(clampf(hit_t / 0.25, 0, 1) * PI * 0.5)
-	var st := {view = view, angle = facing, phase = phase, moving = moving and hit_t <= 0 and atk_t < 0.0, zombie = true,
-			recoil = hit_dir * 3.0 * snap, girth = KINDS[kind].girth, breed = kind, vary = vary,
-			hit = Vector2(hit_dir.x * (-1.0 if view[1] else 1.0), hit_dir.y) * 1.8 * snap, scream = 1.0 - scream_t if scream_t > 0.0 else 0.0}
+	# Kicked, it reels: thrown back fast, then finding its feet again as it
+	# stumbles backward (the legs follow the knock-back as it plays out).
+	var reel := 0.0
+	if stagger_t > 0.0:
+		var k := 1.0 - stagger_t / STAGGER
+		reel = sin(clampf(k / 0.25, 0.0, 1.0) * PI * 0.5) * (1.0 - smoothstep(0.35, 1.0, k))
+	var throw := maxf(snap, reel)
+	var st := {view = view, angle = facing, phase = phase, moving = moving and (hit_t <= 0 or stagger_t > 0.0) and atk_t < 0.0, zombie = true,
+			recoil = hit_dir * 1.2 * snap, reel = hit_dir * maxf(reel, snap * 0.6), girth = KINDS[kind].girth, breed = kind, vary = vary,
+			hit = Vector2(hit_dir.x * (-1.0 if view[1] else 1.0), hit_dir.y) * 1.8 * throw, scream = 1.0 - scream_t if scream_t > 0.0 else 0.0}
 	if atk_t >= 0.0:
 		st.bite = clampf(atk_t / (LUNGE + 0.2), 0.0, 1.0)
 	elif flags & 8:
