@@ -116,6 +116,12 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	if pant > 0.0 and fall <= 0.0:
 		bob += (sin(st.get("breath", 0.0) * 4.5) * 0.5 + 0.5) * 0.7 * pant
 		tilt += 0.07 * pant
+	# Knocked back (a kick, a bite): bent back at the hips the way the blow
+	# pushed (`reel`, on screen, up to 1), so the body stays on its legs.
+	var reel: Vector2 = st.get("reel", Vector2.ZERO)
+	if reel != Vector2.ZERO and fall <= 0.0:
+		tilt += reel.dot(Vector2.from_angle(angle)) * 0.5  # (pushed back from where it faces: leans back)
+		roll += reel.x * 0.4 * (1.0 if view == Look.FRONT else -1.0)
 	# (Only a little for a punch: the shoulder turns into it instead, see _fist_arms.)
 	var lunge := Vector2.from_angle(angle) * Vector2(0.8, 0.5) * ext if attack in [Look.PUNCH_L, Look.PUNCH_R] else Vector2.ZERO
 	if attack == Look.KICK:

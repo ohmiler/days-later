@@ -7,7 +7,7 @@ var main: Main
 
 
 const PUNCH := [18.0, 12.0, 0.35, 0.35, 2.5]
-const KICK := [20.0, 22.0, 0.8, 0.7, 16.0]
+const KICK := [20.0, 22.0, 0.8, 0.7, 8.0]  # (knock: half a cell, a stagger back, not a shove across the street)
 const MELEE_SLACK := 3.0  # extra reach so a blow that looks like it lands, lands
 const PUNCH_WINDUP := 0.08  # the hit lands when the fist is out, not on the click
 const KICK_WINDUP := 0.18  # matches the foot snapping out in Look.kick_pose
@@ -275,7 +275,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	for z: Zombie in hits:
 		z.hp -= stats[1]
 		z.stun = stats[3]
-		z.position = main.world.slide(z.position, dir * stats[4], Zombie.RADIUS, false, false, z.storey)
+		z.push += dir * stats[4]  # (played out over a moment: Zombie.server_tick)
 		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), stats[1])
 		main._make_noise(z.position, main.NOISE_HIT)
 		if z.hp <= 0:
@@ -298,7 +298,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 
 const KNOCK_ON_REACH := 16.0  # how close behind the kicked one another must be to be bumped
 const KNOCK_ON_STUN := 0.4  # it loses its footing this long (no harm done)
-const KNOCK_ON_SHOVE := 3.0
+const KNOCK_ON_SHOVE := 2.0
 
 
 ## The one kicked staggers back into whoever is right behind it: that one
@@ -316,7 +316,17 @@ func _knock_on(z: Zombie, dir: Vector2, hit: Array) -> void:
 	if best == null:
 		return
 	best.stun = maxf(best.stun, KNOCK_ON_STUN)
-	best.position = main.world.slide(best.position, dir * KNOCK_ON_SHOVE, Zombie.RADIUS, false, false, best.storey)
+	best.push += dir * KNOCK_ON_SHOVE
+	fx_bump.rpc(best.zid, dir)
+
+
+## Everyone sees a zombie bumped by the one kicked into it: it rocks back.
+@rpc("authority", "call_local", "reliable")
+func fx_bump(zid: int, dir: Vector2) -> void:
+	var z: Zombie = main.zombies.get(zid)
+	if z:
+		z.hit_dir = dir
+		z.stagger_t = Zombie.STAGGER * 0.6
 
 
 ## How a zombie dies depends on what killed it (see Corpse for what each style looks like).
@@ -544,7 +554,7 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, w
 		main.dmg_numbers.append([pos + Vector2(randf_range(-4, 4), -30), str(int(dmg)), dmg >= 30, 0.0])
 	var z: Zombie = main.zombies.get(zid)
 	if z:
-		z.flinch(dir)
+		z.flinch(dir, strong)
 	var who: Player = main.players.get(attacker)
 	if who and who.anim_t < 0.4:
 		who.hitstop = HITSTOP  # the blow lands: a beat of stillness sells its weight
@@ -557,6 +567,17 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, w
 	Sfx.play(main, "blade" if blade else ("kick" if strong else "hit"), pos)
 	if attacker == multiplayer.get_unique_id():
 		main.shake = maxf(main.shake, 2.2 if strong or weapon_kind != "" else 1.3)
+
+
+## Everyone sees `peer_id` jolted by a bite from direction `dir` (toward them).
+@rpc("authority", "call_local", "reliable")
+func fx_bitten(peer_id: int, dir: Vector2) -> void:
+	var p: Player = main.players.get(peer_id)
+	if p == null:
+		return
+	p.hurt(dir)
+	if peer_id == multiplayer.get_unique_id():
+		main.shake = maxf(main.shake, 1.8)
 
 
 @rpc("authority", "call_local", "reliable")
