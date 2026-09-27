@@ -74,10 +74,12 @@ const RISE_TIME := 0.8  # the end of DOWN_TIME, spent getting up
 var lunge_t := 0.0  # server: counting down to the bite
 var down_t := 0.0  # server: knocked flat, getting up when it runs out
 var missing := 0  # Look.LOST_* bits; arms can be cut off in a fight
-var flags := 0  # 1 = lunging, 2 = down, 4 = upstairs; from the server fields, or from snapshots
-var up := false  # upstairs in a shophouse (World.upper): it followed someone up the stairs
-var lift := 0.0  # drawn this far up (eases to a storey while upstairs)
+var flags := 0  # 1 = lunging, 2 = down, 8 = holding someone; from the server fields, or from snapshots
+var storey := 0  # 0 on the ground, else the floor upstairs it's on (World.storey_map): it followed someone up the stairs
+var lift := 0.0  # drawn this far up (eases to its storey while upstairs)
 var climb := Vector2i(-1, -1)  # server: the stairs it is heading for, after someone on the other floor
+var climb_t := 0.0  # server: still climbing the last flight (a floor takes CLIMB_TIME)
+const CLIMB_TIME := 1.2
 const NO_STAIRS := Vector2i(-1, -1)
 # Client animation clocks, started when a flag switches on.
 var atk_t := -1.0
@@ -97,9 +99,10 @@ var _path_goal := Vector2.INF  # where the current path leads, to reuse it while
 ## Server only. Chase what it can see; otherwise go and look at what it heard.
 func server_tick(delta: float) -> void:
 	attack_cd -= delta
+	climb_t -= delta
 	repath -= delta
 	investigate_t -= delta
-	flags = (1 if lunge_t > 0.0 else 0) | (2 if down_t > 0.0 else 0) | (4 if up else 0) | (8 if grab_peer != 0 else 0)
+	flags = (1 if lunge_t > 0.0 else 0) | (2 if down_t > 0.0 else 0) | (8 if grab_peer != 0 else 0)
 	if grab_peer != 0 and (down_t > 0.0 or stun > 0.0):
 		release()  # (knocked over or hit: it lets go)
 	if down_t > 0.0:
@@ -107,7 +110,7 @@ func server_tick(delta: float) -> void:
 		# Flat on the ground it still snaps at ankles that come too close.
 		if attack_cd <= 0.0:
 			for p: Player in players.values():
-				if p.alive() and not p.on_roof and p.on_car < 0 and p.up == up and p.riding < 0 and p.position.distance_to(position) < 11.0:
+				if p.alive() and not p.on_roof and p.on_car < 0 and p.storey == storey and p.riding < 0 and p.position.distance_to(position) < 11.0:
 					attack_cd = GROUND_BITE_CD
 					p.bite(bite_damage() * 0.6, "legs")
 					break
@@ -121,7 +124,7 @@ func server_tick(delta: float) -> void:
 		return
 	if lunge_t > 0.0:
 		lunge_t -= delta
-		if lunge_t <= 0.0 and target and target.alive() and not target.on_roof and target.on_car < 0 and target.up == up and position.distance_to(target.position) < 16.0:
+		if lunge_t <= 0.0 and target and target.alive() and not target.on_roof and target.on_car < 0 and target.storey == storey and position.distance_to(target.position) < 16.0:
 			var arms := 2 - int(missing & Look.LOST_ARM_L != 0) - int(missing & Look.LOST_ARM_R != 0)
 			if arms > 0 and target.grabbed_by < 0 and not target.vaulting() and not target.under_vehicle() and randf() < grab_chance:
 				grab(target)
@@ -130,10 +133,10 @@ func server_tick(delta: float) -> void:
 		return
 	if repath <= 0:
 		repath = randf_range(0.4, 0.7)  # spread out, so they do not all think on the same frame
-		# Someone it was after went up (or down) the stairs: after them. Else
-		# whoever it can see on its own floor.
+		# Someone it was after went up (or down) the stairs: after them, a
+		# floor at a time. Else whoever it can see on its own floor.
 		climb = NO_STAIRS
-		if target and target.alive() and not target.on_roof and target.up != up \
+		if target and target.alive() and not target.on_roof and target.storey != storey \
 				and position.distance_to(target.position) < 160.0:
 			climb = _stairs_after(target)
 		if climb == NO_STAIRS:
@@ -150,8 +153,8 @@ func server_tick(delta: float) -> void:
 			path.clear()
 			if randf() < 0.3:
 				wander = Vector2.from_angle(randf() * TAU) if randf() < 0.6 else Vector2.ZERO
-		elif up:
-			path.assign(world.path_up(position, goal))  # (small rooms up there: a fresh route each time)
+		elif storey > 0:
+			path.assign(world.path_on(storey, position, goal))  # (small rooms up there: a fresh route each time)
 			_path_goal = goal
 		elif target and climb == NO_STAIRS and position.distance_to(goal) < 140.0 and _clear_line(goal):
 			path.clear()  # it can see you and you are close: straight at you, no route needed
@@ -181,14 +184,17 @@ func server_tick(delta: float) -> void:
 			return
 		_move(wander, delta * 0.5)
 		return
-	if target.up != up:
-		# On its way up (or down) the stairs after them.
+	if target.storey != storey:
+		# On its way up (or down) the stairs after them, one floor at a time.
 		if climb != NO_STAIRS and position.distance_to(world.to_pos(climb)) < 7.0:
-			up = target.up
+			if climb_t > 0.0:
+				return  # (still on the last flight)
+			climb_t = CLIMB_TIME
+			storey += signi(target.storey - storey)
 			position = world.to_pos(climb)
 			path.clear()
 			repath = 0.0
-		elif not up and _bash_door_ahead():
+		elif storey == 0 and _bash_door_ahead():
 			return
 		elif not path.is_empty():
 			_follow(delta)
@@ -196,7 +202,7 @@ func server_tick(delta: float) -> void:
 			_move((world.to_pos(climb) - position).normalized(), delta)
 		return
 	var d := position.distance_to(target.position)
-	if d >= 12 and not up and _bash_door_ahead():
+	if d >= 12 and storey == 0 and _bash_door_ahead():
 		return
 	if target.on_car >= 0 and d < 18:
 		# Up on a car out of reach: it bangs on the car, and gets others' attention.
@@ -319,23 +325,29 @@ func _follow(delta: float) -> void:
 
 
 ## A noise reached this zombie. Unless it is already chasing someone, it goes to look.
-func hear(pos: Vector2) -> void:
+## Something to look into (Main.stimulus), for `look` seconds - unless it's
+## already after someone.
+func sense(pos: Vector2, look := 9.0) -> void:
 	if target != null:
 		return
 	investigate = pos + Vector2(randf_range(-10, 10), randf_range(-10, 10))
-	investigate_t = 9.0
+	investigate_t = look
 	repath = 0.0
 
 
 func _move(dir: Vector2, delta: float) -> void:
-	position = world.slide(position, dir * speed * (1.0 if up else world.slow_at(position)) * delta, RADIUS, false, false, up)
+	position = world.slide(position, dir * speed * (1.0 if storey > 0 else world.slow_at(position)) * delta, RADIUS, false, false, storey)
 
 
-## The stairs to take after someone on the other floor: in the building
-## they're up in, or (coming down) the one it's up in. NO_STAIRS if none.
+## The stairs to take after someone on another floor: in the building
+## they're up in, or (coming down) the one it's up in. NO_STAIRS if none, or
+## if the stairs don't reach the next floor toward them.
 func _stairs_after(p: Player) -> Vector2i:
-	var b = world.building_at.get(world.to_cell(position if up else p.position))
+	var b = world.building_at.get(world.to_cell(position if storey > 0 else p.position))
 	if b == null or not b.data.get("upper", false) or not b.data.has("stairs"):
+		return NO_STAIRS
+	var next := storey + signi(p.storey - storey)
+	if next > 0 and not world.storey_map(next).has(b.data.stairs):
 		return NO_STAIRS
 	return b.data.stairs
 
@@ -348,9 +360,9 @@ func _nearest_player() -> Player:
 	var best: Player = null
 	var best_d := INF
 	for p: Player in players.values():
-		if not p.alive() or p.on_roof or p.up != up:
+		if not p.alive() or p.on_roof or p.storey != storey:
 			continue
-		if up and world.building_at.get(world.to_cell(p.position)) != world.building_at.get(world.to_cell(position)):
+		if storey > 0 and world.building_at.get(world.to_cell(p.position)) != world.building_at.get(world.to_cell(position)):
 			continue  # upstairs, only the one building
 		var d := position.distance_to(p.position)
 		var lit := world.is_lit(p.position) or (p.riding >= 0 and p.riding < world.vehicles.size() and Vehicles.headlight_on(world.vehicles[p.riding], world))  # (a headlight shows you up)
@@ -369,7 +381,7 @@ func _nearest_player() -> Player:
 		# has you it keeps turning after you.
 		if d > SENSE and p != target and Vector2.from_angle(facing).dot((p.position - position) / d) < SIGHT_CONE:
 			continue
-		if d > 28.0 and not up:
+		if d > 28.0 and storey == 0:
 			var eye := position + Vector2(0, -15)
 			var to := p.position + Vector2(0, -15) - eye
 			if world.ray_length(eye, to.normalized(), to.length()) < to.length() - 4.0:
@@ -447,9 +459,7 @@ func _set_wear(ids: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
-	if not multiplayer.is_server():
-		up = flags & 4 != 0
-	lift = lerpf(lift, BuildingProp.GROUND_H if up else 0.0, minf(1.0, 12.0 * delta))
+	lift = lerpf(lift, BuildingProp.GROUND_H * storey, minf(1.0, 12.0 * delta))
 	z_index = 2 if lift > 1.0 else 1
 	var before := position
 	if not multiplayer.is_server():

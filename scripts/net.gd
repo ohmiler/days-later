@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 19  # 19: conditions (body_sync), stoves, filling and drinking water
+const PROTOCOL := 21  # 21: WorldState (things, buildings), rain in every snapshot; 20: storeys
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -115,12 +115,12 @@ func send_world(id: int) -> void:
 			stripped.append(f.data.id)
 	var items := []
 	for pid in main.pickups:
-		items.append([pid, main.pickups[pid].pos, main.pickups[pid].item, main.pickups[pid].get("up", false)])
+		items.append([pid, main.pickups[pid].pos, main.pickups[pid].item, main.pickups[pid].get("storey", 0)])
 	var doors := []
 	for d in main.world.doors:
 		doors.append([d.id, d.closed, d.hp, d.boards, d.broken, d.kind if main.world.is_built(d.id) else "", d.cell])
 	sync_state.rpc_id(id, searched, items, doors, stripped)
-	main.things.send_all(id)
+	main.world_state.send_all(id)
 	main.vehicles.send_all(id)
 	main.corpses_sync.rpc_id(id, main.corpse_list())
 
@@ -148,7 +148,7 @@ func sync_state(searched: Array, items: Array, doors: Array, stripped: Array) ->
 	for id in stripped:
 		main.world.container_nodes[id].set_stripped(true)
 	for e in items:
-		main.pickup_add(e[0], e[1], e[2], e[3] if e.size() > 3 else false)
+		main.pickup_add(e[0], e[1], e[2], int(e[3]) if e.size() > 3 else 0)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -214,7 +214,7 @@ func chat_msg(peer_id: int, who: String, text: String) -> void:
 # say they're still there, and the ones gone out of reach, to forget. Names,
 # looks and clothes go on their own, reliably, when they change (player_info).
 # A zombie that has only moved (or changed what it's doing) goes as a nudge
-# from where it was last sent (7 bytes, not 13); in full once a second, so
+# from where it was last sent (7 bytes, not 11); in full once a second, so
 # a lost snapshot's nudge is put right. Other players go every other
 # snapshot (ten a second: played back smoothly), yourself every one.
 
@@ -272,6 +272,7 @@ func build_snapshot(peer: int) -> PackedByteArray:
 	var b := StreamPeerBuffer.new()
 	b.put_float(clock)
 	b.put_float(main.time)
+	b.put_float(main.rain_total)
 	b.put_u16(main.day)
 	var everyone := _snap_n % 2 == 0
 	b.put_u8((1 if main.raining else 0) | (2 if everyone else 0))
@@ -368,6 +369,7 @@ func snapshot(data: PackedByteArray) -> void:
 	else:
 		clock = lerpf(clock, at, 0.1)
 	main.time = b.get_float()
+	main.rain_total = b.get_float()
 	main.day = b.get_u16()
 	var bits := b.get_u8()
 	main.survival._set_rain(bits & 1 != 0)
@@ -395,7 +397,7 @@ func snapshot(data: PackedByteArray) -> void:
 		p.bleeding = d.bleeding
 		p.on_roof = d.on_roof
 		p.sleeping = d.sleeping
-		p.up = d.up
+		p.storey = d.storey
 		p.sitting = d.sitting
 		p.rest_face = d.rest_face
 		p.on_car = d.on_car
@@ -463,6 +465,7 @@ func snapshot(data: PackedByteArray) -> void:
 		z.state = d.state
 		z.flags = d.flags
 		z.missing = d.missing
+		z.storey = d.storey
 	for k in b.get_u16():
 		var d := NetCodec.get_nudge(b)
 		var z: Zombie = main.zombies.get(d.id)

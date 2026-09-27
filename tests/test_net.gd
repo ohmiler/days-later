@@ -38,7 +38,7 @@ func run() -> void:
 	# (A cupboard near the host, so the client stands among the same zombies.)
 	var f: FurnitureProp = main.world.container_nodes[0]
 	for c: FurnitureProp in main.world.container_nodes:
-		if not c.data.get("up", false) and c.position.distance_to(me.position) < f.position.distance_to(me.position):
+		if c.data.get("storey", 0) == 0 and c.position.distance_to(me.position) < f.position.distance_to(me.position):
 			f = c
 	f.searched = true
 	joined.position = f.position + Vector2(0, 8)

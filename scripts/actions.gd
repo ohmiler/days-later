@@ -114,7 +114,7 @@ func req_struggle() -> void:
 		z.release()
 		z.stun = 0.9
 		z.attack_cd = 1.5
-		z.position = main.world.slide(z.position, away * 12.0, Zombie.RADIUS, false, false, z.up)
+		z.position = main.world.slide(z.position, away * 12.0, Zombie.RADIUS, false, false, z.storey)
 		main.combat.fx_hit.rpc(z.zid, z.position, away, true, p.peer_id, "", 0.0)
 		main.fx_sound.rpc("kick", p.position)
 		main._toast(p, "ดิ้นหลุดแล้ว!")
@@ -149,7 +149,7 @@ func req_jump() -> void:
 	if p != null and p.alive() and p.on_car >= 0:
 		jump_off_car(p, p.move if p.move.length() > 0.1 else p.aim)  # (up on a car: Space gets you down)
 		return
-	if p == null or not p.alive() or p.vaulting() or p.grabbed_by >= 0 or p.riding >= 0 or p.on_car >= 0 or p.on_roof or p.up 			or p.sleeping or p.sitting != -1 or p.getup_t > 0.0:
+	if p == null or not p.alive() or p.vaulting() or p.grabbed_by >= 0 or p.riding >= 0 or p.on_car >= 0 or p.on_roof or p.storey > 0 			or p.sleeping or p.sitting != -1 or p.getup_t > 0.0:
 		return
 	if p.exhausted or p.stamina < VAULT_COST or Body.sprained(p.wounds):
 		main._toast(p, "ไม่มีแรงกระโดด" if not Body.sprained(p.wounds) else "ข้อเท้าแพลง กระโดดไม่ได้")
@@ -292,17 +292,28 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 		return
 	match verb:
 		"up", "down":
-			# Ground floor -> upstairs (where there is one) -> roof, and back down.
-			var has_up: bool = main.world.upper.has(t.id)
-			var lvl := (2 if p.on_roof else (1 if p.up else 0)) + (1 if verb == "up" else -1)
-			if lvl == 1 and not has_up:
-				lvl = 2 if verb == "up" else 0
-			lvl = clampi(lvl, 0, 2)
-			p.on_roof = lvl == 2
-			p.up = lvl == 1
+			# Ground floor -> each floor above this stairwell reaches -> roof, and back down.
+			var from_storey := p.storey
+			if verb == "up" and not p.on_roof:
+				if main.world.storey_map(p.storey + 1).has(t.id):
+					p.storey += 1
+				else:
+					p.on_roof = true
+					p.storey = 0  # (the roof is its own thing: see on_roof)
+			elif verb == "down":
+				if p.on_roof:
+					p.on_roof = false
+					p.storey = main.world.top_storey(t.id)
+				else:
+					p.storey = maxi(p.storey - 1, 0)
 			p.position = main.world.to_pos(t.id)
 			main.fx_sound.rpc("door", p.position)
-			main._toast(p, ["ลงมาข้างล่าง", "ขึ้นมาชั้น 2 · ซอมบี้ขึ้นบันไดตามมาได้", "ขึ้นมาบนดาดฟ้า · ซอมบี้ตามขึ้นมาไม่ได้"][lvl])
+			if p.on_roof:
+				main._toast(p, "ขึ้นมาบนดาดฟ้า · ซอมบี้ตามขึ้นมาไม่ได้")
+			elif p.storey == 0:
+				main._toast(p, "ลงมาข้างล่าง")
+			else:
+				main._toast(p, ("ลงมาชั้น %d" if p.storey < from_storey else "ขึ้นมาชั้น %d") % (p.storey + 1) + " · ซอมบี้ขึ้นบันไดตามมาได้")
 		"jump":
 			var drop := Interact.jump_spot(main.world, p.position)
 			if drop == Vector2.INF:

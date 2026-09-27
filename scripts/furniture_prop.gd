@@ -291,8 +291,8 @@ func _box(r: Rect2, col: Color) -> void:
 		draw_rect(r, Color(0, 0, 0, 0.12))
 
 
-## Upstairs (data.up) it is all drawn a storey up, where the floor up there is
+## Upstairs (data.storey) it is all drawn that many storeys up, where the floor up there is
 ## drawn (see World._draw_upper); the node stays at floor level so it sorts
 ## with the people up there by their feet.
 func _xf(pos: Vector2, rot := 0.0, scl := Vector2.ONE) -> void:
-	draw_set_transform(pos + Vector2(0, -BuildingProp.GROUND_H if data.get("up", false) else 0.0), rot, scl)
+	draw_set_transform(pos + Vector2(0, -BuildingProp.GROUND_H * data.get("storey", 0)), rot, scl)

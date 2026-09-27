@@ -6,7 +6,7 @@ extends "res://tests/test_base.gd"
 func _nearest_container() -> FurnitureProp:
 	var best: FurnitureProp
 	for f: FurnitureProp in main.world.container_nodes:
-		if f.data.get("up", false):
+		if f.data.get("storey", 0) > 0:
 			continue  # (downstairs, where you are)
 		if best == null or f.position.distance_to(me.position) < best.position.distance_to(me.position):
 			best = f

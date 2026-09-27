@@ -13,7 +13,7 @@ class_name SaveGame
 ## (world.save.v1 and so on). A save that cannot be read, or that comes from a
 ## newer game, is never written over: the game says so and leaves it alone.
 
-const VERSION := 12
+const VERSION := 13
 const GAME_VERSION := "0.4"  # shown to people; not used for compatibility
 
 ## [kind, from version] -> the function that upgrades it one step.
@@ -32,6 +32,8 @@ const MIGRATIONS := {
 	"player:9": "_player_9_to_10",
 	"player:10": "_player_10_to_11",
 	"player:11": "_player_11_to_12",
+	"world:12": "_world_12_to_13",
+	"player:12": "_player_12_to_13",
 }
 
 
@@ -102,10 +104,10 @@ static func save_world(main: Node) -> void:
 			boxes[f.data.id] = f.items
 	var items := []
 	for pid in main.pickups:
-		items.append([pid, main.pickups[pid].pos, main.pickups[pid].item, main.pickups[pid].get("up", false)])
+		items.append([pid, main.pickups[pid].pos, main.pickups[pid].item, main.pickups[pid].get("storey", 0)])
 	var zs := []
 	for z: Zombie in main.zombies.values():
-		zs.append([z.zid, z.position, z.hp, z.outfit, z.missing])
+		zs.append([z.zid, z.position, z.hp, z.outfit, z.missing, z.storey])
 	# (No need to check the file first: a world save we cannot use stops the
 	# game from starting at all, so we only get here with one we loaded.)
 	var zf := FileAccess.open(dir() + "/zone.txt", FileAccess.WRITE)
@@ -117,7 +119,8 @@ static func save_world(main: Node) -> void:
 		seed = main.world_seed, gen = CityGen.GEN, day = main.day, time = main.time,
 		next_zid = main.next_zid, next_pickup = main.next_pickup,
 		doors = doors, searched = searched, stripped = stripped, boxes = boxes, pickups = items, zombies = zs,
-		things = main.things.changed(), vehicles = main.vehicles.changed(), corpses = main.corpse_list(),
+		state = main.world_state.changed(), rain_total = main.rain_total,
+		vehicles = main.vehicles.changed(), corpses = main.corpse_list(),
 		next_cid = main.next_cid,
 	})
 
@@ -169,7 +172,10 @@ static func load_world_into(main: Node, w: Dictionary) -> bool:
 			var items: Array = w.boxes[id]
 			items.resize(FurnitureProp.SIZE)
 			world.container_nodes[id].items = items
-	main.things.restore(w.things)
+	if w.has("things"):
+		main.things.restore(w.things)  # (saved before WorldState)
+	main.world_state.restore(w.get("state", {}))
+	main.rain_total = w.get("rain_total", 0.0)
 	main.vehicles.restore(w.vehicles)
 	for id in w.searched:
 		if id < world.container_nodes.size():
@@ -178,17 +184,18 @@ static func load_world_into(main: Node, w: Dictionary) -> bool:
 		if id < world.container_nodes.size():
 			world.container_nodes[id].set_stripped(true)
 	for e in w.pickups:
-		main.pickups[e[0]] = {pos = e[1], item = e[2], up = e[3] if e.size() > 3 else false}
+		main.pickups[e[0]] = {pos = e[1], item = e[2], storey = int(e[3]) if e.size() > 3 else 0}
 	main.next_cid = w.get("next_cid", 1)
 	for e in w.get("corpses", []):
-		main.corpses[e[0]] = {pos = e[1], fall_dir = e[2], body = e[3], style = e[4], age = e[5], burn = e[6], up = e[7]}
-		main.leave_corpse(e[1], e[2], e[3], true, e[5], e[4], e[0], e[6], e[7])
+		main.corpses[e[0]] = {pos = e[1], fall_dir = e[2], body = e[3], style = e[4], age = e[5], burn = e[6], storey = int(e[7])}
+		main.leave_corpse(e[1], e[2], e[3], true, e[5], e[4], e[0], e[6], int(e[7]))
 	for e in w.zombies:
 		if not e[3].is_empty():
 			main.outfits[e[0]] = e[3]
 		var z: Zombie = main._add_zombie(e[0], e[1])
 		z.hp = e[2]
 		z.missing = e[4]
+		z.storey = int(e[5]) if e.size() > 5 else 0
 	return true
 
 
@@ -205,7 +212,7 @@ static func save_player(p: Player) -> void:
 		return
 	_write(path, {
 		version = VERSION, name = p.pname, alive = p.alive(),
-		pos = p.position, on_roof = p.on_roof, up = p.up, hp = p.hp, kills = p.kills,
+		pos = p.position, on_roof = p.on_roof, storey = p.storey, hp = p.hp, kills = p.kills,
 		hunger = p.hunger, thirst = p.thirst, infection = p.infection, bleeding = p.bleeding, stamina = p.stamina,
 		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash, bed = p.bed, wounds = p.wounds, conditions = p.conditions,
 		city = p.world.city_seed if p.world else 0, zone = p.world.zone if p.world else "",
@@ -239,7 +246,8 @@ static func load_player_into(p: Player, name: String) -> bool:
 	p.travel_exit = ""
 	p.net_pos = d.pos
 	p.on_roof = d.on_roof and same_city
-	p.up = d.get("up", false) and same_city and p.world.upper.has(p.world.to_cell(p.position))
+	var storey := int(d.get("storey", 1 if d.get("up", false) else 0))
+	p.storey = storey if same_city and storey > 0 and p.world.storeys.get(storey, {}).has(p.world.to_cell(p.position)) else 0
 	p.hp = d.hp
 	p.kills = d.kills
 	p.hunger = d.hunger
@@ -369,6 +377,27 @@ static func _player_9_to_10(d: Dictionary) -> Dictionary:
 ## v12 remembers conditions (Body.CONDITIONS: sick from bad water, spoiled food).
 static func _player_11_to_12(d: Dictionary) -> Dictionary:
 	d.merge({conditions = {}}, false)
+	return d
+
+
+## v13 counts floors (storey 0 on the ground, 1 the first floor up, ...)
+## instead of a flag for upstairs, and remembers the floor zombies are on.
+static func _world_12_to_13(d: Dictionary) -> Dictionary:
+	for e in d.get("pickups", []):
+		if e.size() > 3:
+			e[3] = int(e[3])
+	for e in d.get("corpses", []):
+		if e.size() > 7:
+			e[7] = int(e[7])
+	for e in d.get("zombies", []):
+		while e.size() < 6:
+			e.append(0)
+	return d
+
+
+static func _player_12_to_13(d: Dictionary) -> Dictionary:
+	d.merge({storey = 1 if d.get("up", false) else 0}, false)
+	d.erase("up")
 	return d
 
 

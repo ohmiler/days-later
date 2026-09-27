@@ -38,7 +38,7 @@ const THROW_COST := 3.0
 const THROW_CD := 0.6
 const THROW_NOISE := 150.0  # a can or scrap clattering down
 const SHATTER_NOISE := 200.0  # a bottle smashing: louder than a window
-var throws: Array = []  # server: [{at, t, id, item, up, from_roof}], still in the air
+var throws: Array = []  # server: [{at, t, id, item, storey, from_roof}], still in the air
 
 
 ## Which bag slot T throws from: the selected one if it can be thrown, else
@@ -77,7 +77,7 @@ func req_throw() -> void:
 	var want := p.aim
 	var cursor := p.position + Look.CHEST + p.aim
 	for z: Zombie in main.zombies.values():
-		if z.up == p.up and Rect2(z.position + Vector2(-8, -31), Vector2(16, 35)).has_point(cursor):
+		if z.storey == p.storey and Rect2(z.position + Vector2(-8, -31), Vector2(16, 35)).has_point(cursor):
 			want = z.position - p.position
 	var dir := want.normalized() if want.length() > 0.5 else Vector2.RIGHT
 	var dist := minf(want.length(), THROW_RANGE)
@@ -87,8 +87,8 @@ func req_throw() -> void:
 			dist = maxf(0.0, clear - 4.0)  # (a wall stops it, and it drops at its foot)
 	var at := p.position + dir * dist
 	var time := 0.25 + dist / 450.0
-	throws.append({at = at, t = time, id = one.id, item = one, up = p.up and not p.on_roof, from_roof = p.on_roof})
-	fx_throw.rpc(p.peer_id, p.position, at, time, one.id, p.on_roof, p.up)
+	throws.append({at = at, t = time, id = one.id, item = one, storey = 0 if p.on_roof else p.storey, from_roof = p.on_roof})
+	fx_throw.rpc(p.peer_id, p.position, at, time, one.id, p.on_roof, p.storey)
 	main._make_noise(p.position, main.NOISE_WALK)
 
 
@@ -102,7 +102,7 @@ func tick_throws(delta: float) -> void:
 		var at: Vector2 = th.at
 		var glass := Items.has_tag(th.id, "glass")
 		for z: Zombie in main.zombies.values():
-			if z.up == th.up and z.position.distance_to(at) < Zombie.RADIUS + 4.0:
+			if z.storey == th.storey and z.position.distance_to(at) < Zombie.RADIUS + 4.0:
 				var dir := (z.position - at).normalized() if z.position.distance_to(at) > 0.1 else Vector2.RIGHT
 				z.hp -= 4.0
 				z.stun = 0.4
@@ -111,15 +111,15 @@ func tick_throws(delta: float) -> void:
 					_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0)
 				break
 		main._make_noise(at, SHATTER_NOISE if glass else THROW_NOISE)
-		fx_landed.rpc(at, glass, th.up)
+		fx_landed.rpc(at, glass, th.storey)
 		var w: World = main.world
 		var on_roof: bool = th.from_roof and w.is_roof(w.to_cell(at))
 		if not glass and not on_roof:
-			main._spawn_pickup(at, th.item, th.up)
+			main._spawn_pickup(at, th.item, th.storey)
 
 
 @rpc("authority", "call_local", "reliable")
-func fx_throw(peer_id: int, from: Vector2, to: Vector2, time: float, id: String, from_roof: bool, up: bool) -> void:
+func fx_throw(peer_id: int, from: Vector2, to: Vector2, time: float, id: String, from_roof: bool, storey: int) -> void:
 	var p: Player = main.players.get(peer_id)
 	if p:
 		p.play_attack(Look.PUNCH_R)  # (overarm: the throwing arm comes through like a punch)
@@ -128,17 +128,17 @@ func fx_throw(peer_id: int, from: Vector2, to: Vector2, time: float, id: String,
 	th.to = to
 	th.time = time
 	th.id = id
-	th.lift = (p.lift if p else 0.0) if from_roof else (BuildingProp.GROUND_H if up else 0.0)
+	th.lift = (p.lift if p else 0.0) if from_roof else BuildingProp.GROUND_H * storey
 	var w: World = main.world
-	th.land_lift = w.roof_height(to) if from_roof and w.is_roof(w.to_cell(to)) else (BuildingProp.GROUND_H if up else 0.0)
+	th.land_lift = w.roof_height(to) if from_roof and w.is_roof(w.to_cell(to)) else BuildingProp.GROUND_H * storey
 	main.add_child(th)
 	Sfx.play(main, "punch", from, -8.0, 1.4)  # (the whoosh of the arm)
 
 
 @rpc("authority", "call_local", "reliable")
-func fx_landed(at: Vector2, glass: bool, up: bool) -> void:
+func fx_landed(at: Vector2, glass: bool, storey: int) -> void:
 	Sfx.play(main, "glass" if glass else "metal", at, 2.0 if glass else 0.0)
-	if glass and not up:
+	if glass and storey == 0:
 		# Glass everywhere: bright little bits left on the ground.
 		for i in 7:
 			main.blood.append([at + Vector2(randf_range(-7, 7), randf_range(-4, 4)), randf_range(0.3, 0.7),
@@ -224,7 +224,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	var hits: Array = []
 	for z: Zombie in main.zombies.values():
 		var v := z.position - p.position
-		if v.length() > reach or z.up != p.up:
+		if v.length() > reach or z.storey != p.storey:
 			continue
 		if Rect2(z.position + Vector2(-8, -31), Vector2(16, 35)).has_point(cursor):
 			if picked == null or v.length() < (picked.position - p.position).length():
@@ -254,7 +254,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	for z: Zombie in hits:
 		z.hp -= stats[1]
 		z.stun = stats[3]
-		z.position = main.world.slide(z.position, dir * stats[4], Zombie.RADIUS, false, false, z.up)
+		z.position = main.world.slide(z.position, dir * stats[4], Zombie.RADIUS, false, false, z.storey)
 		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), stats[1])
 		main._make_noise(z.position, main.NOISE_HIT)
 		if z.hp <= 0:
@@ -294,7 +294,7 @@ static func death_style(how: String) -> String:
 
 func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
 	z.release()
-	main.add_corpse(z.position, fall_dir, z.body_look(), death_style(how), z.up)
+	main.add_corpse(z.position, fall_dir, z.body_look(), death_style(how), z.storey)
 	# What it wore can be taken off the body: always what a turned survivor had
 	# on, sometimes an ordinary zombie's (often worn half through).
 	var i := 0
@@ -303,7 +303,7 @@ func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
 		var full: int = Items.def(id).get("hp", 1)
 		if not z.outfit.is_empty() or randf() < 0.35:
 			var hp := full if not z.outfit.is_empty() else maxi(1, int(full * randf_range(0.3, 0.8)))
-			main._spawn_pickup(z.position + Vector2.from_angle(i * 1.3) * 7, {id = id, n = 1, hp = hp}, z.up)
+			main._spawn_pickup(z.position + Vector2.from_angle(i * 1.3) * 7, {id = id, n = 1, hp = hp}, z.storey)
 		i += 1
 	main.zombies.erase(z.zid)
 	z.queue_free()
@@ -404,9 +404,9 @@ func fire(p: Player, hand: String) -> void:
 		var length: float = d.range if p.on_roof else main.world.ray_length(from, dir, d.range)  # (from a roof you shoot over the street)
 		var hit: Zombie = null
 		for z: Zombie in main.zombies.values():
-			if p.on_roof and (z.up or main.world.building_at.has(main.world.to_cell(z.position))):
+			if p.on_roof and (z.storey > 0 or main.world.building_at.has(main.world.to_cell(z.position))):
 				continue  # indoors, under the roof: out of sight
-			if not p.on_roof and z.up != p.up:
+			if not p.on_roof and z.storey != p.storey:
 				continue  # (a floor between you)
 			var t := body_hit(from, dir, z.position)
 			if t > 0 and t < length:
@@ -418,7 +418,7 @@ func fire(p: Player, hand: String) -> void:
 			var dmg: float = d.dmg * (1.0 if length < d.range * 0.5 else 0.6)  # (pellets lose their bite far out)
 			hit.hp -= dmg
 			hit.stun = maxf(hit.stun, 0.25)
-			hit.position = main.world.slide(hit.position, dir * 3.0, Zombie.RADIUS, false, false, hit.up)
+			hit.position = main.world.slide(hit.position, dir * 3.0, Zombie.RADIUS, false, false, hit.storey)
 			fx_hit.rpc(hit.zid, hit.position, dir, true, p.peer_id, "", dmg)
 			if hit.hp <= 0 and main.zombies.has(hit.zid):
 				_kill_zombie(hit, 1.0 if dir.x >= 0 else -1.0, "gun")
@@ -514,8 +514,8 @@ func fx_hit(zid: int, pos: Vector2, dir: Vector2, strong: bool, attacker: int, w
 
 
 @rpc("authority", "call_local", "reliable")
-func fx_death(pos: Vector2, fall_dir: float, body: Dictionary, style: String, cid := 0, up := false) -> void:
-	main.leave_corpse(pos, fall_dir, body, true, 0.0, style, cid, -1.0, up)
+func fx_death(pos: Vector2, fall_dir: float, body: Dictionary, style: String, cid := 0, storey := 0) -> void:
+	main.leave_corpse(pos, fall_dir, body, true, 0.0, style, cid, -1.0, storey)
 	if style in ["behead", "arm", "burst"]:
 		Sfx.play(main, "gore", pos, 2.0)
 	elif style == "crush":

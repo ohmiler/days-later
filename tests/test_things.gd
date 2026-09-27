@@ -60,18 +60,24 @@ func run() -> void:
 	_stand_by(tap)
 	var t := Interact.target(main, me)
 	check(t.get("kind") == "thing" and t.get("id") == tap.id, "E points at the tap (%s)" % t.get("title", "nothing"))
+	# (It runs from its building's rooftop tank: see Buildings.)
+	var bid := Buildings.at(w, tap.cell)
+	main.world_state.set_state("building", bid, {tank = 10.0, tank_at = main.rain_total})
 	me.thirst = 20.0
 	main.actions.req_interact()
-	check(me.thirst > 50.0, "drinking from it helps (%.0f)" % me.thirst)
-	check(tap.state.water == Things.DEFS.tap.state.water - 1, "and uses up some of the city water")
+	check(me.thirst > 40.0, "drinking from it helps (%.0f)" % me.thirst)
+	check(Buildings.tank(main, bid) < 10.0, "and uses up the water in the tank on the roof (%.0f)" % Buildings.tank(main, bid))
 	for i in 20:
 		me.thirst = 20.0
 		main.things.act(me, tap.id, "drink")
-	check(tap.state.water == 0, "until it runs dry")
+	check(Buildings.tank(main, bid) < 1.0, "until it runs dry")
 	me.thirst = 20.0
 	main.things.act(me, tap.id, "drink")
 	check(me.thirst == 20.0, "a dry tap gives nothing")
-	check(Things.title_of(tap).contains("แห้ง"), "and says it is dry")
+	check(main.things.actions_for(me, tap.id).any(func(a): return not a.ok and a.why.contains("แห้ง")), "and says the tank is dry")
+	main.rain_total += Main.HOUR  # an hour of rain...
+	check(Buildings.tank(main, bid) >= Buildings.TANK_RAIN - 0.01, "...fills the tank again (%.0f)" % Buildings.tank(main, bid))
+	main.world_state.set_state("building", bid, {tank = 0.0, tank_at = main.rain_total})
 
 	# A radio: on, and it calls zombies to it.
 	var radio := _first("radio")
@@ -99,14 +105,15 @@ func run() -> void:
 	check(main.pickups.size() == again, "a broken one cannot be smashed again")
 
 	# Only what changed is kept, and it survives a save.
-	var ch: Dictionary = main.things.changed()
-	check(ch.size() == 3 and ch.has(tap.id) and ch.has(radio.id) and ch.has(vend.id), "only the three changed things are saved (%d)" % ch.size())
+	var ch: Dictionary = main.world_state.changed().get("thing", {})
+	check(ch.size() == 2 and ch.has(radio.id) and ch.has(vend.id), "only the changed things are kept (%d)" % ch.size())
+	check(main.world_state.changed().get("building", {}).has(bid), "and the building whose tank was drunk dry")
 	var ids := [tap.id, radio.id, vend.id]
 	main._save_all()
 	await close_game()
 	await host(9351, true, false)
 	var back: Array = main.world.things
-	check(back[ids[0]].state.water == 0, "the dry tap is still dry after loading")
+	check(Buildings.tank(main, Buildings.at(main.world, back[ids[0]].cell)) < 1.0, "the dry tank is still dry after loading")
 	check(back[ids[1]].state.on, "the radio is still on")
 	check(back[ids[2]].state.broken, "the vending machine is still broken")
 
@@ -114,6 +121,6 @@ func run() -> void:
 	var fresh: Dictionary = back[ids[1]].duplicate(true)
 	fresh.state = Things.DEFS.radio.state.duplicate()
 	main.world.things[ids[1]].state = fresh.state
-	main.things.things_sync(main.things.changed().merged({ids[1]: {on = true}}))
+	main.world_state._sync({thing = {ids[1]: {on = true}}})
 	check(main.world.things[ids[1]].state.on, "a sync puts the states back on a client")
 	SaveGame.wipe()
