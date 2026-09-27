@@ -7,6 +7,12 @@ extends Node2D
 const FLOOR_H := 24.0
 const GROUND_H := 30.0
 
+
+## How far up the floor of storey `f` is drawn (0: the ground): the ground
+## floor is taller than the ones above, as it is on the facades.
+static func storey_lift(f: int) -> float:
+	return 0.0 if f <= 0 else GROUND_H + (f - 1) * FLOOR_H
+
 var data: Dictionary
 var w := 0.0  # footprint width in px
 var d := 0.0  # footprint depth in px
@@ -44,6 +50,10 @@ func setup(rec: Dictionary) -> void:
 			h = 28.0
 		"store":
 			h = GROUND_H + 8.0
+		"hospital", "flats", "office", "mall":
+			h = GROUND_H + (rec.floors - 1) * FLOOR_H + 6.0
+		"market":
+			h = GROUND_H + 4.0
 		_:
 			h = GROUND_H + (rec.floors - 1) * FLOOR_H + 4.0
 	position = Vector2(r.position.x, r.end.y) * World.TILE
@@ -108,6 +118,10 @@ func _paint() -> void:
 			_draw_chedi()
 		"sala":
 			_draw_sala()
+		"hospital", "flats", "office", "mall":
+			_draw_big()
+		"market":
+			_draw_market()
 
 
 # --- Shared pieces ----------------------------------------------------------
@@ -516,9 +530,239 @@ func _draw_sala() -> void:
 	c.draw_rect(Rect2(4, -5, w - 8, 2), Color("6a4a30"))  # bench
 
 
+# --- The big buildings (BigPlans) -------------------------------------------
+
+const BIG_COLORS := {hospital = [Color("ece8de"), Color("e2e4dc")], office = [Color("9aa4ac"), Color("b4b0a4"), Color("a8aeb4")],
+		flats = [Color("d8d4cc"), Color("c4c8cc"), Color("d8ccb8"), Color("e0c8a8")], mall = [Color("e2dccc"), Color("d4d8dc")]}
+const MALL_BANNERS := ["ลดราคา", "SALE", "มหกรรม", "ลด 70%", "NEW"]
+
+
+func _big_col() -> Color:
+	var list: Array = BIG_COLORS[data.kind]
+	return list[data.seed % list.size()]
+
+
+## The band of the facade that is floor `f` (0: the ground floor).
+func _band(f: int) -> Rect2:
+	var top: float = storey_lift(f + 1) if f + 1 < data.floors else h
+	return Rect2(0, -top, w, top - storey_lift(f))
+
+
+## Where on the roof cell `cell` is (the building's own drawing space).
+func _on_roof(cell: Vector2i) -> Vector2:
+	var r: Rect2i = data.rect
+	return Vector2((cell.x - r.position.x) * World.TILE, -h - d + (cell.y - r.position.y) * World.TILE)
+
+
+func _draw_big() -> void:
+	var col := _big_col()
+	_big_roof(col)
+	_wall(col)
+	var e := extra
+	for f in range(1, data.floors):
+		var b := _band(f)
+		match data.kind:
+			"hospital":
+				c.draw_rect(Rect2(0, b.end.y - 2.5, w, 2.5), Color("3a8a6a"))  # the green band under each floor
+				for x in range(5, int(w) - 8, 10):
+					var wr := Rect2(x, b.position.y + 5, 7, b.size.y - 10)
+					var roll := e.randf()
+					c.draw_rect(wr, Color("0e1216") if roll < 0.08 else (Color("dcd8cc") if roll < 0.3 else Color("4a6a80")))
+					c.draw_rect(wr, col.darkened(0.25), false, 0.6)
+			"office":
+				var ribbon := Rect2(1.5, b.position.y + 4, w - 3, b.size.y - 8)
+				c.draw_rect(ribbon, Color("3e5666"))
+				c.draw_line(ribbon.position + Vector2(0, 2), Vector2(ribbon.end.x, ribbon.position.y + 2), Color(1, 1, 1, 0.12), 1.5)
+				for x in range(int(ribbon.position.x) + 5, int(ribbon.end.x), 5):
+					c.draw_line(Vector2(x, ribbon.position.y), Vector2(x, ribbon.end.y), Color("6a7a86"), 0.6)
+					if e.randf() < 0.05:
+						c.draw_rect(Rect2(x - 4.5, ribbon.position.y, 4.5, ribbon.size.y), Color("0e1216"))  # a pane gone
+			"flats":
+				var recess := Rect2(3, b.position.y + 4, w - 6, b.size.y - 8)
+				c.draw_rect(recess, Color("2e343a"))
+				c.draw_line(Vector2(3, recess.end.y - 2), Vector2(w - 3, recess.end.y - 2), col.lightened(0.1), 1.2)  # balcony rail
+				for x in range(10, int(w) - 4, 14):
+					c.draw_line(Vector2(x, recess.position.y), Vector2(x, recess.end.y), col.darkened(0.2), 1.0)
+				for x in range(5, int(w) - 9, 14):
+					var roll := e.randf()
+					if roll < 0.25:
+						for k in 3:
+							c.draw_rect(Rect2(x + k * 3, recess.position.y + 3, 2, 4), Color.from_hsv(e.randf(), 0.35, 0.8))  # laundry
+					elif roll < 0.35:
+						c.draw_circle(Vector2(x + 4, recess.end.y - 3), 2.0, Color("4a7038"))
+					elif roll < 0.45:
+						c.draw_rect(Rect2(x + 1, recess.end.y - 6, 5, 3.5), Color("c8c8c0"))  # air-con
+			"mall":
+				c.draw_rect(Rect2(0, b.position.y + 2, w, 1.5), col.darkened(0.12))
+				if f % 2 == 1:
+					for x in range(6, int(w) - 20, 40):
+						var br := Rect2(x + e.randf_range(0, 10), b.position.y + 5, 16, b.size.y - 8)
+						c.draw_rect(br, Color.from_hsv(e.randf(), 0.6, 0.75))
+						_text(br, MALL_BANNERS[e.randi() % MALL_BANNERS.size()], Color.WHITE, 5)
+	_big_ground(col)
+	_big_sign(col)
+	if data.kind == "flats" and data.floors > 3 and e.randf() < 0.5:
+		# A bedsheet hung from a balcony: someone asking for help.
+		var b := _band(e.randi_range(2, data.floors - 1))
+		var bx := e.randf_range(8, w - 30)
+		c.draw_rect(Rect2(bx, b.position.y + 6, 22, 24), Color("ece8e0"))
+		_text(Rect2(bx, b.position.y + 10, 22, 8), "ช่วยด้วย" if e.randf() < 0.6 else "SOS", Color("c83a2e"), 6)
+
+
+func _big_roof(col: Color) -> void:
+	var roof := Rect2(0, -h - d, w, d)
+	var base: Color = [Color("8a857c"), Color("7e7a72"), Color("74806c")][data.seed % 3]
+	c.draw_rect(roof, base)
+	# Cast concrete in slabs, stained where the water sits.
+	var T := World.TILE
+	for x in range(3 * T, int(w), 3 * T):
+		c.draw_line(Vector2(x, -h - d + 2), Vector2(x, -h - 3), base.darkened(0.08), 0.8)
+	for y in range(3 * T, int(d), 3 * T):
+		c.draw_line(Vector2(2, -h - d + y), Vector2(w - 2, -h - d + y), base.darkened(0.08), 0.8)
+	for i in int(w * d / 4000.0) + 4:
+		c.draw_circle(Vector2(rng.randf() * w, -h - rng.randf() * d), rng.randf_range(4, 14), Color(0, 0, 0, 0.07))
+	# The parapet all the way round.
+	c.draw_rect(Rect2(0, -h - d, w, 3), col.darkened(0.15))
+	c.draw_rect(Rect2(0, -h - d, 2.5, d), col.darkened(0.05))
+	c.draw_rect(Rect2(w - 2.5, -h - d, 2.5, d), col.darkened(0.1))
+	c.draw_rect(Rect2(0, -h - 3, w, 3), col.lightened(0.05))
+	c.draw_rect(Rect2(0, -h - 5, w, 2), Color(0, 0, 0, 0.12))
+	# The stairwells come up in little houses of their own, a door each.
+	for s: Vector2i in data.get("stairwells", []):
+		var p := _on_roof(s)
+		c.draw_rect(Rect2(p + Vector2(-3, -9), Vector2(T + 6, T + 9)), col.darkened(0.12))
+		c.draw_rect(Rect2(p + Vector2(-3, -9), Vector2(T + 6, 5)), col.lightened(0.05))  # its flat top
+		c.draw_rect(Rect2(p + Vector2(4, T - 9), Vector2(T - 8, 9)), Color("2a2622"))
+	# The building's water: big tanks on a stand along the back (see Buildings).
+	var tanks := clampi(int(w / 70.0) + 2, 2, 5)
+	var stand := Rect2(w * 0.5 - tanks * 11, -h - d + 6, tanks * 22, 18)
+	c.draw_rect(stand, base.darkened(0.2))
+	for i in tanks:
+		var p := Vector2(stand.position.x + 11 + i * 22, stand.end.y - 2)
+		var tank := Color("3f6f9e") if (data.seed + i) % 3 != 0 else Color("a8acb0")
+		c.draw_rect(Rect2(p + Vector2(-9, -14), Vector2(18, 14)), tank.darkened(0.2))
+		c.draw_set_transform(p + Vector2(0, -14), 0, Vector2(1, 0.45))
+		c.draw_circle(Vector2.ZERO, 9, tank)
+		c.draw_circle(Vector2(0, 0), 3, tank.darkened(0.3))
+		c.draw_set_transform(Vector2.ZERO)
+	c.draw_line(Vector2(stand.end.x, stand.end.y - 4), Vector2(stand.end.x + 30, stand.end.y - 4), Color("5a5e62"), 1.5)  # the pipe down
+	# The lift's machine room.
+	var lr := Rect2(w * 0.5 - 14, -h - d * 0.55, 28, 18)
+	c.draw_rect(lr, col.darkened(0.1))
+	c.draw_rect(Rect2(lr.position, Vector2(lr.size.x, 5)), col.lightened(0.03))
+	c.draw_rect(Rect2(lr.position + Vector2(3, 8), Vector2(6, 4)), Color("3a4046"))  # a louvre
+	# Air-con compressors in rows, pipes to them.
+	var rows := int(d / (5.0 * T))
+	for rw in rows:
+		var y := -h - d + (rw + 1) * d / (rows + 1) + 4
+		for i in rng.randi_range(2, int(w / 40) + 2):
+			var p := Vector2(rng.randf_range(6, w - 14), y + rng.randf_range(-3, 3))
+			if p.distance_to(lr.get_center()) < 30 or p.distance_to(stand.get_center()) < stand.size.x * 0.6:
+				continue
+			c.draw_rect(Rect2(p, Vector2(8, 6)), Color("cfcfc8"))
+			c.draw_circle(p + Vector2(4, 3), 2.2, Color("7a7a74"))
+			c.draw_line(p + Vector2(8, 3), p + Vector2(14, 3), Color("5a5e62"), 0.6)
+	if data.kind == "hospital" and w > 36 * T and d > 17 * T:
+		# The helipad.
+		var hp := Vector2(w * 0.8, -h - d * 0.5)
+		c.draw_circle(hp, 30, Color("5a5a56"))
+		c.draw_arc(hp, 27, 0, TAU, 32, Color("e8e4dc"), 1.5)
+		_text(Rect2(hp - Vector2(15, 12), Vector2(30, 24)), "H", Color("e8e4dc"), 24)
+	_roof_life()
+
+
+## The ground floor: glass lobby doors under a canopy, the lower storey solid.
+func _big_ground(col: Color) -> void:
+	var doors: Array = data.get("front_doors", [])
+	c.draw_rect(Rect2(0, -GROUND_H, w, 1.5), col.darkened(0.15))
+	if doors.is_empty():
+		return
+	var T := World.TILE
+	var x0: float = (doors.min() - 3) * T
+	var x1: float = (doors.max() + 4) * T
+	if data.kind == "mall":
+		x0 = maxf(0, x0 - 4 * T)
+		x1 = minf(w, x1 + 4 * T)
+	c.draw_rect(Rect2(x0, -GROUND_H + 4, x1 - x0, GROUND_H - 4), Color("7a98a8"))  # the glass
+	for x in range(int(x0), int(x1), 8):
+		c.draw_line(Vector2(x, -GROUND_H + 4), Vector2(x, 0), Color("4a5a64"), 0.8)
+	c.draw_line(Vector2(x0, -GROUND_H + 5), Vector2(x1, -GROUND_H + 5), Color(1, 1, 1, 0.2), 1.2)
+	for dx: int in doors:
+		c.draw_rect(Rect2(dx * T + 1, -GROUND_H + 5, T - 2, GROUND_H - 5), Color("1e2428"))  # (the DoorProp draws the door)
+	# A canopy over the way in, on two posts.
+	c.draw_rect(Rect2(x0 - 4, -GROUND_H - 2, x1 - x0 + 8, 4), col.darkened(0.25))
+	c.draw_rect(Rect2(x0 - 4, -GROUND_H - 2, x1 - x0 + 8, 1), col.lightened(0.1))
+	for x in [x0 - 2, x1 + 1]:
+		c.draw_rect(Rect2(x, -GROUND_H + 2, 1.5, GROUND_H - 2), col.darkened(0.3))
+
+
+func _big_sign(col: Color) -> void:
+	var label: String = data.sign
+	match data.kind:
+		"hospital":
+			var sw := minf(w - 10, 18.0 + label.length() * 6.0)
+			var r := Rect2(w * 0.5 - sw * 0.5, -h + 4, sw, 13)
+			c.draw_rect(r, Color("f4f2ec"))
+			c.draw_rect(r, Color("2a7a5a"), false, 1.0)
+			var cross := Vector2(r.position.x + 7, r.position.y + 6.5)  # (green: a hospital's own sign, not the Red Cross)
+			c.draw_rect(Rect2(cross - Vector2(1.5, 4.5), Vector2(3, 9)), Color("2a9a5a"))
+			c.draw_rect(Rect2(cross - Vector2(4.5, 1.5), Vector2(9, 3)), Color("2a9a5a"))
+			_text(Rect2(r.position.x + 12, r.position.y, r.size.x - 14, r.size.y), label, Color("1a5a40"), 8)
+		"office":
+			_text(Rect2(0, -h + 1, w, 8), label, Color("e8ecf0"), 7)
+		"flats":
+			var r := Rect2(4, -GROUND_H - 12, 40, 8)
+			c.draw_rect(r, col.darkened(0.3))
+			_text(r, "%s %d" % [label, data.seed % 9 + 1], Color("f0ece4"), 5)
+		"mall":
+			var r := Rect2(w * 0.15, -h + 2, w * 0.7, 16)
+			c.draw_rect(r, Color("b8201c") if data.seed % 2 == 0 else Color("1c4a88"))
+			_text(r, label, Color.WHITE, 12)
+
+
+## A market: a tin roof on posts, open along its front, the stalls inside.
+func _draw_market() -> void:
+	var metal := Color("8a8e90") if data.seed % 2 == 0 else Color("8a5a3e")
+	var roof := Rect2(0, -h - d, w, d)
+	c.draw_rect(roof, metal)
+	for x in range(0, int(w), 3):
+		c.draw_line(Vector2(x, -h - d), Vector2(x, -h), metal.darkened(0.18), 1.0)
+	c.draw_line(Vector2(0, -h - d * 0.5), Vector2(w, -h - d * 0.5), metal.lightened(0.15), 2.0)  # the ridge
+	for i in 6:
+		c.draw_circle(Vector2(rng.randf() * w, -h - rng.randf() * d), rng.randf_range(3, 8), Color(0.45, 0.22, 0.1, 0.3))
+	c.draw_rect(Rect2(0, -h - 2, w, 2), metal.darkened(0.3))  # the roof's front edge
+	# Under it: the dark, the stalls' awnings, the posts.
+	c.draw_rect(Rect2(0, -h, w, h), Color("1e1a16"))
+	var e := extra
+	for x in range(4, int(w) - 8, 12):
+		c.draw_rect(Rect2(x, -GROUND_H + 10, 10, 3), Color.from_hsv(e.randf(), 0.55, 0.7))  # an awning
+		c.draw_rect(Rect2(x + 1, -GROUND_H + 16, 8, 6), Color("5a4a3a"))  # the stall
+		c.draw_rect(Rect2(x + 2, -GROUND_H + 14, 6, 2), Color.from_hsv(e.randf(), 0.5, 0.8))  # what's on it
+	for x in range(0, int(w) + 1, 4 * World.TILE):
+		c.draw_rect(Rect2(minf(x, w - 2), -h, 2, h), Color("6a6e70"))
+	var r := Rect2(w * 0.5 - 30, -h + 1, 60, 9)
+	c.draw_rect(r, Color("e8d84a"))
+	_text(r, data.sign, Color("8a2a1a"), 6)
+
+
 # --- Night ------------------------------------------------------------------
 
 func _draw_glow() -> void:
+	if data.get("big", false):
+		if not data.get("lit", false):
+			return  # (no power, no light)
+		var lit := RandomNumberGenerator.new()
+		lit.seed = data.seed + 7
+		for f in range(1, data.floors):
+			var b := _band(f)
+			for x in range(5, int(w) - 8, 10):
+				if lit.randf() < 0.6:
+					glow.draw_rect(Rect2(x, b.position.y + 5, 7, b.size.y - 10), Color(1.0, 0.92, 0.75, 0.7))
+		var doors: Array = data.get("front_doors", [])
+		if not doors.is_empty():
+			var x0: float = (doors.min() - 3) * World.TILE
+			glow.draw_rect(Rect2(x0, -GROUND_H + 4, (doors.max() + 4) * World.TILE - x0, GROUND_H - 4), Color(0.9, 0.97, 1.0, 0.6))
+		return
 	match data.kind:
 		"shop":
 			var lit := RandomNumberGenerator.new()

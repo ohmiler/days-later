@@ -58,6 +58,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 		for f in w.near(p.position):
 			if f is FurnitureProp and f.data.get("storey", 0) == p.storey and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == w.building_at.get(w.to_cell(p.position)):
 				out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
+		_things(w, p, out)
 		_corpses(main, p, out)
 		_seats(w, p, w.building_at.get(w.to_cell(p.position)), out)
 		return out
@@ -91,10 +92,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 		if (v.rider == 0 or v.pillion == 0) and v.rider != p.peer_id and p.position.distance_to(v.pos) < Vehicles.REACH:
 			out.append({kind = "vehicle", id = v.id, pos = v.pos + Vector2(0, -8), title = Vehicles.title_of(v)})
 	var here: BuildingProp = w.building_at.get(w.to_cell(p.position))
-	for th in w.things:
-		var at := w.to_pos(th.cell)
-		if p.position.distance_to(at) < Things.REACH and w.building_at.get(th.cell) == here:
-			out.append({kind = "thing", id = th.id, pos = at, title = Things.title_of(th)})
+	_things(w, p, out)
 	_corpses(main, p, out)
 	# At the edge of a canal (or any water): scoop some up, or drink it as it is.
 	var wc := water_near(w, p.position)
@@ -279,6 +277,15 @@ static func container_title(kind: String) -> String:
 
 # --- Finding things in reach ---------------------------------------------------
 
+## Taps, stoves, generators... in reach, on your floor of your building.
+static func _things(w: World, p: Player, out: Array) -> void:
+	var here: BuildingProp = w.building_at.get(w.to_cell(p.position))
+	for th in w.things:
+		var at := w.to_pos(th.cell)
+		if p.position.distance_to(at) < Things.REACH and w.building_at.get(th.cell) == here and th.get("storey", 0) == p.storey:
+			out.append({kind = "thing", id = th.id, pos = at, title = Things.title_of(th)})
+
+
 static func stairs_near(w: World, pos: Vector2) -> Vector2i:
 	var c := w.to_cell(pos)
 	for dy in range(-1, 2):
@@ -291,6 +298,9 @@ static func stairs_near(w: World, pos: Vector2) -> Vector2i:
 
 ## A spot on the street right next to the roof edge, to jump down to.
 static func jump_spot(w: World, pos: Vector2) -> Vector2:
+	var b: BuildingProp = w.building_at.get(w.to_cell(pos))
+	if b and b.data.get("big", false):
+		return Vector2.INF  # (far too high: the stairs)
 	for d in [Vector2(0, 20), Vector2(0, -20), Vector2(20, 0), Vector2(-20, 0)]:
 		var p: Vector2 = pos + d
 		if not w.is_roof(w.to_cell(p)) and w.can_stand(p, 5):

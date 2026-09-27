@@ -108,6 +108,7 @@ var play_zoom := Vector2(4, 4)  # zoom to go back to after the death close-up
 
 func _ready() -> void:
 	randomize()
+	Items.chill = func(b: int, from: float, to: float) -> float: return Buildings.power_between(self, b, from, to)  # (fridges)
 	combat = _module(Combat.new(), "Combat")
 	inventory = _module(Inventory.new(), "Inventory")
 	doors = _module(Doors.new(), "Doors")
@@ -881,8 +882,10 @@ func _process(delta: float) -> void:
 		shade.color = Color(0.3, 0.3, 0.42)
 		if not world.is_night:
 			world.is_night = true
+			world.all_lit = true
 			get_tree().call_group("night_glow", "set_visible", true)
 			get_tree().call_group("street_lights", "set_visible", true)
+			world.update_bulbs()
 		return
 	var me: Player = players.get(multiplayer.get_unique_id())
 	map_t -= delta
@@ -994,7 +997,10 @@ func _process(delta: float) -> void:
 	if night != world.is_night:
 		get_tree().call_group("night_glow", "set_visible", night)
 		get_tree().call_group("street_lights", "set_visible", night)
+		world.is_night = night
+		world.update_bulbs()
 	world.is_night = night
+	things.tick(delta)
 
 	for tr in tracers:
 		tr[2] -= delta
@@ -1103,6 +1109,7 @@ func _update_inside(me: Player) -> void:
 		if b:
 			b.visible = false
 		decals_up.queue_redraw()
+		world.update_bulbs()  # (a big building's rooms light up only from inside)
 	# Up the stairs: the floor up there instead of the one below.
 	if b and b.showing_storey != me.storey:
 		b.show_storey(me.storey)
@@ -1193,8 +1200,14 @@ func _fade_trees_near(pos: Vector2) -> void:
 				t.modulate.a = 0.45
 				faded.append(t)
 	var body := Rect2(pos + Vector2(-6, -28), Vector2(12, 28))
-	for b in world.near(pos, 2):
-		if b is BuildingProp and pos.y < b.position.y and b.visual_rect().intersects(body):
+	# Inside a building, all of it: the tall ones south of it stand in front of its rooms.
+	var inside := Rect2()
+	if hidden_building:
+		var r: Rect2i = hidden_building.data.rect
+		inside = Rect2(Vector2(r.position) * World.TILE, Vector2(r.size) * World.TILE)
+	for b in world.near(pos, 3 if hidden_building else 2):
+		if b is BuildingProp and b != hidden_building and not faded.has(b) and (pos.y < b.position.y and b.visual_rect().intersects(body)
+				or inside.has_area() and b.position.y > inside.end.y and b.visual_rect().intersects(inside)):
 			b.modulate.a = 0.3
 			faded.append(b)
 	# Under a drawn zone's skytrain (drawn BTS_H up from the line it follows).
@@ -1310,9 +1323,12 @@ func _draw_roof_guides(me: Player, font: Font) -> void:
 					fx.draw_line(r.position + Vector2(2, 2.5 + i * 2.5), r.position + Vector2(8, 2.5 + i * 2.5), Color(1, 0.85, 0.4, 0.7 * roof_k), 0.6)
 				fx.draw_string(font, p + Vector2(-20, -7), "↓ บันได", HORIZONTAL_ALIGNMENT_CENTER, 40, 5, Color(1, 0.9, 0.6, roof_k))
 	elif hidden_building and hidden_building.data.has("stairs"):
-		var p := world.to_pos(hidden_building.data.stairs) + Vector2(0, -26)
-		fx.draw_string_outline(font, p + Vector2(-20, 0), "↑ ดาดฟ้า", HORIZONTAL_ALIGNMENT_CENTER, 40, 5, 2, Color(0, 0, 0, 0.7))
-		fx.draw_string(font, p + Vector2(-20, 0), "↑ ดาดฟ้า", HORIZONTAL_ALIGNMENT_CENTER, 40, 5, UiTheme.WARN)
+		# Each stairwell, and where it goes from here: the floor above, or the roof.
+		for st: Vector2i in hidden_building.data.get("stairwells", [hidden_building.data.stairs]):
+			var p := world.to_pos(st) + Vector2(0, -26 - BuildingProp.storey_lift(me.storey))
+			var label := "↑ ชั้น %d" % (me.storey + 2) if world.storey_map(me.storey + 1).has(st) else "↑ ดาดฟ้า"
+			fx.draw_string_outline(font, p + Vector2(-20, 0), label, HORIZONTAL_ALIGNMENT_CENTER, 40, 5, 2, Color(0, 0, 0, 0.7))
+			fx.draw_string(font, p + Vector2(-20, 0), label, HORIZONTAL_ALIGNMENT_CENTER, 40, 5, UiTheme.WARN)
 
 
 func _draw_decals() -> void:
@@ -1335,7 +1351,7 @@ func _draw_decals_up() -> void:
 	for pid in pickups:
 		var pu: Dictionary = pickups[pid]
 		if pu.get("storey", 0) == me.storey and world.building_at.get(world.to_cell(pu.pos)) == here:
-			_draw_pickup(decals_up, pu, BuildingProp.GROUND_H * me.storey)
+			_draw_pickup(decals_up, pu, BuildingProp.storey_lift(me.storey))
 
 
 func _draw_pickup(ci: Node2D, pu: Dictionary, lift: float) -> void:

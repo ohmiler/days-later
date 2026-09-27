@@ -755,7 +755,7 @@ func _process(delta: float) -> void:
 		if on_car >= 0:
 			lift = climb_h  # (up: carry on from where the climb left you, no drop)
 			climb_dur = 0.0
-	var want_lift: float = world.roof_height(position) if on_roof else BuildingProp.GROUND_H * storey
+	var want_lift: float = world.roof_height(position) if on_roof else BuildingProp.storey_lift(storey)
 	if on_car >= 0 and on_car < world.street_props.size():
 		want_lift = StreetProp.roof_spot(world.street_props[on_car])[1]
 	lift = lerpf(lift, want_lift, minf(1.0, 12.0 * delta))

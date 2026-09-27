@@ -24,7 +24,7 @@ func run() -> void:
 	var w: World = main.world
 	var b: Dictionary = {}
 	for rec in w.buildings:
-		if rec.get("upper", false) and rec.has("stairs"):
+		if rec.get("upper", false) and rec.has("stairs") and rec.kind == "shop":  # (a shophouse: two floors)
 			b = rec
 			break
 	check(not b.is_empty(), "shophouses have a floor upstairs")

@@ -128,9 +128,9 @@ func fx_throw(peer_id: int, from: Vector2, to: Vector2, time: float, id: String,
 	th.to = to
 	th.time = time
 	th.id = id
-	th.lift = (p.lift if p else 0.0) if from_roof else BuildingProp.GROUND_H * storey
+	th.lift = (p.lift if p else 0.0) if from_roof else BuildingProp.storey_lift(storey)
 	var w: World = main.world
-	th.land_lift = w.roof_height(to) if from_roof and w.is_roof(w.to_cell(to)) else BuildingProp.GROUND_H * storey
+	th.land_lift = w.roof_height(to) if from_roof and w.is_roof(w.to_cell(to)) else BuildingProp.storey_lift(storey)
 	main.add_child(th)
 	Sfx.play(main, "punch", from, -8.0, 1.4)  # (the whoosh of the arm)
 

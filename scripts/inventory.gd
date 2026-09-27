@@ -50,6 +50,13 @@ func _ref_get(p: Player, ref: Array) -> Variant:
 
 
 func _ref_set(p: Player, ref: Array, it: Variant) -> void:
+	if it != null:
+		# Into a fridge it keeps (with power); anywhere else it goes on ageing.
+		var box: Dictionary = main.world.container_nodes[ref[1]].data if ref[0] == "box" else {}
+		if box.get("kind", "") == "fridge":
+			Items.chill_in(it, Buildings.at(main.world, box.cell), main.now())
+		else:
+			Items.chill_out(it, main.now())
 	match ref[0]:
 		"inv":
 			p.inv[ref[1]] = it

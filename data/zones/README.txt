@@ -19,10 +19,12 @@ Everything goes in a [plan] section. x runs east, y south, in cells.
              column x, round the far side of the roundabout at that radius,
              a station over those rows
   blocks     [{"rect": [x, y, w, h], "use": "...", "name": "..."}]: the land
-             between the streets, run right up to the pavements. For now every
-             block is shophouses and sois (use says what it will become:
-             hospital, military_hospital, mall, office, market, shophouses);
-             shophouses that would stand on the roundabout are left out
+             between the streets, run right up to the pavements. use: what
+             is built there: shophouses (and sois), or big buildings set in
+             their grounds (CityGen.BLOCK_USES): hospital, military_hospital
+             (walled, with gates), office (offices and flats), mall, market.
+             name goes on a hospital's or a market's sign. Nothing is built
+             on the roundabout
   exits      [{"id", "edge", "rect": [x, y, w, h], "to", "to_exit"}]: ways out,
              where a street meets the map's edge; to: the zone it leads to
              (one marked todo in zones.cfg: a sign, no way through yet)

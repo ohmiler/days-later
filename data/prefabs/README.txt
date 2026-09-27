@@ -41,8 +41,13 @@ Things too big to walk through:
   A barber's chair   G gas stove and tank   J water jar (โอ่ง)   O wooden sofa
   a Chinese altar   y sacks   E dress stand   L massage armchair   V clinic couch
   u hair-wash basin   z bench
+  P potted plants   N a wheelchair   Y lift doors (dead since the power went; they block)
 Things with a state (see Things):
-  T a tap (7 in 10 have one)   R a radio (about 1 in 5)
+  T a tap (7 in 10 have one)   R a radio (about 1 in 5)   Q a generator (big buildings' plant rooms)
+
+The big buildings (hospitals, flats, offices, malls, markets) are not drawn
+here: their plans are made to measure for each plot, in these same letters,
+by scripts/big_plans.gd.
 
 The room with the front door holds what the shop sells. If the family lives
 there (a bed anywhere, usually upstairs), the other rooms hold what homes

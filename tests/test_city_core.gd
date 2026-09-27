@@ -51,7 +51,7 @@ func run() -> void:
 	me.bleeding = false
 
 	# WorldState: only what differs from the start is kept; back to the start, it's forgotten.
-	var bid := 0
+	var bid: int = w.buildings.filter(func(b): return b.kind == "shop")[0].id  # (a shophouse's tank)
 	var start: float = Buildings.start(w, bid).tank
 	main.world_state.set_state("building", bid, {tank = start + 5.0, tank_at = main.rain_total})
 	check(main.world_state.changed().get("building", {}).has(bid), "a changed building is kept")
