@@ -134,6 +134,7 @@ static func _legs(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 		var f: Vector2 = r.foot[i]
 		Look._limb(ci, h, k, 3.2, 2.9, pants)
 		Look._limb(ci, k, f, 2.9, 2.5, shin)
+		Clothes.leg_marks(ci, h, k, f, dl, far)
 		if near_feet or r.mode == "supine":
 			# The soles, the tread across them.
 			Look._rect(ci, Rect2(f.x - 1.8, f.y - 0.8, 3.6, 3.0 + boot), shoe)
@@ -167,7 +168,10 @@ static func _back(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 			Color(0, 0, 0, 0.12))  # shadow side
 	if r.mode == "supine":
 		Look._polyline(ci, PackedVector2Array([n + Vector2(-1.5, 0.4), n + Vector2(0, 2.0), n + Vector2(1.5, 0.4)]), shirt.darkened(0.35), 0.6)  # collar
+	Clothes.shirt_marks(ci, [n + Vector2(-sw + 0.8, 0), n + Vector2(sw - 0.8, 0), w + Vector2(sw * 0.85, 0), w + Vector2(-sw * 0.85, 0)],
+			dl, r.mode == "supine")
 	Clothes.top(ci, "back", r, lk)
+	Clothes.top(ci, "waist", r, lk)
 	if r.mode == "prone" and r.toward:
 		# The fronts of the shoulders, turned to you.
 		Look._poly(ci, PackedVector2Array([n + Vector2(-sw, -0.8), n + Vector2(sw, -0.8), n + Vector2(sw - 0.8, 1.6), n + Vector2(-sw + 0.8, 1.6)]),
@@ -180,7 +184,8 @@ static func _back(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 static func _arms(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 	var wear: Dictionary = lk.get("wear", {})
 	for i in 2:
-		Look._arm(ci, r.sh[i], r.el[i], r.hand[i], (dl.shirt as Color).darkened(0.05), dl.skin, false, dl.get("long_sleeves", false))
+		var sleeve: Color = Color(0, 0, 0, 0) if dl.get("sleeveless", false) else (dl.shirt as Color).darkened(0.05)
+		Look._arm(ci, r.sh[i], r.el[i], r.hand[i], sleeve, dl.skin, false, dl.get("long_sleeves", false))
 		if not wear.get("arms", {}).is_empty():
 			Clothes.arm_guard(ci, r.el[i], r.hand[i], wear.arms)
 		if not wear.get("hands", {}).is_empty():

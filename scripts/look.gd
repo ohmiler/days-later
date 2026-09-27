@@ -167,9 +167,13 @@ static func draw_rig(ci, r: Dictionary, lk: Dictionary) -> void:
 		_draw_arm_or_stump(ci, a, lk, missing)
 	Clothes.draw_layer(ci, "behind_head", r, lk)
 	_torso(ci, r.view, lk.shirt, pants, r.zombie)
+	var tw := (3.0 if r.view == SIDE else 4.4) * _girth
+	Clothes.shirt_marks(ci, [Vector2(-tw + 0.8, -19.7), Vector2(tw - 0.8, -19.7), Vector2(tw * 0.85, -10.4), Vector2(-tw * 0.85, -10.4)],
+			lk, r.view == FRONT, r.view == SIDE)
 	if lk.get("gore", -1) >= 0 and not low_gore:
 		_wounds(ci, r.view, lk.gore)
 	Clothes.draw_layer(ci, "torso", r, lk)
+	Clothes.draw_layer(ci, "waist", r, lk)
 	Clothes.draw_layer(ci, "strap", r, lk)
 	if missing & LOST_HEAD:
 		_neck_stump(ci, lk.skin)
@@ -204,7 +208,8 @@ static func _dress(lk: Dictionary, zombie: bool) -> Dictionary:
 	var body: Dictionary = wear.get("body", {})
 	if not body.is_empty() and body.shape != "vest":
 		out.shirt = (body.col as Color).darkened(grime)
-		out.long_sleeves = body.shape in ["long", "hoodie"]
+		out.long_sleeves = body.shape in ["long", "hoodie", "shirt"]
+		out.sleeveless = body.shape == "tank"
 	var legs: Dictionary = wear.get("legs", {})
 	if not legs.is_empty():
 		out.pants = (legs.col as Color).darkened(grime)
@@ -213,6 +218,8 @@ static func _dress(lk: Dictionary, zombie: bool) -> Dictionary:
 	if not feet.is_empty():
 		out.shoes = (feet.col as Color).darkened(grime)
 		out.boots = feet.shape == "boots"
+		if feet.shape == "sandals":
+			out.shoes = (lk.skin as Color).darkened(0.12)  # (flip-flops: at this size, bare feet)
 	var over: Dictionary = wear.get("over", {})
 	if over.get("covers", false):  # a coat over everything: its colour on the body and sleeves
 		out.shirt = (over.col as Color).darkened(grime)
@@ -244,13 +251,17 @@ static func _draw_leg(ci, leg: Dictionary, lk: Dictionary) -> void:
 	match leg.type:
 		"rect":
 			_leg_rect(ci, leg.x, leg.lift, col, shoe, shin, boot)
+			var lx: float = leg.x + 1.4
+			Clothes.leg_marks(ci, Vector2(lx, -10.5), Vector2(lx, -5.5), Vector2(lx, -leg.lift - 2.0), lk, leg.far)
 		"line":
 			_leg_line(ci, leg.hip, leg.knee, leg.foot, col, shoe, shin, boot)
+			Clothes.leg_marks(ci, leg.hip, leg.knee, leg.foot, lk, leg.far)
 		"limb":
 			var side: bool = leg.shoe == "side_kick"
 			var w := [3.1, 2.8, 2.4] if side else [3.2, 2.9, 2.5]
 			_limb(ci, leg.hip, leg.knee, w[0], w[1], col)
 			_limb(ci, leg.knee, leg.foot, w[1], w[2], shin)
+			Clothes.leg_marks(ci, leg.hip, leg.knee, leg.foot, lk, leg.far)
 			var foot: Vector2 = leg.foot
 			var e: float = leg.e
 			if side:
@@ -416,7 +427,10 @@ static func _arm(ci, sh: Vector2, elbow: Vector2, hand: Vector2, sleeve: Color, 
 	else:
 		_limb(ci, elbow, hand, 2.2, 1.8, skin)  # forearm
 		_limb(ci, cuff, elbow, 2.3, 2.2, skin.darkened(0.05))
-		_limb(ci, sh, cuff, 3.0, 2.8, sleeve)  # sleeve
+		if sleeve.a > 0.01:
+			_limb(ci, sh, cuff, 3.0, 2.8, sleeve)  # sleeve
+		else:
+			_limb(ci, sh, cuff, 2.5, 2.3, skin.darkened(0.05))  # no sleeves: the upper arm bare
 	_dot(ci, hand, 1.5 if fist else 1.2, skin)
 	if fist:
 		_dot(ci, hand + Vector2(-0.4, -0.4), 0.6, skin.lightened(0.15))  # knuckle highlight
@@ -427,6 +441,8 @@ static func _draw_arm(ci, a: Dictionary, lk: Dictionary) -> void:
 	var dim: float = a.dim
 	var skin: Color = (lk.skin as Color).darkened(a.skin_dark).darkened(dim)
 	var sleeve: Color = (lk.shirt as Color).darkened(a.sleeve_dark).darkened(a.get("sleeve_dim", dim))
+	if lk.get("sleeveless", false):
+		sleeve = Color(0, 0, 0, 0)  # (a vest top: bare arms)
 	var held: Dictionary = a.weapon
 	if not held.is_empty() and not held.trail.is_empty():
 		_polyline(ci, held.trail, Color(1, 1, 1, 0.35), 1.6)

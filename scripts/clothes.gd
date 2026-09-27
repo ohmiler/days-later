@@ -11,6 +11,7 @@ class_name Clothes
 ##   knee        over the legs (knee pads)
 ##   behind_head behind the head (a hood down the back, seen from the front)
 ##   torso       over the shirt (vests, a backpack's straps or the bag itself)
+##   waist       round the waist (a pha khao ma, a bum bag, a tool belt)
 ##   strap       over that (a bag's strap across the chest)
 ##   neck        round the neck, up under the chin (scarves)
 ##   arm         on each forearm (arm guards) - drawn by Look._draw_arm
@@ -27,7 +28,7 @@ class_name Clothes
 
 ## Shapes that only change the base body (Look._dress): shirt or trousers
 ## colour and cut, shoes.
-const BASE_SHAPES := ["long", "hoodie", "shorts", "boots", "shoes"]
+const BASE_SHAPES := ["long", "hoodie", "shorts", "boots", "shoes", "tee", "tank", "shirt", "sandals"]
 
 ## template -> the layers it draws at.
 const TEMPLATES := {
@@ -47,6 +48,14 @@ const TEMPLATES := {
 	fullface = ["hat"],
 	scarf = ["neck"],
 	shinguards = ["knee"],
+	bucket = ["hat"],
+	beanie = ["hat"],
+	hardhat = ["hat"],
+	whistle = ["neck"],
+	apron = ["coat", "torso"],
+	sash = ["waist"],
+	bumbag = ["waist"],
+	toolbelt = ["waist"],
 }
 
 
@@ -135,6 +144,34 @@ static func _draw(ci, layer: String, shape: String, p: Dictionary, r: Dictionary
 				var k: Vector2 = leg.knee
 				Look._rect(ci, Rect2(k + Vector2(-1.6, -1.2), Vector2(3.2, 2.2)), (p.col as Color).darkened(0.2 if leg.far else 0.0))
 				Look._rect(ci, Rect2(k + Vector2(-1.2, -1.0), Vector2(2.4, 0.6)), (p.col as Color).lightened(0.25))
+		["whistle", "neck"]:
+			if view != Look.BACK:
+				var lan: Color = p.get("col2", Color("c83a2e"))
+				var x := 0.3 if view == Look.SIDE else 0.0
+				Look._line(ci, Vector2(-1.8 + x, -20.4), Vector2(x, -16.4), lan, 0.4)
+				Look._line(ci, Vector2(1.8 + x, -20.4), Vector2(x, -16.4), lan, 0.4)
+				Look._rect(ci, Rect2(x - 0.6, -16.6, 1.6, 0.9), p.col)  # the whistle
+		["apron", "coat"]:
+			if view != Look.BACK:  # the skirt of it, down over the thighs
+				var w := (2.6 if view == Look.SIDE else 3.6) * Look._girth
+				var x := 0.8 if view == Look.SIDE else 0.0
+				Look._poly(ci, PackedVector2Array([Vector2(-w + x, -11.2), Vector2(w + x, -11.2), Vector2(w * 1.05 + x, -5.6), Vector2(-w * 1.05 + x, -5.6)]),
+						(p.col as Color).darkened(0.05))
+		["apron", "torso"]:
+			var w := (2.6 if view == Look.SIDE else 3.4) * Look._girth
+			var col: Color = p.col
+			if view == Look.BACK:
+				Look._line(ci, Vector2(-4.2 * Look._girth, -12.2), Vector2(4.2 * Look._girth, -12.2), col.darkened(0.2), 0.5)  # the ties
+				Look._line(ci, Vector2(-0.4, -12.2), Vector2(-1.2, -10.4), col.darkened(0.2), 0.4)
+				Look._line(ci, Vector2(0.4, -12.2), Vector2(1.2, -10.4), col.darkened(0.2), 0.4)
+			else:
+				var x := 0.8 if view == Look.SIDE else 0.0
+				Look._poly(ci, PackedVector2Array([Vector2(-w * 0.6 + x, -18.4), Vector2(w * 0.6 + x, -18.4), Vector2(w + x, -11.2), Vector2(-w + x, -11.2)]), col)
+				Look._rect(ci, Rect2(-w * 0.55 + x, -13.8, w * 1.1, 1.8), col.darkened(0.15))  # the pocket across the front
+				if p.has("col2"):
+					Look._line(ci, Vector2(-w * 0.6 + x, -18.0), Vector2(w * 0.6 + x, -18.0), p.col2, 0.5)
+		["sash", "waist"], ["bumbag", "waist"], ["toolbelt", "waist"]:
+			_waist(ci, view, shape, p)
 
 
 ## A hoodie's hood is the shirt's colour; a raincoat's is the coat's.
@@ -170,6 +207,27 @@ static func hat(ci, view: int, c: Vector2, h: Dictionary) -> void:
 						Look._rect(ci, Rect2(c.x + 2.4, c.y - 1.6, 3.8, 0.9), col.darkened(0.15))
 					Look.BACK:
 						Look._rect(ci, Rect2(c.x - 1.2, c.y - 1.2, 2.4, 0.7), col.darkened(0.3))  # strap
+			"bucket":
+				# A bucket hat: soft crown, the brim all round, drooping.
+				Look._poly(ci, Look._arc(c + Vector2(0, -1.0), 4.4, PI, TAU), col)
+				Look._poly(ci, PackedVector2Array([c + Vector2(-6.0, -0.4), c + Vector2(6.0, -0.4), c + Vector2(5.0, -1.8), c + Vector2(-5.0, -1.8)]),
+						col.darkened(0.12))
+				if p.get("pattern", "") == "camo":
+					Look._dot(ci, c + Vector2(-1.8, -3.0), 0.9, (p.get("col2", col.darkened(0.3)) as Color))
+					Look._dot(ci, c + Vector2(1.6, -2.4), 0.8, (p.get("col2", col.darkened(0.3)) as Color))
+			"beanie":
+				# A knitted hat pulled down to the ears: a turned-up cuff.
+				Look._poly(ci, Look._arc(c + Vector2(0, -0.4), 4.6, PI, TAU), col)
+				Look._rect(ci, Rect2(c.x - 4.6, c.y - 1.6, 9.2, 1.5), col.darkened(0.15))
+				Look._dot(ci, c + Vector2(0, -5.0), 0.9, (p.get("col2", col.lightened(0.2)) as Color))  # the bobble
+			"hardhat":
+				# A builder's hard hat: a shell with a ridge down the middle, a short peak.
+				Look._poly(ci, Look._arc(c + Vector2(0, -0.8), 4.8, PI, TAU), col)
+				Look._rect(ci, Rect2(c.x - 5.4, c.y - 1.2, 10.8, 1.0), col.darkened(0.1))
+				if view != Look.SIDE:
+					Look._rect(ci, Rect2(c.x - 0.5, c.y - 5.4, 1.0, 4.4), col.lightened(0.15))  # the ridge
+				else:
+					Look._rect(ci, Rect2(c.x + 3.0, c.y - 1.6, 3.0, 1.0), col.darkened(0.12))
 			"fullface":
 				# A full-face helmet: a shell over the whole head, a dark visor where the face is.
 				Look._dot(ci, c + Vector2(0, 0.2), 5.1, col)
@@ -239,8 +297,11 @@ static func glove(ci, hand: Vector2, fist: bool, g: Dictionary) -> void:
 	for p in parts(g):
 		if p.get("shape", "") == "gloves":
 			var col: Color = p.col
-			Look._dot(ci, hand, 1.7 if fist else 1.45, col)
-			Look._dot(ci, hand + Vector2(-0.4, -0.4), 0.6, col.lightened(0.2))
+			var big: bool = p.get("big", false)  # boxing gloves
+			Look._dot(ci, hand, (2.5 if big else (1.7 if fist else 1.45)), col)
+			Look._dot(ci, hand + Vector2(-0.4, -0.4) * (1.6 if big else 1.0), 0.9 if big else 0.6, col.lightened(0.2))
+			if big:
+				Look._dot(ci, hand + Vector2(0.9, 1.0), 0.8, Color("f0ece4"))  # the cuff
 
 
 # --- Body pieces (moved here from Look unchanged) -----------------------------------
@@ -267,6 +328,11 @@ static func _vest(ci, view: int, v: Dictionary) -> void:
 		# Hi-vis strips, like Bangkok's motorbike taxi vests.
 		Look._line(ci, Vector2(-w * 0.9, -14.8), Vector2(w * 0.9, -14.8), Color("e8e4d0"), 0.8)
 		Look._line(ci, Vector2(-w * 0.88, -12.6), Vector2(w * 0.88, -12.6), Color("e8e4d0"), 0.6)
+	if v.get("pockets", false) and view != Look.BACK:
+		# A work vest: pockets all over the front.
+		for x in ([-w * 0.55, w * 0.2] if view == Look.FRONT else [w * 0.1]):
+			Look._rect(ci, Rect2(x, -17.2, w * 0.35, 1.8), col.darkened(0.2))
+			Look._rect(ci, Rect2(x, -14.4, w * 0.35, 2.2), col.darkened(0.2))
 
 
 ## Backpack seen from the front (only the straps) or from behind (the whole bag).
@@ -277,6 +343,14 @@ static func _pack(ci, view: int, p: Dictionary) -> void:
 	if view == Look.FRONT:
 		for sx in [-1.0, 1.0]:
 			Look._line(ci, Vector2(2.9 * sx * g, -19.6), Vector2(2.6 * sx * g, -12.8), col.darkened(0.25), 1.0)
+		return
+	if p.get("box", false):
+		# A food-delivery box: square, bright, the lid lighter, a stripe round it.
+		var br := Rect2(-4.4, -21.0, 8.8, 9.0)
+		Look._rect(ci, Rect2(br.position + Vector2(0.3, 0.6), br.size), Color(0, 0, 0, 0.25))
+		Look._rect(ci, br, col)
+		Look._rect(ci, Rect2(br.position, Vector2(br.size.x, 1.6)), col.lightened(0.15))
+		Look._rect(ci, Rect2(br.position + Vector2(0, 4.2), Vector2(br.size.x, 1.2)), p.get("col2", Color.WHITE))
 		return
 	var h := 9.5 if big else 7.0
 	var hw := (3.8 if big else 3.2)
@@ -296,6 +370,9 @@ static func _pack_side(ci, p: Dictionary) -> void:
 	var big: bool = p.get("big", false)
 	var h := 9.5 if big else 7.0
 	var d := 3.4 if big else 2.6
+	if p.get("box", false):
+		h = 9.0
+		d = 5.2
 	var x := -3.0 * Look._girth
 	Look._rect(ci, Rect2(x - d, -19.8, d + 1.0, h), col.darkened(0.08))
 	Look._rect(ci, Rect2(x - d, -19.8, d + 1.0, 2.2), col.darkened(0.22))
@@ -345,6 +422,37 @@ static func _coat(ci, view: int, r: Dictionary, p: Dictionary) -> void:
 	Look._line(ci, Vector2(-w * 1.08, bot), Vector2(w * 1.08, bot), col.darkened(0.25), 0.5)  # hem
 
 
+## Round the waist: a pha khao ma (checked cloth, knotted at the side), a bum
+## bag (a pouch at the front), a tool belt (pouches, a hammer's handle).
+static func _waist(ci, view: int, shape: String, p: Dictionary) -> void:
+	var col: Color = p.col
+	var w := (3.1 if view == Look.SIDE else 4.0) * Look._girth
+	var y := -12.0
+	match shape:
+		"sash":
+			Look._rect(ci, Rect2(-w, y - 0.4, w * 2, 2.2), col)
+			var c2: Color = p.get("col2", col.darkened(0.35))
+			for i in 5:
+				Look._rect(ci, Rect2(-w + i * w * 0.42, y - 0.4, w * 0.18, 2.2), c2)  # the checks
+			if view != Look.BACK:
+				var x := w * 0.55 if view == Look.FRONT else 0.4
+				Look._rect(ci, Rect2(x, y + 1.6, 1.2, 3.0), col.darkened(0.08))  # the knot's ends
+				Look._rect(ci, Rect2(x + 1.3, y + 1.6, 1.0, 2.4), c2)
+		"bumbag":
+			Look._line(ci, Vector2(-w, y + 0.4), Vector2(w, y + 0.4), col.darkened(0.35), 0.5)
+			if view == Look.FRONT:
+				Look._rect(ci, Rect2(-2.2, y - 0.6, 4.4, 2.8), col)
+				Look._line(ci, Vector2(-2.0, y), Vector2(2.0, y), col.lightened(0.3), 0.3)  # the zip
+			elif view == Look.SIDE:
+				Look._rect(ci, Rect2(w - 1.2, y - 0.6, 2.2, 2.8), col)
+		"toolbelt":
+			Look._rect(ci, Rect2(-w, y - 0.2, w * 2, 1.4), col.darkened(0.2))
+			for x in ([-w * 0.9, w * 0.35] if view != Look.SIDE else [-0.6]):
+				Look._rect(ci, Rect2(x, y + 1.0, w * 0.55, 2.6), col)  # pouches
+			if view != Look.BACK:
+				Look._line(ci, Vector2(w * 0.7, y + 1.0), Vector2(w * 0.8, y + 5.0), Color("7a5a3a"), 0.8)  # a hammer's handle
+
+
 # --- Seen from above (TopRig: a body lying flat along the screen) ------------------
 
 ## template -> the TopRig layers it draws at. Every template in TEMPLATES
@@ -374,6 +482,14 @@ const TOP_TEMPLATES := {
 	kneepads = ["knee"],
 	shinguards = ["knee"],
 	scarf = ["neck"],
+	bucket = ["head"],
+	beanie = ["head"],
+	hardhat = ["head"],
+	whistle = ["neck"],
+	apron = ["back"],
+	sash = ["waist"],
+	bumbag = ["waist"],
+	toolbelt = ["waist"],
 }
 
 
@@ -435,6 +551,20 @@ static func _top(ci, layer: String, shape: String, p: Dictionary, r: Dictionary,
 			# The tails over the seat, a little down the legs.
 			Look._poly(ci, PackedVector2Array([w + Vector2(-4.6, 0), w + Vector2(4.6, 0), w + Vector2(4.8, -4.0 * dn), w + Vector2(-4.8, -4.0 * dn)]),
 					(lk.shirt as Color).darkened(0.1) if p.get("covers", false) else col)
+		["whistle", "neck"]:
+			if face:
+				Look._rect(ci, Rect2(n.x - 0.6, n.y + 1.6 * -dn, 1.6, 0.9), col)
+		["apron", "back"]:
+			if r.mode == "supine":  # (on the chest: lying on the back)
+				Look._poly(ci, PackedVector2Array([w + Vector2(-3.6, 0), w + Vector2(3.6, 0), mid + Vector2(2.2, 0), mid + Vector2(-2.2, 0)]), col)
+		["sash", "waist"], ["bumbag", "waist"], ["toolbelt", "waist"]:
+			var band: Color = col if shape != "toolbelt" else col.darkened(0.2)
+			Look._rect(ci, Rect2(w.x - 3.9, w.y - 1.0, 7.8, 2.0), band)
+			if shape == "sash":
+				for i in 4:
+					Look._rect(ci, Rect2(w.x - 3.6 + i * 2.2, w.y - 1.0, 0.8, 2.0), p.get("col2", col.darkened(0.35)))
+			elif shape == "bumbag" and r.mode == "supine":
+				Look._rect(ci, Rect2(w.x - 2.0, w.y - 1.4, 4.0, 2.8), col.lightened(0.05))
 		["kneepads", "knee"]:
 			for k in r.knee:  # (as standing: the pad and its light edge)
 				Look._rect(ci, Rect2(k + Vector2(-1.6, -1.2), Vector2(3.2, 2.2)), col)
@@ -451,3 +581,135 @@ static func _half(c: Vector2, rad: float, top := true) -> PackedVector2Array:
 		var t := PI + PI * i / 8.0
 		pts.append(c + Vector2(cos(t), sin(t) if top else -sin(t)) * rad)
 	return pts
+
+
+# --- Patterns and details on the shirt and trousers ------------------------------
+# A shirt's `pattern` (stripe, plaid, floral, dots, camo, print) and `detail`
+# (buttons, tie, school, vneck, collar, number, badge) are drawn over the body
+# by these, given its four corners (the shoulders' left and right, the waist's
+# right and left): the same code standing (Look._torso) and lying (TopRig._back).
+# `front`: we see the chest (prints and most details are on the front; a
+# jersey's number on the back).
+
+## The point at (u, v) across the body: u 0..1 left to right, v 0..1 shoulders to waist.
+static func _at(q: Array, u: float, v: float) -> Vector2:
+	return (q[0] as Vector2).lerp(q[1], u).lerp((q[3] as Vector2).lerp(q[2], u), v)
+
+
+static func _band(ci, q: Array, u0: float, v0: float, u1: float, v1: float, col: Color) -> void:
+	Look._poly(ci, PackedVector2Array([_at(q, u0, v0), _at(q, u1, v0), _at(q, u1, v1), _at(q, u0, v1)]), col)
+
+
+## Spots over a body for flowers and dots: fixed, so every frame looks the same.
+const _SPOTS := [Vector2(0.18, 0.15), Vector2(0.62, 0.1), Vector2(0.4, 0.38), Vector2(0.82, 0.42), Vector2(0.15, 0.62),
+		Vector2(0.58, 0.7), Vector2(0.86, 0.8), Vector2(0.3, 0.86)]
+
+
+## The pattern and details of what's worn on the body (none under a coat that covers it).
+static func shirt_marks(ci, q: Array, lk: Dictionary, front: bool, side := false) -> void:
+	var wear: Dictionary = lk.get("wear", {})
+	if wear.get("over", {}).get("covers", false):
+		return
+	var d: Dictionary = wear.get("body", {})
+	if d.is_empty() or (not d.has("pattern") and not d.has("detail")):
+		return
+	var col: Color = lk.shirt
+	var c2: Color = d.get("col2", col.darkened(0.35))
+	match d.get("pattern", ""):
+		"stripe":
+			for i in 5:
+				var v0 := 0.06 + i * 0.18
+				_band(ci, q, 0.0, v0, 1.0, v0 + 0.07, c2)
+		"plaid":
+			for i in 4:
+				var t := 0.12 + i * 0.25
+				_band(ci, q, 0.0, t, 1.0, t + 0.08, Color(c2, 0.55))
+				_band(ci, q, t, 0.0, t + 0.08, 0.9, Color(c2, 0.55))
+		"floral", "dots":
+			# (Little squares, not round dots: at this size they look the same, and
+			# they draw in one batch with the rest of the body.)
+			var big: bool = d.pattern == "floral"
+			for s: Vector2 in _SPOTS:
+				var p := _at(q, s.x, s.y)
+				if big:
+					_spot(ci, p, 0.75, c2)
+					_spot(ci, p, 0.3, Color("f0d050"))
+				else:
+					_spot(ci, p, 0.45, c2)
+		"camo":
+			for i in _SPOTS.size():
+				var s: Vector2 = _SPOTS[i]
+				_spot(ci, _at(q, s.x, s.y), 1.0 if i % 2 else 0.75, c2 if i % 3 else col.darkened(0.3))
+		"print":
+			if front and not side:
+				_band(ci, q, 0.28, 0.2, 0.72, 0.55, c2)  # the print on the chest
+				_band(ci, q, 0.34, 0.28, 0.66, 0.33, c2.lightened(0.45))  # (its words, too small to read here)
+				_band(ci, q, 0.38, 0.4, 0.62, 0.45, c2.lightened(0.45))
+	if side:
+		return
+	var dark := col.darkened(0.35)
+	match d.get("detail", ""):
+		"buttons":
+			if front:
+				Look._line(ci, _at(q, 0.5, 0.02), _at(q, 0.5, 0.88), dark, 0.4)
+				for v in [0.2, 0.45, 0.7]:
+					_spot(ci, _at(q, 0.53, v), 0.3, col.lightened(0.4))
+				_collar(ci, q, col.lightened(0.12))
+		"tie":
+			if front:
+				_collar(ci, q, col.lightened(0.12))
+				Look._poly(ci, PackedVector2Array([_at(q, 0.46, 0.03), _at(q, 0.54, 0.03), _at(q, 0.53, 0.1), _at(q, 0.47, 0.1)]), c2.darkened(0.2))
+				Look._poly(ci, PackedVector2Array([_at(q, 0.47, 0.1), _at(q, 0.53, 0.1), _at(q, 0.56, 0.62), _at(q, 0.5, 0.7), _at(q, 0.44, 0.62)]), c2)
+		"school":
+			if front:
+				Look._line(ci, _at(q, 0.5, 0.02), _at(q, 0.5, 0.88), dark.lightened(0.3), 0.4)
+				_collar(ci, q, col.lightened(0.05))
+				_band(ci, q, 0.62, 0.22, 0.8, 0.26, c2)  # the school's initials over the pocket
+				Look._polyline(ci, PackedVector2Array([_at(q, 0.62, 0.3), _at(q, 0.62, 0.45), _at(q, 0.8, 0.45), _at(q, 0.8, 0.3)]), dark.lightened(0.2), 0.3)
+		"vneck":
+			if front:
+				Look._poly(ci, PackedVector2Array([_at(q, 0.38, 0.0), _at(q, 0.62, 0.0), _at(q, 0.5, 0.22)]), (lk.skin as Color).darkened(0.05))
+				Look._polyline(ci, PackedVector2Array([_at(q, 0.36, 0.0), _at(q, 0.5, 0.24), _at(q, 0.64, 0.0)]), dark, 0.4)
+				_band(ci, q, 0.18, 0.3, 0.34, 0.42, dark.lightened(0.15))  # the chest pocket
+		"collar":
+			if front:
+				_collar(ci, q, col.lightened(0.12))
+				Look._line(ci, _at(q, 0.5, 0.05), _at(q, 0.5, 0.3), dark, 0.4)
+		"number":
+			var at: Vector2 = _at(q, 0.5, 0.42)
+			if not front:  # the big number on the back
+				for x in [-1.3, 1.3]:
+					Look._rect(ci, Rect2(at + Vector2(x - 0.7, -2.0), Vector2(1.4, 4.0)), c2)
+			else:
+				_spot(ci, _at(q, 0.7, 0.25), 0.6, c2)  # the club's crest
+		"badge":
+			if front:
+				_spot(ci, _at(q, 0.72, 0.28), 0.7, Color("d8b040"))  # a guard's badge
+				_band(ci, q, 0.2, 0.25, 0.38, 0.31, c2)  # the name tag
+			_band(ci, q, 0.0, 0.0, 0.16, 0.14, c2)  # shoulder patches
+			_band(ci, q, 0.84, 0.0, 1.0, 0.14, c2)
+
+
+static func _collar(ci, q: Array, col: Color) -> void:
+	Look._poly(ci, PackedVector2Array([_at(q, 0.34, 0.0), _at(q, 0.5, 0.0), _at(q, 0.44, 0.13)]), col)
+	Look._poly(ci, PackedVector2Array([_at(q, 0.5, 0.0), _at(q, 0.66, 0.0), _at(q, 0.56, 0.13)]), col)
+
+
+## A pattern down trousers (camo, elephant pants' print): spots along each
+## leg from hip to knee to foot.
+static func leg_marks(ci, hip: Vector2, knee: Vector2, foot: Vector2, lk: Dictionary, far := false) -> void:
+	var d: Dictionary = lk.get("wear", {}).get("legs", {})
+	if not d.has("pattern"):
+		return
+	var c2: Color = (d.get("col2", (lk.pants as Color).darkened(0.35)) as Color).darkened(0.18 if far else 0.0)
+	var shorts: bool = lk.get("shorts", false)
+	for t in [0.2, 0.55, 0.85]:
+		_spot(ci, hip.lerp(knee, t) + Vector2(0.4 if t > 0.5 else -0.3, 0), 0.5 if d.pattern != "camo" else 0.75, c2)
+	if not shorts:
+		for t in [0.3, 0.7]:
+			_spot(ci, knee.lerp(foot, t) + Vector2(-0.3 if t > 0.5 else 0.3, 0), 0.45 if d.pattern != "camo" else 0.7, c2)
+
+
+## A small square of colour centred on `p` (see shirt_marks).
+static func _spot(ci, p: Vector2, r: float, col: Color) -> void:
+	Look._rect(ci, Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), col)

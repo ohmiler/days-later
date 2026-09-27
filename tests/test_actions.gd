@@ -20,8 +20,8 @@ func run() -> void:
 	# E at a door opens or shuts it.
 	var door := -1
 	for d in w.doors:
-		if d.kind == "door" and not d.broken:
-			door = d.id
+		if d.kind == "door" and not d.broken and not d.get("side", false) and not w.is_solid(d.cell + Vector2i.DOWN) 				and not w.stairs.has(d.cell + Vector2i.DOWN):
+			door = d.id  # (a door in a wall across the screen, open ground in front of it, no stairs there to go up instead)
 			break
 	var dd: Dictionary = w.doors[door]
 	me.position = w.to_pos(dd.cell) + Vector2(0, 14)

@@ -30,7 +30,7 @@ func run() -> void:
 	var shown := {}
 	for o in LB.OUTFITS:
 		for slot in o:
-			shown[o[slot]] = true
+			shown[Items.base_id(o[slot])] = true  # ("id#look": one of its looks)
 	var left := []
 	for id in Items.DEFS:
 		if Items.DEFS[id].has("slot") and not shown.has(id):
