@@ -22,9 +22,13 @@ const LEG_SEVER := 0.4  # a blade to the legs: the chance it takes one off (it c
 ## Creeping up (sneaking) behind a zombie that isn't after you, a point in the
 ## back of the head: dead at once, and not a sound. Behind = its back to you
 ## this much (the cos of the angle between where it faces and where you are).
-const BACKSTAB := -0.35
+const BACKSTAB := -0.1
+const STAB_TIME := 0.8  # the silent kill, played out: a hand over its mouth, the blade in, lowered down
+const STAB_GAP := 9.0  # how far behind it you end up standing
 ## Deaths that go down toward whoever did it, not away.
-const FORWARD := ["slump", "kneel"]  # extra reach so a blow that looks like it lands, lands
+const FORWARD := ["slump", "kneel"]
+## Deaths that end face down (the rest on their backs).
+const FACE_DOWN := ["slump", "kneel", "held"]  # extra reach so a blow that looks like it lands, lands
 const PUNCH_WINDUP := 0.08  # the hit lands when the fist is out, not on the click
 const KICK_WINDUP := 0.18  # matches the foot snapping out in Look.kick_pose
 
@@ -219,6 +223,12 @@ func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 	if p.stamina <= 0.0 and not p.exhausted:
 		p.exhausted = true
 		main._toast(p, "หมดแรง! หายใจก่อน")
+	# Creeping up behind one: the silent kill, there and then, before the
+	# swing's own sound can turn it round.
+	var quiet := _backstab_target(p, kind, wid)
+	if quiet != null:
+		_silent_kill(p, quiet, wid)
+		return
 	fx_melee.rpc(p.peer_id, kind)
 	main._make_noise(p.position, main.NOISE_SWING * (0.6 if p.sneak else 1.0))
 	p.pending_kind = kind
@@ -297,13 +307,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		var where := zone if z == picked and kind != Look.KICK else "body"
 		var dmg: float = stats[1] * ZONE_DMG[where]
 		if kind != Look.KICK and backstab(p, z, wid):
-			where = "head"
-			dmg = maxf(dmg, z.hp)
-			z.hp = 0.0
-			fx_hit.rpc(z.zid, z.position, dir, false, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), dmg, "head", true)
-			_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0, wid, "head")
-			p.kills += 1
-			main._toast(p, "ฆ่าเงียบ")
+			_silent_kill(p, z, wid)
 			continue
 		z.hp -= dmg
 		z.stun = stats[3] * Zombie.KINDS[z.kind].get("stun", 1.0)
@@ -382,14 +386,69 @@ static func zone_at(dy: float, z = null) -> String:
 ##          a blade takes the head off, a point goes in (slump), a shot bursts it
 ##   body   a blade or point: down on its knees, then over (kneel); a shot, back
 ##   kick   a finishing kick throws it back (flung); so does a shotgun up close
-## A silent kill: sneaking, a pointed weapon, behind a zombie that isn't after you.
+## A silent kill: sneaking, a weapon that can (`silent`: a knife, a machete...),
+## behind a zombie that isn't after you.
 func backstab(p: Player, z: Zombie, wid: String) -> bool:
-	if not p.sneak or wid == "" or not Items.def(wid).get("death", {}).has("stab"):
+	return z.target != p and can_backstab(p, z, wid)
+
+
+## What every screen can tell (the knife mark over its head, see Main): the
+## server also checks it isn't after you.
+static func can_backstab(p: Player, z: Zombie, wid: String) -> bool:
+	if not p.sneak or wid == "" or not Items.def(wid).get("silent", false) or p.storey != z.storey:
 		return false
-	if z.target == p or z.state == 2 or z.flags & 2 or z.crawler():
+	if z.state == 2 or z.flags & 2 or z.crawler():
 		return false
 	var to_me := (p.position - z.position).normalized()
 	return Vector2.from_angle(z.facing).dot(to_me) < BACKSTAB
+
+
+## The zombie a blow starting now would kill silently (see backstab): in
+## reach, the one under the cursor or else the nearest in front. null: none.
+func _backstab_target(p: Player, kind: int, wid: String) -> Zombie:
+	if kind == Look.KICK or not p.sneak or not Items.def(wid).get("silent", false):
+		return null
+	var reach: float = Items.def(wid).get("range", 0.0) + Zombie.RADIUS + MELEE_SLACK
+	var cursor := p.position + Look.CHEST + p.aim
+	var best: Zombie = null
+	for z: Zombie in main.zombies.values():
+		var v := z.position - p.position
+		if v.length() > reach or z.storey != p.storey or _wall_between(p.position, z.position, p.storey) or not backstab(p, z, wid):
+			continue
+		var on_it := Rect2(z.position + Vector2(-8, -31 - z.lift), Vector2(16, 35)).has_point(cursor)
+		if not on_it and v.normalized().dot(p.aim.normalized()) < 0.3:
+			continue
+		if best == null or v.length() < best.position.distance_to(p.position):
+			best = z
+	return best
+
+
+## Played out: you step in behind it (side-on, as it's drawn), a hand over
+## its mouth, the blade into the back of its head, and lower it face down.
+## Held there for STAB_TIME; no noise at all.
+func _silent_kill(p: Player, z: Zombie, wid: String) -> void:
+	var side := 1.0 if z.position.x >= p.position.x else -1.0
+	var at := z.position - Vector2(side * STAB_GAP, 0)
+	if main.world.can_stand(at, Player.RADIUS) and not _wall_between(at, z.position, p.storey):
+		p.position = at
+		p.net_pos = at
+	z.hp = 0.0
+	fx_stealth.rpc(p.peer_id, p.position, side)
+	main.fx_sound.rpc("blade", z.position)
+	_kill_zombie(z, side, wid, "head", false, "held")
+	p.kills += 1
+	main._toast(p, "ฆ่าเงียบ")
+
+
+## Everyone sees `peer_id` do a silent kill toward `side` (+1: to the right).
+@rpc("authority", "call_local", "reliable")
+func fx_stealth(peer_id: int, pos: Vector2, side: float) -> void:
+	var p: Player = main.players.get(peer_id)
+	if p == null:
+		return
+	p.position = pos
+	p.stab_t = 0.0
+	p.stab_side = side
 
 
 static func death_style(how: String, zone := "body", close := false) -> String:
@@ -434,9 +493,10 @@ static func death_style(how: String, zone := "body", close := false) -> String:
 	return "fall"
 
 
-func _kill_zombie(z: Zombie, fall_dir: float, how := "", zone := "body", close := false) -> void:
+func _kill_zombie(z: Zombie, fall_dir: float, how := "", zone := "body", close := false, style := "") -> void:
 	z.release()
-	var style := death_style(how, zone, close)
+	if style == "":
+		style = death_style(how, zone, close)
 	if style in FORWARD:
 		fall_dir = -fall_dir  # (these go down toward whoever did it)
 	main.add_corpse(z.position, fall_dir, z.body_look(), style, z.storey)

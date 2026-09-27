@@ -73,6 +73,8 @@ var punch_buf := 0.0  # a click that came while still busy: acted on when ready 
 var kick_buf := 0.0
 var sight_k := 1.0  # someone else, on your screen: 0 when out of your character's sight (see Sight)
 var hitstop := 0.0  # the attack animation holds still this long when a blow lands
+var stab_t := 99.0  # since a silent kill started (Combat.fx_stealth); held still until STAB_TIME
+var stab_side := 1.0  # the side it was on (+1: to the right)
 var hurt_t := 0.0  # > 0 just after a bite (visual, every peer): the body jerks away, the arms come up
 var hurt_dir := Vector2.ZERO  # the way the bite pushed (from the zombie toward you)
 const HURT := 0.35
@@ -304,6 +306,11 @@ func server_tick(delta: float) -> void:
 		position = vault_to if not vaulting() else vault_from.lerp(vault_to, vault_t / vault_dur)
 		net_pos = position
 		return
+	if stabbing():
+		stab_t += delta
+		walk_v = Vector2.ZERO
+		net_pos = position
+		return
 	if getup_t > 0.0:
 		getup_t -= delta  # getting to your feet first
 		return
@@ -341,6 +348,11 @@ func under_vehicle() -> bool:
 
 
 ## In the middle of a running jump (see Actions.req_jump).
+## Mid silent kill: held still, drawn by _draw_stab.
+func stabbing() -> bool:
+	return stab_t < Combat.STAB_TIME
+
+
 func vaulting() -> bool:
 	return vault_dur > 0.0 and vault_t < vault_dur
 
@@ -827,6 +839,8 @@ func _process(delta: float) -> void:
 	if down:
 		_rest_lying = sleeping
 	rest_k = move_toward(rest_k, 1.0 if down else 0.0, delta / (LIE_TIME if _rest_lying else SIT_TIME))
+	if stabbing() and not multiplayer.is_server():
+		stab_t += delta
 	if vaulting() and not multiplayer.is_server():
 		# In the air: along the jump, on every screen (the server says where it lands).
 		vault_t += delta
@@ -988,6 +1002,8 @@ func _draw() -> void:
 	Look.muzzle = null
 	if climbing():
 		_draw_climb()
+	elif stabbing():
+		_draw_stab(wdef)
 	elif vaulting():
 		_draw_leap()
 	elif prone:
@@ -1119,6 +1135,35 @@ func _draw_leap() -> void:
 		pose.hands.append((a.hands[i] as Vector2).lerp(b.hands[i], u))
 		pose.feet.append((a.feet[i] as Vector2).lerp(b.feet[i], u))
 	Look.draw(self, {view = vf, anchors = pose, lean = lerpf(a.lean, b.lean, u)}, look)
+
+
+## A silent kill, side-on (facing +x, the zombie just ahead): reach in, a
+## hand over its mouth, the blade raised and driven in, then down with it as
+## it's lowered to the ground. [time 0..1, pose] keyframes.
+const STAB_KEYS := [
+	[0.0, {seat = Vector2(0, Rig.HIP_Y + 2.0), hands = [Vector2(3.0, -14.0), Vector2(2.0, -12.0)], feet = [Vector2(-3.0, 0.0), Vector2(1.5, 0.0)], lean = 0.1}],
+	[0.25, {seat = Vector2(0.8, Rig.HIP_Y + 0.6), hands = [Vector2(9.5, -19.0), Vector2(4.0, -24.0)], feet = [Vector2(-2.5, 0.0), Vector2(3.0, 0.0)], lean = 0.12}],
+	[0.45, {seat = Vector2(1.0, Rig.HIP_Y + 0.6), hands = [Vector2(9.5, -19.0), Vector2(8.5, -20.5)], feet = [Vector2(-2.5, 0.0), Vector2(3.0, 0.0)], lean = 0.18}],
+	[1.0, {seat = Vector2(1.5, Rig.HIP_Y + 3.5), hands = [Vector2(10.0, -8.0), Vector2(9.0, -7.0)], feet = [Vector2(-3.0, 0.0), Vector2(3.5, 0.0)], lean = 0.5}],
+]
+
+
+func _draw_stab(wdef: Dictionary) -> void:
+	var k := clampf(stab_t / Combat.STAB_TIME, 0.0, 1.0)
+	var i := 0
+	while i < STAB_KEYS.size() - 2 and k > STAB_KEYS[i + 1][0]:
+		i += 1
+	var a: Array = STAB_KEYS[i]
+	var b: Array = STAB_KEYS[i + 1]
+	var u := smoothstep(0.0, 1.0, clampf((k - a[0]) / (b[0] - a[0]), 0.0, 1.0))
+	var pa: Dictionary = a[1]
+	var pb: Dictionary = b[1]
+	var pose := {seat = (pa.seat as Vector2).lerp(pb.seat, u), hands = [], feet = []}
+	for j in 2:
+		pose.hands.append((pa.hands[j] as Vector2).lerp(pb.hands[j], u))
+		pose.feet.append((pa.feet[j] as Vector2).lerp(pb.feet[j], u))
+	Look.draw(self, {view = [Look.SIDE, stab_side < 0.0], anchors = pose, lean = lerpf(pa.lean, pb.lean, u),
+			weapon = wdef.get("draw", {})}, look)
 
 
 ## The jump's three moments (push off, in the air, landing) as anchor poses,

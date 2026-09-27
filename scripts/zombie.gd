@@ -72,6 +72,13 @@ const SIGHT_DAY := 120.0  # how far it sees you in daylight, or at night when yo
 const SIGHT_DARK := 55.0  # at night, in the dark: little more than a shape moving close by
 const SIGHT_CONE := 0.5  # cos of half its field of view (120 degrees): eyes look ahead
 const SENSE := 22.0  # this close it knows you're there whichever way it faces
+const SENSE_SNEAK := 8.0  # ...but someone sneaking up behind it, only this close
+## Left alone it mostly stands about, now and then shuffling somewhere:
+## still this long, then walks this long (seconds), STILL_CHANCE of the time still.
+const STILL_TIME := Vector2(3.0, 6.0)
+const WANDER_TIME := Vector2(1.5, 3.0)
+const STILL_CHANCE := 0.6
+var wander_t := 0.0  # server: until it next makes up its mind to stand or wander
 var investigate := Vector2.ZERO  # server: where it heard something
 var investigate_t := 0.0
 var state := 0  # 0 idle, 1 heard something, 2 sees a player (sent to clients)
@@ -100,6 +107,7 @@ var down_t := 0.0  # server: knocked flat, getting up when it runs out
 var missing := 0  # Look.LOST_* bits; arms can be cut off in a fight
 var flags := 0  # 1 = lunging, 2 = down, 8 = holding someone; from the server fields, or from snapshots
 var storey := 0  # 0 on the ground, else the floor upstairs it's on (World.storey_map): it followed someone up the stairs
+var dummy := false  # server: an admin's practice dummy (Admin): stands still, thinks nothing, can still be hit and killed
 var home := -1  # a big building it was shut in (Survival._tick_trapped): its death counts there
 var lift := 0.0  # drawn this far up (eases to its storey while upstairs)
 var climb := Vector2i(-1, -1)  # server: the stairs it is heading for, after someone on the other floor
@@ -129,11 +137,19 @@ func server_tick(delta: float) -> void:
 		position = world.slide(position, step, RADIUS, false, false, storey)
 		push = Vector2.ZERO if position.distance_squared_to(was) < 0.0001 else push - step  # (up against a wall: that's as far as it goes)
 	attack_cd -= delta
+	wander_t -= delta
 	climb_t -= delta
 	repath -= delta
 	investigate_t -= delta
 	if shamming:
 		_sham_tick()
+		return
+	if dummy:
+		flags = 2 if down_t > 0.0 else 0
+		down_t -= delta
+		stun = 0.0
+		target = null
+		state = 0
 		return
 	if long_down and down_t <= RISE_TIME:
 		long_down = false
@@ -199,8 +215,10 @@ func server_tick(delta: float) -> void:
 			goal = investigate
 		if goal == Vector2.INF:
 			path.clear()
-			if randf() < 0.3:
-				wander = Vector2.from_angle(randf() * TAU) if randf() < 0.6 else Vector2.ZERO
+			if wander_t <= 0.0:
+				var still := randf() < STILL_CHANCE
+				wander = Vector2.ZERO if still else Vector2.from_angle(randf() * TAU)
+				wander_t = randf_range(STILL_TIME.x, STILL_TIME.y) if still else randf_range(WANDER_TIME.x, WANDER_TIME.y)
 		elif storey > 0:
 			path.assign(world.path_on(storey, position, goal))  # (small rooms up there: a fresh route each time)
 			_path_goal = goal
@@ -499,7 +517,9 @@ func _nearest_player() -> Player:
 			continue
 		# Eyes look ahead; right up close it senses you any way round. Once it
 		# has you it keeps turning after you.
-		if d > SENSE and p != target and Vector2.from_angle(facing).dot((p.position - position) / d) < SIGHT_CONE:
+		var ahead := Vector2.from_angle(facing).dot((p.position - position) / d) if d > 0.0 else 1.0
+		var sense := SENSE_SNEAK if p.sneak and ahead < 0.0 else SENSE  # (creeping up behind it)
+		if d > sense and p != target and ahead < SIGHT_CONE:
 			continue
 		if d > 28.0 and storey == 0:
 			var eye := position + Vector2(0, -15)

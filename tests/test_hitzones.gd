@@ -137,6 +137,15 @@ func round2() -> void:
 	_aim_at(b.position + Vector2(0, -15))
 	main.combat._resolve_melee(me, Look.SWING, main.combat.PUNCH)
 	check(not main.zombies.has(b.zid), "a knife from behind, sneaking: a silent kill")
+	check(me.stabbing(), "played out: you're held in it a moment")
+	var at := me.position
+	me.move = Vector2.RIGHT
+	me.server_tick(0.1)
+	check(me.position == at, "and can't walk off mid-kill")
+	me.move = Vector2.ZERO
+	simulate(Combat.STAB_TIME)
+	check(not me.stabbing(), "then it's done")
+	check(main.corpses.values()[-1].style == "held", "lowered face down")
 	check(other.investigate_t <= 0.0, "nobody heard a thing")
 	var f := zombie_at(home + side * 14.0)
 	f.max_hp = 500.0
@@ -147,7 +156,52 @@ func round2() -> void:
 	_aim_at(f.position + Vector2(0, -15))
 	main.combat._resolve_melee(me, Look.SWING, main.combat.PUNCH)
 	check(main.zombies.has(f.zid), "not from the front")
+	# Sneaking up behind, it only knows you're there when you're almost touching.
+	var s2 := zombie_at(home + side * 30.0)
+	s2.target = null
+	s2.state = 0
+	s2.facing = side.angle()
+	me.position = home + side * 30.0 - side * 14.0
+	check(s2._nearest_player() == null, "sneaking up behind it, 14 px away: it hasn't noticed")
 	me.sneak = false
+	check(s2._nearest_player() == me, "walking up, it has")
+	me.sneak = true
+	me.worn.hand_r = Items.make("knife")
+	check(Combat.can_backstab(me, s2, "knife"), "and the knife mark shows over it")
+	check(Combat.can_backstab(me, s2, "machete") and not Combat.can_backstab(me, s2, "axe") and not Combat.can_backstab(me, s2, "bat"),
+			"a machete will do too; not an axe or a bat")
+	# The real thing: a click, through the swing (its sound would turn it round).
+	me.stab_t = 99.0
+	var c3 := zombie_at(home + side * 60.0)
+	c3.target = null
+	c3.state = 0
+	c3.facing = side.angle()
+	c3.wander_t = 100.0
+	c3.wander = Vector2.ZERO
+	me.position = c3.position - side * 18.0
+	me.aim = side * 18.0 + Vector2(0, -14)
+	me.shoot_cd = 0.0
+	me.local_cd = 0.0
+	me.punching = true
+	simulate(0.1)
+	me.punching = false
+	check(not main.zombies.has(c3.zid) and me.stabbing(), "a click from behind, sneaking: the silent kill, not a swing")
+	simulate(Combat.STAB_TIME)
+	me.sneak = false
+	me.position = home
+
+	# Left alone it mostly stands still.
+	var idle := zombie_at(home + side * 200.0)
+	var still := 0
+	for i in 40:
+		idle.wander_t = 0.0
+		idle.repath = 0.0
+		idle.target = null
+		idle.investigate_t = 0.0
+		idle.server_tick(0.01)
+		if idle.wander == Vector2.ZERO:
+			still += 1
+	check(still > 14 and still < 36, "left alone it mostly stands about (%d of 40)" % still)
 
 	# Some twitch once they're down; face down after a kneel.
 	var twitched := 0

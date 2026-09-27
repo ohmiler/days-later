@@ -192,10 +192,10 @@ func _ready() -> void:
 	ui.admin.heal_requested.connect(func(): _request(&"req_heal", []))
 	ui.admin.clear_requested.connect(func(r: float): _request(&"req_clear", [r]))
 	ui.admin.time_requested.connect(func(t: float): _request(&"req_time", [t]))
-	ui.admin.zombie_requested.connect(func(kind: String, n: int, special: bool):
+	ui.admin.zombie_requested.connect(func(kind: String, n: int, special: bool, dummy: bool):
 		var me: Player = players.get(multiplayer.get_unique_id())
 		if me:
-			_request(&"req_zombie", [me.position + Vector2(60, 0).rotated(randf() * TAU), kind, n, special]))
+			_request(&"req_zombie", [me.position + Vector2(60, 0).rotated(randf() * TAU), kind, n, special, dummy]))
 	ui.admin.command_requested.connect(func(rpc_name: StringName, args: Array): _request(rpc_name, args))
 	ui.gear.drop_requested.connect(func(ref: Array): _request(&"req_move", [ref, ["ground", -1]]))
 	ui.gear.box_closed.connect(func(): _request(&"req_close_box", []))
@@ -1306,6 +1306,23 @@ func _draw_fx() -> void:
 				fx.draw_colored_polygon(PackedVector2Array([br.get_center() + Vector2(-2, 5), br.get_center() + Vector2(2, 5),
 						br.get_center() + Vector2(0, 8)]), Color(0.95, 0.93, 0.88, 0.92 * a))
 				fx.draw_string(font, br.position + Vector2(4, 7.6), p.say, HORIZONTAL_ALIGNMENT_LEFT, bw - 8, 6, Color(0.1, 0.1, 0.1, a))
+	if local and local.sneak and local.alive():
+		# Creeping up behind one, a knife ready: a small blade over its head.
+		# Behind one with nothing that can in hand: a grey blade, and what it needs.
+		var wid := local.hand_weapon("r")
+		var pointed: bool = Items.def(wid).get("silent", false)
+		var reach: float = (Items.def(wid).get("range", 0.0) if pointed else 17.0) + Zombie.RADIUS + Combat.MELEE_SLACK
+		for z: Zombie in zombies.values():
+			if z.visible and z.position.distance_to(local.position) < reach + 14.0 and Combat.can_backstab(local, z, wid if pointed else "knife"):
+				var top := z.position + Vector2(0, -40 - z.lift)
+				var near := z.position.distance_to(local.position) < reach
+				var col := (Color(UiTheme.WARN, 0.95) if near else Color(1, 1, 1, 0.45)) if pointed else Color(0.6, 0.6, 0.6, 0.6)
+				if not pointed:
+					fx.draw_string_outline(font, top + Vector2(-30, -12), "ต้องใช้มีด", HORIZONTAL_ALIGNMENT_CENTER, 60, 6, 2, Color(0, 0, 0, 0.6))
+					fx.draw_string(font, top + Vector2(-30, -12), "ต้องใช้มีด", HORIZONTAL_ALIGNMENT_CENTER, 60, 6, Color(1, 1, 1, 0.8))
+				fx.draw_colored_polygon(PackedVector2Array([top + Vector2(-1.2, -5), top + Vector2(1.2, -5), top + Vector2(0, 2)]), col)
+				fx.draw_rect(Rect2(top + Vector2(-2.2, -6.2), Vector2(4.4, 1.2)), col)
+				fx.draw_rect(Rect2(top + Vector2(-0.8, -9), Vector2(1.6, 2.8)), col.darkened(0.3))
 	for dn in dmg_numbers:
 		var k: float = dn[3] / 0.9
 		var pos: Vector2 = dn[0] + Vector2(0, -12 * ease(k, 0.4))

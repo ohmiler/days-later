@@ -50,7 +50,9 @@ func req_heal() -> void:
 ## `n` zombies of `kind` around `pos`; `special`: in one of the rare costumes
 ## (Items.SPECIALS). Kind and costume both come from the id, so skip ids until one fits.
 @rpc("any_peer", "call_remote", "reliable")
-func req_zombie(pos: Vector2, kind: String, n := 1, special := false) -> void:
+## `dummy`: stands still facing away from you, thinking nothing (for trying
+## blows, silent kills and deaths on).
+func req_zombie(pos: Vector2, kind: String, n := 1, special := false, dummy := false) -> void:
 	var p := main._sender()
 	if not _allowed(p):
 		return
@@ -67,6 +69,9 @@ func req_zombie(pos: Vector2, kind: String, n := 1, special := false) -> void:
 			at = pos
 		var z := main._add_zombie(main.next_zid, at)
 		z.storey = p.storey
+		if dummy:
+			z.dummy = true
+			z.facing = (at - p.position).angle()  # (its back to you)
 		main.next_zid += 1
 
 

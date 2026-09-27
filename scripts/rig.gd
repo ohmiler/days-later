@@ -34,6 +34,7 @@ const FALLS := {
 	slump = {sink = 4.5, buckle = 0.3, hold = 0.45},  # legs gone at once: drops where it stood
 	kneel = {sink = 5.5, buckle = 0.22, hold = 0.62},  # on its knees a moment, then over
 	flung = {sink = 1.0, buckle = 0.1, hold = 0.05},  # knocked off its feet
+	held = {sink = 5.0, buckle = 0.6, hold = 0.7},  # held up a moment, then lowered to its knees and down
 }
 
 
