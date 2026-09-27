@@ -69,6 +69,12 @@ it isn't part of `run_all` (no `--headless`):
 It prints draw calls and milliseconds a frame at the normal zoom and zoomed
 out, and fails if either goes over its budget. Run it after visual work.
 
+`tests/horde.gd` (also in a window) measures a horde night: 40, 100 and 160
+zombies closing in on you in the same city every run, and where the frame's
+time goes (the server's tick, the zombies' thinking and moving, pushing them
+apart, their updates and drawing, and the rest). On 2026-09-27, 160 zombies:
+before 17-20 ms a frame, after the collision fast path and the rest ~11 ms.
+
 ## Writing a new one
 
 A new `class_name` file is only known to Godot after an import: run the game

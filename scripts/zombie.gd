@@ -151,7 +151,10 @@ func server_tick(delta: float) -> void:
 				and position.distance_to(target.position) < 160.0:
 			climb = _stairs_after(target)
 		if climb == NO_STAIRS:
+			var t_look := Time.get_ticks_usec() if Main.profiling else 0
 			target = _nearest_player()
+			if Main.profiling:
+				_prof("look", t_look)
 		var goal := Vector2.INF
 		if climb != NO_STAIRS:
 			goal = world.to_pos(climb)
@@ -171,7 +174,10 @@ func server_tick(delta: float) -> void:
 			path.clear()  # it can see you and you are close: straight at you, no route needed
 		elif path.is_empty() or goal.distance_to(_path_goal) > 24.0:
 			_path_goal = goal
+			var t_path := Time.get_ticks_usec() if Main.profiling else 0
 			path.assign(world.path_between(position, goal))
+			if Main.profiling:
+				_prof("path", t_path)
 			# Standing at a shut door with the only other way in far around the block?
 			# Smash through instead of taking the long way.
 			if path.size() * World.TILE > 3.0 * position.distance_to(goal) + 48.0 and world.closed_door_near(position, 20.0) >= 0:
@@ -348,7 +354,10 @@ func sense(pos: Vector2, look := 9.0) -> void:
 
 
 func _move(dir: Vector2, delta: float) -> void:
+	var t0 := Time.get_ticks_usec() if Main.profiling else 0
 	position = world.slide(position, dir * speed * (1.0 if storey > 0 else world.slow_at(position)) * delta, RADIUS, false, false, storey)
+	if Main.profiling:
+		_prof("move", t0)
 
 
 ## The stairs to take after someone on another floor: in the building
@@ -476,6 +485,15 @@ func _set_wear(ids: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	if not Main.profiling:
+		_process_body(delta)
+		return
+	var t0 := Time.get_ticks_usec()
+	_process_body(delta)
+	_prof("zproc", t0)
+
+
+func _process_body(delta: float) -> void:
 	lift = lerpf(lift, BuildingProp.storey_lift(storey), minf(1.0, 12.0 * delta))
 	z_index = 2 if lift > 1.0 else 1
 	var before := position
@@ -569,7 +587,12 @@ func _maybe_redraw(delta: float) -> void:
 	if _redraw_t > 0.0:
 		return
 	var off_centre := at.distance_to(screen.get_center()) / (screen.size.length() * 0.5)
-	_redraw_t = 0.0 if off_centre < 0.35 else (1.0 / 30.0 if off_centre < 0.7 else 1.0 / 20.0)
+	# Quick moves (a lunge, a blow landing, a fall, reeling) every frame near
+	# you; a shamble looks the same at 30 a second (it still slides along
+	# smoothly: that's the node moving, not a redraw), and a horde is mostly shambling.
+	var quick := hit_t > 0.0 or atk_t >= 0.0 or down_el >= 0.0 or up_el >= 0.0 or stagger_t > 0.0 or scream_t > 0.0
+	_redraw_t = (0.0 if quick else 1.0 / 30.0) if off_centre < 0.35 else (1.0 / 30.0 if off_centre < 0.7 else 1.0 / 20.0)
+	_redraw_t += randf() * 0.004  # (so a crowd doesn't all redraw on the same frame)
 	_drawn_hp = hp
 	queue_redraw()
 
@@ -589,7 +612,23 @@ func flinch(dir: Vector2, strong := false) -> void:
 	facing = (-dir).angle()  # stay facing whoever hit it while being knocked back
 
 
+## (Main.profiling: add the time since `t0` to Main.prof[key].)
+func _prof(key: String, t0: int) -> void:
+	var m = get_parent()
+	if m is Main:
+		m.prof[key] = m.prof.get(key, 0) + Time.get_ticks_usec() - t0
+
+
 func _draw() -> void:
+	if not Main.profiling:
+		_draw_body()
+		return
+	var t0 := Time.get_ticks_usec()
+	_draw_body()
+	_prof("zdraw", t0)
+
+
+func _draw_body() -> void:
 	var snap := sin(clampf(hit_t / 0.25, 0, 1) * PI * 0.5)
 	# Kicked, it reels: thrown back fast, then finding its feet again as it
 	# stumbles backward (the legs follow the knock-back as it plays out).
