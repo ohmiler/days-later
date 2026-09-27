@@ -58,7 +58,7 @@ const RARITY := {common = 4, uncommon = 2, rare = 1}
 const RARITY_NAMES := {common = "ธรรมดา", uncommon = "ไม่บ่อย", rare = "หายาก"}
 const RARITY_COLORS := {common = Color("c8c4b8"), uncommon = Color("6ab0e0"), rare = Color("e0b840")}
 ## Icon shapes an item's `icon` can use (drawn in draw_icon).
-const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain", "rag", "nails", "tape", "scrap", "magazine", "jerrycan", "bullets", "shells", "spray", "battery", "phone", "lighter", "matches"]
+const ICONS := ["roll", "blister", "kit", "pillbox", "bottle", "cup", "packet", "can", "coil", "board", "planks", "chain", "rag", "nails", "tape", "scrap", "magazine", "jerrycan", "bullets", "shells", "spray", "battery", "phone", "lighter", "matches", "pot"]
 
 ## id -> fields, read from DATA the first time Items is used.
 static var DEFS: Dictionary = _load_defs()
@@ -143,6 +143,12 @@ static func problems() -> Array:
 				out.append("%s: salvage gives unknown item %s" % [id, part])
 		if d.has("repair") and not DEFS.has(d.repair):
 			out.append("%s: repaired with unknown item %s" % [id, d.repair])
+		if d.has("leaves") and not DEFS.has(d.leaves):
+			out.append("%s: leaves unknown item %s" % [id, d.leaves])
+		if d.has("cooks") and not DEFS.has(d.cooks.get("into", "")):
+			out.append("%s: cooks into unknown item %s" % [id, d.cooks.get("into")])
+		if d.get("holds", 0) > 0 and d.get("stack", 1) > 1:
+			out.append("%s: something that holds water can't stack (each has its own)" % id)
 		match d.get("type"):
 			"weapon":
 				for key in ["range", "dmg", "cd", "dur", "hp", "draw"]:
@@ -318,6 +324,66 @@ static func display_name(id: String) -> String:
 	return def(id).get("name", id)
 
 
+# --- What's inside, and how fresh (one way for every item) -----------------------------
+# An item that `holds` sips of something carries it as `fill`: {what, n} (a
+# bottle of canal water, a pot of boiled water). One that `spoil`s (game hours)
+# remembers when it was made as `made` (Main.now()): nothing counts down, how
+# fresh it is is worked out from the clock when it's looked at or eaten.
+# Either makes an item its own: it never piles up with a plain one.
+
+## Kinds of water: what a sip does (drink), and the chance a sip makes you ill.
+const LIQUIDS := {
+	clean = {name = "น้ำสะอาด", drink = 15.0, sick = 0.0},
+	tap = {name = "น้ำประปา", drink = 15.0, sick = 0.06},  # (straight from the pipes: Bangkok boils it)
+	canal = {name = "น้ำคลอง", drink = 15.0, sick = 0.45},
+}
+
+
+## How many sips it holds (0: it holds nothing).
+static func holds(id: String) -> int:
+	return int(def(id).get("holds", 0))
+
+
+## What's in it: {what, n}, or {} if empty (or not a container).
+static func fill_of(it: Dictionary) -> Dictionary:
+	var f: Dictionary = it.get("fill", {})
+	return f if f.get("n", 0) > 0 else {}
+
+
+## Spoiled, at game time `now`?
+static func spoiled(it: Dictionary, now: float) -> bool:
+	var h: float = def(it.id).get("spoil", 0.0)
+	return h > 0.0 and now - float(it.get("made", now)) > h * Main.HOUR
+
+
+## Game hours until it spoils (-1: it doesn't).
+static func hours_left(it: Dictionary, now: float) -> float:
+	var h: float = def(it.id).get("spoil", 0.0)
+	if h <= 0.0:
+		return -1.0
+	return maxf(0.0, h - (now - float(it.get("made", now))) / Main.HOUR)
+
+
+## Plain: nothing inside, no date on it (only plain items pile up together).
+static func plain(it: Dictionary) -> bool:
+	return not it.has("fill") and not it.has("made")
+
+
+## How it is, for its card and its name in the bag: "น้ำคลอง 2/3", "บูดแล้ว"...
+static func state_text(it: Dictionary, now: float) -> String:
+	var parts := []
+	if holds(it.id) > 0:
+		var f := fill_of(it)
+		parts.append("ว่าง" if f.is_empty() else "%s %d/%d" % [LIQUIDS.get(f.what, {}).get("name", f.what), f.n, holds(it.id)])
+	if def(it.id).get("spoil", 0.0) > 0.0 and it.has("made"):
+		if spoiled(it, now):
+			parts.append("บูดแล้ว")
+		else:
+			var h := hours_left(it, now)
+			parts.append("สด · เสียในราว %d ชม." % ceili(h) if h >= 1.0 else "ใกล้เสียแล้ว")
+	return " · ".join(parts)
+
+
 ## What searching turns up. Two steps, so that adding items never makes the
 ## essentials rarer: first a *category* (what that piece of furniture holds,
 ## tipped by the kind of place), then an item of that category that is found
@@ -476,6 +542,12 @@ static func _shape_icon(ci: CanvasItem, r: Rect2, icon: Dictionary) -> void:
 		"can":
 			ci.draw_rect(Rect2(c - Vector2(5, 10) * s, Vector2(10, 20) * s), col)
 			ci.draw_rect(Rect2(c - Vector2(5, 3) * s, Vector2(10, 6) * s), col2)
+		"pot":  # a cooking pot seen from the side: body, rim, two handles, a lid knob
+			ci.draw_rect(Rect2(c + Vector2(-10, -4) * s, Vector2(20, 12) * s), col)
+			ci.draw_rect(Rect2(c + Vector2(-11, -6) * s, Vector2(22, 3) * s), col.lightened(0.15))
+			ci.draw_rect(Rect2(c + Vector2(-14, -3) * s, Vector2(4, 2) * s), col2)
+			ci.draw_rect(Rect2(c + Vector2(10, -3) * s, Vector2(4, 2) * s), col2)
+			ci.draw_rect(Rect2(c + Vector2(-2, -9) * s, Vector2(4, 3) * s), col2)
 		"pillbox":
 			var cap := Color("f0ece4")
 			ci.draw_rect(Rect2(c - Vector2(7, 8) * s, Vector2(14, 20) * s), col)

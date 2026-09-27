@@ -132,6 +132,13 @@ func _draw() -> void:
 				info = "ยืนที่ประตูแล้วกด R เพื่อตอกเสริม · หรือใช้ทำของ (Tab)" if cur.id == "wood" else "ใช้ทำของและซ่อม (Tab > ทำของ)"
 			_:
 				info = "ใช้ทำของ (Tab > ทำของ)" if cur.id == "magazine" else "เก็บไว้แลกของ"
+		# What's in it and how fresh it is (a bottle of canal water, rice gone off).
+		var m = get_tree().current_scene
+		var state := Items.state_text(cur, m.now() if m != null and m.has_method("now") else 0.0)
+		if Items.holds(cur.id) > 0:
+			info = state + (" · คลิกขวาดื่ม" if hover >= 0 else " · กด F ดื่ม") + (" · ขว้างได้ [T]" if Items.has_tag(cur.id, "throw") else "")
+		elif state != "":
+			info = state + " · " + info
 	var a := 1.0 if hover >= 0 else clampf((LABEL_FOR + 0.6 - label_t) / 0.6, 0.0, 1.0)
 	if quiet:
 		a = 0.0

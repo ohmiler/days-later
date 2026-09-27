@@ -92,6 +92,7 @@ var say_t := 0.0
 var open_box := -1  # server: the container this player has open in the bag screen
 var torn := ""  # server: name of something a bite just tore apart, for main to report
 var wounds: Array = []  # see Body (server; the owner's machine gets a copy)
+var conditions := {}  # see Body.CONDITIONS: kind -> until (Main.now()) (server; the owner gets a copy)
 var body_dirty := false  # server: wounds changed, send them to the owner
 var body_sync_t := 0.0  # server: time to the next refresh of the owner's copy
 var last_window := -1  # server: the smashed window being climbed through (glass cuts)
@@ -247,6 +248,7 @@ func server_tick(delta: float) -> void:
 			struggle = 0.0
 			warned.clear()
 			wounds.clear()  # a new survivor, unhurt
+			conditions.clear()
 			body_dirty = true
 			refresh_wear()  # the clothes stayed on the body; the new survivor starts in their own
 			inv.resize(bag_size())
@@ -340,6 +342,7 @@ func speed_mult() -> float:
 	m *= Body.leg_speed(wounds)  # a bitten leg
 	if Body.fevered(wounds):
 		m *= 0.92  # feverish
+	m *= Body.mod(self, "speed")  # (sick: see Body.CONDITIONS)
 	if aiming:
 		m = minf(m, 0.55)  # steady, careful steps
 	for slot in wear_ids:

@@ -8,6 +8,7 @@ extends Node2D
 
 const PORT := 9080
 const DAY_LENGTH := 240.0
+const HOUR := DAY_LENGTH / 24.0  # a game hour, in seconds of game time
 const MAX_ZOMBIES := 40  # around each player (see Survival._spawn_zombie); the city itself is far bigger
 const NEAR := 900.0  # px: a player's surroundings, where zombies are about and sent to them
 const SNAPSHOT_RATE := 0.05
@@ -646,6 +647,14 @@ func _socket() -> WebSocketMultiplayerPeer:
 	return peer
 
 
+## The world's one clock: seconds of game time since day 0 (it runs faster
+## while everyone sleeps). Anything that changes with time remembers when it
+## started by this, rather than counting down every frame: food spoiling in
+## an empty house is worked out when someone opens the fridge.
+func now() -> float:
+	return (day + time) * DAY_LENGTH
+
+
 func _leave(quit: bool) -> void:
 	if in_game and multiplayer.is_server() and multiplayer.multiplayer_peer is WebSocketMultiplayerPeer:
 		_save_all()
@@ -747,7 +756,7 @@ func _drop_corpse(cid: int) -> void:
 func _tick_corpses(delta: float) -> void:
 	for cid in corpses.keys():
 		var c: Dictionary = corpses[cid]
-		c.age += delta
+		c.age += delta * survival.time_speed()  # (game time: a night slept through rots them too)
 		if c.burn >= 0.0:
 			var before: float = c.burn
 			c.burn += delta

@@ -13,7 +13,7 @@ class_name SaveGame
 ## (world.save.v1 and so on). A save that cannot be read, or that comes from a
 ## newer game, is never written over: the game says so and leaves it alone.
 
-const VERSION := 11
+const VERSION := 12
 const GAME_VERSION := "0.4"  # shown to people; not used for compatibility
 
 ## [kind, from version] -> the function that upgrades it one step.
@@ -31,6 +31,7 @@ const MIGRATIONS := {
 	"world:8": "_world_8_to_9",
 	"player:9": "_player_9_to_10",
 	"player:10": "_player_10_to_11",
+	"player:11": "_player_11_to_12",
 }
 
 
@@ -206,7 +207,7 @@ static func save_player(p: Player) -> void:
 		version = VERSION, name = p.pname, alive = p.alive(),
 		pos = p.position, on_roof = p.on_roof, up = p.up, hp = p.hp, kills = p.kills,
 		hunger = p.hunger, thirst = p.thirst, infection = p.infection, bleeding = p.bleeding, stamina = p.stamina,
-		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash, bed = p.bed, wounds = p.wounds,
+		inv = p.inv, sel = p.sel, worn = p.worn, secret_hash = p.secret_hash, bed = p.bed, wounds = p.wounds, conditions = p.conditions,
 		city = p.world.city_seed if p.world else 0, zone = p.world.zone if p.world else "",
 		travel_to = p.travel_to, travel_exit = p.travel_exit,
 	})
@@ -246,6 +247,7 @@ static func load_player_into(p: Player, name: String) -> bool:
 	p.infection = d.infection
 	p.bleeding = d.bleeding
 	p.wounds = d.wounds
+	p.conditions = d.conditions
 	p.stamina = d.stamina
 	p.worn = d.worn
 	p.refresh_wear()
@@ -361,6 +363,12 @@ static func _player_10_to_11(d: Dictionary) -> Dictionary:
 ## v10 remembers wounds (see Body).
 static func _player_9_to_10(d: Dictionary) -> Dictionary:
 	d.merge({wounds = []}, false)
+	return d
+
+
+## v12 remembers conditions (Body.CONDITIONS: sick from bad water, spoiled food).
+static func _player_11_to_12(d: Dictionary) -> Dictionary:
+	d.merge({conditions = {}}, false)
 	return d
 
 

@@ -74,10 +74,10 @@ func _inv_slot_for(p: Player, it: Dictionary) -> int:
 
 
 func _slot_for(slots: Array, it: Dictionary) -> int:
-	if Items.stack(it.id) > 1:
+	if Items.stack(it.id) > 1 and Items.plain(it):
 		for i in slots.size():
 			var o = slots[i]
-			if o != null and o.id == it.id and o.n < Items.stack(it.id):
+			if o != null and o.id == it.id and o.n < Items.stack(it.id) and Items.plain(o):
 				return i
 	return slots.find(null)
 
@@ -173,7 +173,7 @@ func req_move(a: Array, b: Array) -> void:
 	if b[0] == "ground":
 		_ref_set(p, a, null)
 		_ref_set(p, ["ground", -1], x)
-	elif y != null and y.id == x.id and Items.stack(x.id) > 1:
+	elif y != null and y.id == x.id and Items.stack(x.id) > 1 and Items.plain(x) and Items.plain(y):
 		var room: int = Items.stack(x.id) - y.n
 		var n := mini(room, x.n)
 		y.n += n
@@ -311,7 +311,7 @@ func _give(p: Player, id: String) -> bool:
 	var d := Items.def(id)
 	if d.get("type") != "weapon":
 		for it in p.inv:
-			if it != null and it.id == id and it.n < Items.stack(id):
+			if it != null and it.id == id and it.n < Items.stack(id) and Items.plain(it):
 				it.n += 1
 				return true
 	for i in p.inv.size():
@@ -418,11 +418,20 @@ func _use_selected(p: Player) -> void:
 	if it != null and Items.def(it.id).get("type") == "trap":
 		main.doors._place_trap(p, it)
 		return
+	if it != null and Items.holds(it.id) > 0:
+		drink_from(p, it)
+		return
 	if it == null or Items.def(it.id).get("type") != "use":
 		return
 	var d := Items.def(it.id)
+	if d.has("cooks") and d.get("food", 0.0) <= 0.0:
+		main._toast(p, "ต้องหุงก่อน · ใส่หม้อกับน้ำแล้วตั้งบนเตาในครัว")
+		return
+	var off := Items.spoiled(it, main.now())
 	p.hp = minf(Player.MAX_HP, p.hp + d.get("heal", 0.0))
-	p.hunger = clampf(p.hunger + d.get("food", 0.0), 0.0, 100.0)
+	p.hunger = clampf(p.hunger + d.get("food", 0.0) * (0.5 if off else 1.0), 0.0, 100.0)
+	if off and randf() < SPOILED_SICK:
+		main._toast(p, Body.add_condition(p, "food_poisoning", main.now()))
 	p.thirst = clampf(p.thirst + d.get("drink", 0.0), 0.0, 100.0)
 	p.stamina = minf(100.0, p.stamina + d.get("stamina", 0.0))
 	if d.get("cure", 0.0) > 0.0 and Body.clear_fever(p):
@@ -449,6 +458,52 @@ func _use_selected(p: Player) -> void:
 	main.fx_sound.rpc("eat", p.position)
 	main._toast(p, "ใช้ %s" % Items.display_name(it.id))
 	_send_inv(p)
+
+
+## One sip from a bottle or a pot: what water it was decides how much it
+## helps and whether it makes you ill (Items.LIQUIDS).
+const SPOILED_SICK := 0.7  # eating something gone off: this likely to make you ill
+
+
+func drink_from(p: Player, it: Dictionary) -> void:
+	var f := Items.fill_of(it)
+	if f.is_empty():
+		main._toast(p, "%s ว่างเปล่า · เติมน้ำที่ก๊อก หรือตักน้ำคลอง" % Items.display_name(it.id))
+		return
+	var liq: Dictionary = Items.LIQUIDS.get(f.what, Items.LIQUIDS.clean)
+	p.thirst = clampf(p.thirst + liq.drink, 0.0, 100.0)
+	f.n -= 1
+	if f.n <= 0:
+		it.erase("fill")
+	main.fx_sound.rpc("eat", p.position)
+	if randf() < liq.sick:
+		main._toast(p, Body.add_condition(p, "diarrhea", main.now()))
+	else:
+		main._toast(p, "ดื่ม%s" % liq.name + ("" if liq.sick == 0.0 else " · เสี่ยงท้องเสีย ต้มก่อนดีกว่า"))
+	_send_inv(p)
+
+
+## Pour `what` water into the containers `p` carries that have room for it
+## (the same water or empty), up to `sips`. Returns how many sips went in.
+func fill_containers(p: Player, what: String, sips: int) -> int:
+	var poured := 0
+	for it in p.inv:
+		if sips <= 0:
+			break
+		if it == null or Items.holds(it.id) <= 0:
+			continue
+		var f := Items.fill_of(it)
+		if not f.is_empty() and f.what != what:
+			continue
+		var n: int = f.get("n", 0)
+		var add := mini(Items.holds(it.id) - n, sips)
+		if add > 0:
+			it.fill = {what = what, n = n + add}
+			sips -= add
+			poured += add
+	if poured > 0:
+		_send_inv(p)
+	return poured
 
 
 ## Bandage one particular wound (from the body screen), with a bandage from the bag.

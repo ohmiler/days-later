@@ -320,7 +320,7 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 		"take":
 			var item: Dictionary = main.pickups[t.id].item
 			var took := false
-			if item.get("n", 1) == 1 and Items.stack(item.id) > 1:
+			if item.get("n", 1) == 1 and Items.stack(item.id) > 1 and Items.plain(item):
 				took = main.inventory._give(p, item.id)  # joins a pile you already carry
 			else:
 				# As it lies: worn, half used, a pile of several.
@@ -375,6 +375,18 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 				main.travel(p, ex[0])
 		"jumpdown":
 			jump_off_car(p, p.aim)
+		"scoop":
+			var got: int = main.inventory.fill_containers(p, "canal", 12)
+			if got > 0:
+				main.fx_sound.rpc("eat", p.position)
+				main._toast(p, "ตักน้ำคลอง %d ส่วน · ต้มก่อนดื่ม ไม่งั้นท้องเสีย" % got)
+		"gulp":
+			p.thirst = minf(100.0, p.thirst + Items.LIQUIDS.canal.drink * 2.0)
+			main.fx_sound.rpc("eat", p.position)
+			if randf() < Items.LIQUIDS.canal.sick:
+				main._toast(p, Body.add_condition(p, "diarrhea", main.now()))
+			else:
+				main._toast(p, "ดื่มน้ำคลอง · รอดไปอีกรอบ")
 		"sit":
 			var d: Dictionary = main.world.decor[t.id]
 			p.sleeping = false

@@ -12,12 +12,27 @@ func refresh() -> void:
 	queue_redraw()
 	if thing.kind == "radio":
 		_radio_sound(thing.state.on)
+	# Only something moving needs a look every frame (there are hundreds of stoves).
+	set_process((thing.kind == "radio" and thing.state.on) or (thing.kind == "stove" and not thing.state.pot.is_empty()))
+
+
+func _ready() -> void:
+	refresh()
 
 
 func _process(delta: float) -> void:
 	if thing.kind == "radio" and thing.state.on:
 		_t += delta
 		queue_redraw()  # the dial glows and sound rings go out
+	elif thing.kind == "stove" and not thing.state.pot.is_empty():
+		_t += delta
+		queue_redraw()  # the flame, the steam
+
+
+## Still cooking (by the game clock)?
+func _cooking() -> bool:
+	var m = get_tree().current_scene if is_inside_tree() else null
+	return m != null and m.has_method("now") and m.now() < float(thing.state.ready)
 
 
 func _radio_sound(on: bool) -> void:
@@ -64,6 +79,25 @@ func _draw() -> void:
 				for i in 2:
 					var k := fmod(_t * 0.8 + i * 0.5, 1.0)
 					draw_arc(Vector2(-2, -4), 4.0 + k * 10.0, -PI * 0.9, -PI * 0.1, 10, Color(1, 1, 1, 0.35 * (1.0 - k)), 0.8)
+		"stove":
+			# (The stove itself is decor.) A pot on the ring; a flame under it
+			# and steam off it while it cooks.
+			if s.pot.is_empty():
+				return
+			var on := _cooking()
+			if on:
+				for i in 3:
+					var f := sin(_t * 18.0 + i * 2.0) * 0.5
+					draw_colored_polygon(PackedVector2Array([Vector2(-1.2 + i * 1.2, -10), Vector2(-0.6 + i * 1.2, -12.5 - f), Vector2(0 + i * 1.2, -10)]),
+							Color(0.35, 0.55, 1.0, 0.85))
+			draw_rect(Rect2(-3.5, -16, 8, 5.5), Color("a8acb0"))
+			draw_rect(Rect2(-4, -16.8, 9, 1.2), Color("c8ccd0"))
+			draw_rect(Rect2(-5.5, -15, 1.5, 1), Color("3a3e44"))
+			draw_rect(Rect2(4.5, -15, 1.5, 1), Color("3a3e44"))
+			if on:
+				for i in 2:
+					var k := fmod(_t * 0.6 + i * 0.5, 1.0)
+					draw_circle(Vector2(0.5 + sin(_t * 2.0 + i) * 1.5, -18 - k * 10.0), 1.5 + k * 2.0, Color(1, 1, 1, 0.3 * (1.0 - k)))
 		"vending":
 			draw_set_transform(Vector2(0, -1), 0, Vector2(1, 0.35))
 			draw_circle(Vector2.ZERO, 8.0, Color(0, 0, 0, 0.3))
