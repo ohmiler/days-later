@@ -23,6 +23,7 @@ const APPEARANCE_KEYS := ["skin", "hair", "style", "shirt", "pants", "build"]
 const LOST_ARM_L := 1
 const LOST_ARM_R := 2
 const LOST_HEAD := 4
+const LOST_LEG := 8  # the near leg, cut off at the thigh: it crawls (Zombie.crawler)
 const BLOOD := Color("7a0e0a")
 const BLOOD_DARK := Color("3e0605")
 
@@ -156,8 +157,11 @@ static func draw_rig(ci, r: Dictionary, lk: Dictionary) -> void:
 
 	# Legs stay planted; everything above them bobs.
 	_xf(ci, Vector2.ZERO, Vector2(sx, 1))
-	for leg in r.legs:
-		_draw_leg(ci, leg, lk)
+	for i in r.legs.size():
+		if i == 1 and int(lk.get("missing", 0)) & LOST_LEG:
+			_leg_stump(ci, r.legs[i], lk)
+		else:
+			_draw_leg(ci, r.legs[i], lk)
 	_rect(ci, Rect2(Vector2(-3.3, -11.5) + r.get("hips", Vector2.ZERO), Vector2(6.6, 2.6)), pants.darkened(0.06))  # hips join the legs to the body
 
 	Clothes.draw_layer(ci, "knee", r, lk)  # (worn things are drawn by Clothes at each layer)
@@ -522,6 +526,18 @@ static func _draw_arm_or_stump(ci, a: Dictionary, lk: Dictionary, missing: int) 
 
 
 ## Where the head was.
+## What's left of a leg cut off at the thigh: a stump of trouser, a bloody end.
+static func _leg_stump(ci, leg: Dictionary, lk: Dictionary) -> void:
+	var col: Color = (lk.pants as Color).darkened(0.18 if leg.far else 0.0)
+	var hip: Vector2 = leg.get("hip", Vector2(leg.get("x", 0.0) + 1.5, Rig.HIP_Y))
+	var knee: Vector2 = leg.get("knee", hip + Vector2(0, 5))
+	var end := hip.lerp(knee, 0.55)
+	_limb(ci, hip, end, 3.1, 2.9, col)
+	_dot(ci, end, 1.4, (lk.skin as Color).darkened(0.35) if low_gore else BLOOD)
+	if not low_gore:
+		_dot(ci, end, 0.55, Color("d8d0c0"))  # bone
+
+
 static func _neck_stump(ci, skin: Color) -> void:
 	_rect(ci, Rect2(-1.3, -21.4, 2.6, 2.2), skin.darkened(0.25))
 	_dot(ci, Vector2(0, -21.4), 1.9, BLOOD)

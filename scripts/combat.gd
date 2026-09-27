@@ -18,6 +18,11 @@ const ZONE_DMG := {head = 1.8, body = 1.0, legs = 0.7}
 const GUN_HEAD := 2.0  # a shot to the head (instead of ZONE_DMG.head)
 const LEG_KNOCK := 0.35  # a blunt blow to the legs: the chance it goes down
 const KILL_STOP := 0.12  # the killing blow holds a little longer (HITSTOP)
+const LEG_SEVER := 0.4  # a blade to the legs: the chance it takes one off (it crawls)
+## Creeping up (sneaking) behind a zombie that isn't after you, a point in the
+## back of the head: dead at once, and not a sound. Behind = its back to you
+## this much (the cos of the angle between where it faces and where you are).
+const BACKSTAB := -0.35
 ## Deaths that go down toward whoever did it, not away.
 const FORWARD := ["slump", "kneel"]  # extra reach so a blow that looks like it lands, lands
 const PUNCH_WINDUP := 0.08  # the hit lands when the fist is out, not on the click
@@ -291,6 +296,15 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	for z: Zombie in hits:
 		var where := zone if z == picked and kind != Look.KICK else "body"
 		var dmg: float = stats[1] * ZONE_DMG[where]
+		if kind != Look.KICK and backstab(p, z, wid):
+			where = "head"
+			dmg = maxf(dmg, z.hp)
+			z.hp = 0.0
+			fx_hit.rpc(z.zid, z.position, dir, false, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), dmg, "head", true)
+			_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0, wid, "head")
+			p.kills += 1
+			main._toast(p, "ฆ่าเงียบ")
+			continue
 		z.hp -= dmg
 		z.stun = stats[3] * Zombie.KINDS[z.kind].get("stun", 1.0)
 		z.push += dir * stats[4]  # (played out over a moment: Zombie.server_tick)
@@ -307,6 +321,10 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 			z.knock_down()
 		elif where == "legs" and not Items.has_tag(how, "blade") and z.kind != "fat" and z.down_t <= 0.0 and randf() < LEG_KNOCK:
 			z.knock_down()  # its legs taken out from under it
+		elif where == "legs" and Items.has_tag(how, "sever") and not z.crawler() and randf() < LEG_SEVER:
+			z.missing |= Look.LOST_LEG
+			z.lunge_t = 0.0
+			fx_sever.rpc(z.zid, Look.LOST_LEG, dir)
 		elif Items.has_tag(how, "sever") and randf() < SEVER_CHANCE:
 			var bit := z.arm_left_to_cut()
 			if bit > 0:
@@ -351,9 +369,9 @@ func fx_bump(zid: int, dir: Vector2) -> void:
 
 ## How a zombie dies depends on what killed it (see Corpse for what each style looks like).
 ## Head, body or legs, from how high up a zombie (`dy` from its feet) it was hit.
-## One on the ground is all body.
+## One on the ground (knocked down, or crawling) is all body.
 static func zone_at(dy: float, z = null) -> String:
-	if z is Zombie and z.flags & 2:
+	if z is Zombie and (z.flags & 2 or z.crawler()):
 		return "body"
 	return "head" if dy < HEAD_Y else ("legs" if dy > LEGS_Y else "body")
 
@@ -364,6 +382,16 @@ static func zone_at(dy: float, z = null) -> String:
 ##          a blade takes the head off, a point goes in (slump), a shot bursts it
 ##   body   a blade or point: down on its knees, then over (kneel); a shot, back
 ##   kick   a finishing kick throws it back (flung); so does a shotgun up close
+## A silent kill: sneaking, a pointed weapon, behind a zombie that isn't after you.
+func backstab(p: Player, z: Zombie, wid: String) -> bool:
+	if not p.sneak or wid == "" or not Items.def(wid).get("death", {}).has("stab"):
+		return false
+	if z.target == p or z.state == 2 or z.flags & 2 or z.crawler():
+		return false
+	var to_me := (p.position - z.position).normalized()
+	return Vector2.from_angle(z.facing).dot(to_me) < BACKSTAB
+
+
 static func death_style(how: String, zone := "body", close := false) -> String:
 	var r0 := randf()
 	var blade := Items.has_tag(how, "sever")
@@ -680,10 +708,10 @@ func fx_sever(zid: int, bit: int, dir: Vector2) -> void:
 	if Look.low_gore:
 		return
 	var g := Gib.new()
-	g.kind = "arm"
+	g.kind = "leg" if bit == Look.LOST_LEG else "arm"
 	g.lk = z.body_look()
 	g.position = z.position + Vector2(0, 1)
-	g.h = 16.0
+	g.h = 6.0 if bit == Look.LOST_LEG else 16.0
 	g.vel = Vector2(dir.x, dir.y * 0.6) * 45.0
 	g.vh = 50.0
 	g.spin = randf_range(7.0, 12.0)

@@ -71,3 +71,98 @@ func run() -> void:
 	check(main.corpses.size() == before + 1 and c.style == "slump" and c.fall_dir == -1.0, "a knife to the head: it drops toward you")
 	SaveGame.wipe()
 	await close_game()
+	await round2()
+
+
+# --- Round 2 ---------------------------------------------------------------------
+
+func round2() -> void:
+	SaveGame.wipe()
+	await host(9545)
+	main.spawn_timer = 1e9
+	var home := me.position
+	var side := Vector2.RIGHT
+	for d in [Vector2.RIGHT, Vector2.LEFT, Vector2.DOWN, Vector2.UP]:
+		if main.world.can_stand(home + d * 14.0, 5) and not main.combat._wall_between(home, home + d * 14.0, 0):
+			side = d
+			break
+
+	# An axe to the legs can take one off: it crawls, slowly, at your ankles.
+	me.worn.hand_r = Items.make("axe")
+	me.refresh_wear()
+	var z := zombie_at(home + side * 14.0)
+	z.max_hp = 5000.0
+	z.hp = 5000.0
+	for i in 60:
+		if z.crawler():
+			break
+		z.stun = 0.0
+		z.down_t = 0.0
+		z.flags = 0
+		z.position = home + side * 14.0
+		_aim_at(z.position + Vector2(0, -4))
+		main.combat._resolve_melee(me, Look.SWING, main.combat.PUNCH)
+	check(z.crawler(), "an axe to the legs takes one off")
+	check(Combat.zone_at(-28.0, z) == "body", "a crawler is low: no head to aim at")
+	z.down_t = 0.0
+	z.stun = 0.0
+	z.target = me
+	z.position = home + side * 60.0
+	var from := z.position
+	z.repath = 0.0
+	simulate(1.0)
+	var moved := z.position.distance_to(from)
+	check(moved > 1.0 and moved < Zombie.KINDS.normal.speed * 0.5, "it drags itself along, slowly (%.1f px in a second)" % moved)
+	z.position = home + side * 9.0
+	var hp := me.hp
+	z.attack_cd = 0.0
+	simulate(0.1)
+	check(me.hp < hp and me.wounds.any(func(w): return w.part == "legs"), "it bites at your legs")
+	me.hp = Player.MAX_HP
+	me.wounds.clear()
+	main.actions._do_action(me, {kind = "zombie", id = z.zid}, "stomp")
+	check(not main.zombies.has(z.zid), "and it can be stamped on")
+
+	# Sneaking up behind one with a knife: dead at once, not a sound.
+	me.worn.hand_r = Items.make("knife")
+	me.refresh_wear()
+	me.sneak = true
+	var b := zombie_at(home + side * 14.0)
+	b.target = null
+	b.state = 0
+	b.facing = side.angle()  # (its back to you)
+	var other := zombie_at(home - side * 120.0)
+	other.target = null
+	other.investigate_t = 0.0
+	_aim_at(b.position + Vector2(0, -15))
+	main.combat._resolve_melee(me, Look.SWING, main.combat.PUNCH)
+	check(not main.zombies.has(b.zid), "a knife from behind, sneaking: a silent kill")
+	check(other.investigate_t <= 0.0, "nobody heard a thing")
+	var f := zombie_at(home + side * 14.0)
+	f.max_hp = 500.0
+	f.hp = 500.0
+	f.target = null
+	f.state = 0
+	f.facing = (-side).angle()  # (facing you)
+	_aim_at(f.position + Vector2(0, -15))
+	main.combat._resolve_melee(me, Look.SWING, main.combat.PUNCH)
+	check(main.zombies.has(f.zid), "not from the front")
+	me.sneak = false
+
+	# Some twitch once they're down; face down after a kneel.
+	var twitched := 0
+	for seed_i in 30:
+		var c := Corpse.new()
+		c.style = "blunt"
+		c.lk = {spurt_seed = seed_i}
+		for t in range(10, 40):
+			if c._twitch(t * 0.1) > 0.0:
+				twitched += 1
+				break
+		c.free()
+	check(twitched > 3 and twitched < 25, "some bodies twitch (%d of 30)" % twitched)
+	var r := Rig.build({view = [Look.SIDE, false], fall = 1.0, fall_dir = 1.0, face_down = true}, {})
+	var r2 := Rig.build({view = [Look.SIDE, false], fall = 1.0, fall_dir = 1.0}, {})
+	check(r.sx != r2.sx, "face down: turned over from lying on its back")
+	SaveGame.wipe()
+	await close_game()
