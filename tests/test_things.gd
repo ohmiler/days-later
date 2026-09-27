@@ -6,7 +6,7 @@ extends "res://tests/test_base.gd"
 
 func _first(kind: String) -> Dictionary:
 	for th in main.world.things:
-		if th.kind == kind:
+		if th.kind == kind and th.get("storey", 0) == 0:  # (on the ground floor, where we stand)
 			return th
 	return {}
 

@@ -227,8 +227,9 @@ func _wall_between(a: Vector2, b: Vector2, storey: int) -> bool:
 	return false
 
 
-## Punch hits the zombie in front that is closest to the aim; a kick hits
-## everything in front. Generous cone so a blow that looks like it lands, lands.
+## A punch or a kick hits the one zombie in front closest to the aim; a
+## weapon that cleaves hits everything in front. Generous cone so a blow
+## that looks like it lands, lands.
 func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	if not p.alive() or p.on_roof:
 		return
@@ -258,7 +259,9 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	if hits.is_empty():
 		return
 	var wid := p.hand_weapon(p.swing_hand) if kind in [Look.SWING, Look.SWING_L] else ""
-	var cleave: bool = kind == Look.KICK or Items.def(wid).get("cleave", false)
+	# A kick lands on one: the one you aimed at, else the one most in front.
+	# Only a long weapon swung wide (cleave) catches all in its arc.
+	var cleave: bool = kind != Look.KICK and Items.def(wid).get("cleave", false)
 	if cleave:
 		hits = hits.filter(func(z): return z == picked or (z.position - p.position).normalized().dot(dir) > 0.0 or z.position.distance_to(p.position) < 12.0)
 	elif picked:
@@ -279,6 +282,8 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 			_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0, how)
 			p.kills += 1
 			continue
+		if kind == Look.KICK:
+			_knock_on(z, dir, hits)
 		# A good kick can put it on the ground (not the fat ones); a blade can take an arm.
 		if kind == Look.KICK and z.kind != "fat" and randf() < (0.5 if z.kind == "runner" else 0.3):
 			z.knock_down()
@@ -289,6 +294,29 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 				fx_sever.rpc(z.zid, bit, dir)
 	if wid != "":
 		_wear_weapon(p)
+
+
+const KNOCK_ON_REACH := 16.0  # how close behind the kicked one another must be to be bumped
+const KNOCK_ON_STUN := 0.4  # it loses its footing this long (no harm done)
+const KNOCK_ON_SHOVE := 3.0
+
+
+## The one kicked staggers back into whoever is right behind it: that one
+## loses its footing a moment and gives a step, unhurt (one only: the nearest).
+func _knock_on(z: Zombie, dir: Vector2, hit: Array) -> void:
+	var best: Zombie = null
+	var best_d := KNOCK_ON_REACH
+	for o: Zombie in main.zombies.values():
+		if o == z or hit.has(o) or o.storey != z.storey or o.hp <= 0:
+			continue
+		var v := o.position - z.position
+		if v.length() < best_d and v.dot(dir) > 0.0:
+			best = o
+			best_d = v.length()
+	if best == null:
+		return
+	best.stun = maxf(best.stun, KNOCK_ON_STUN)
+	best.position = main.world.slide(best.position, dir * KNOCK_ON_SHOVE, Zombie.RADIUS, false, false, best.storey)
 
 
 ## How a zombie dies depends on what killed it (see Corpse for what each style looks like).
