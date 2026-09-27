@@ -71,6 +71,15 @@ const ROOF_DIM := 0.4  # how much the street below darkens while you're up top
 var players := {}  # peer_id -> Player
 var zombies := {}  # zid -> Zombie
 var next_zid := 1
+
+
+## A new zombie's id, for one turning up at `pos`: the next free one that
+## says (zid % 8) what kind of place it's from, for its clothes (Items.zombie_wear).
+func new_zid(pos: Vector2) -> int:
+	var place := Items.zombie_place(world, pos) if world else 0
+	var zid := next_zid + posmod(place - next_zid, Items.ZOMBIE_PLACES.size())
+	next_zid = zid + 1
+	return zid
 var world_seed := 0
 var zone := ""  # the zone this server runs (see Zones); "" until one is loaded
 var address := ""  # the server joined (to find the next zone's server on the same machine)

@@ -42,7 +42,7 @@ const WORN_AT := {
 	head = Vector2(120, 44), face = Vector2(22, 62), neck = Vector2(218, 62),
 	body = Vector2(22, 116), over = Vector2(218, 116), arms = Vector2(22, 170), hands = Vector2(218, 170),
 	legs = Vector2(22, 224), knees = Vector2(218, 224), back = Vector2(22, 278), strap = Vector2(218, 278),
-	feet = Vector2(120, 332),
+	feet = Vector2(93, 332), waist = Vector2(147, 332),
 	hand_r = Vector2(22, 332), hand_l = Vector2(218, 332),  # what you hold: right hand on the left, as the doll faces you
 }
 const DOLL_AT := Vector2(145, 310)  # the doll's feet
@@ -682,6 +682,9 @@ func _slot_outline(r: Rect2, slot: String) -> void:
 		"strap":  # a shoulder bag
 			draw_line(c + Vector2(-11, -12), c + Vector2(4, 0), col, w)
 			draw_rect(Rect2(c + Vector2(-2, -1), Vector2(14, 11)), col, false, w)
+		"waist":  # a belt and its buckle
+			draw_rect(Rect2(c + Vector2(-13, -3), Vector2(26, 7)), col, false, w)
+			draw_rect(Rect2(c + Vector2(-3, -5), Vector2(6, 11)), col, false, w)
 
 
 ## A small mark before a number on the card.
@@ -842,9 +845,9 @@ func _draw_recipes(head: Font, body: Font) -> void:
 ## An item in a slot. `named`: room is left at the bottom for its name band.
 func _draw_item(r: Rect2, it: Dictionary, named := false) -> void:
 	if named:
-		Items.draw_icon(self, Rect2(r.position + Vector2(r.size.x * 0.22, r.size.y * 0.1), Vector2(r.size.x * 0.56, r.size.x * 0.56)), it.id)
+		Items.draw_icon(self, Rect2(r.position + Vector2(r.size.x * 0.22, r.size.y * 0.1), Vector2(r.size.x * 0.56, r.size.x * 0.56)), Items.key(it))
 	else:
-		Items.draw_icon(self, r.grow(-r.size.x * 0.19), it.id)
+		Items.draw_icon(self, r.grow(-r.size.x * 0.19), Items.key(it))
 	var rarity := Items.rarity_of(it.id)
 	if rarity != "common":  # a coloured corner marks the harder finds
 		draw_colored_polygon(PackedVector2Array([r.position + Vector2(4, 4), r.position + Vector2(14, 4), r.position + Vector2(4, 14)]),

@@ -17,6 +17,21 @@ const OUTFITS := [
 	{over = "raincoat", legs = "shorts", strap = "satchel", neck = "scarf", feet = "boots"},
 	{body = "jacket", over = "magarmor", hands = "chaingloves", head = "cap", back = "backpack"},
 	{over = "vest", legs = "jeans", feet = "boots", head = "helmet", strap = "satchel"},
+	# The wardrobe ("id#n": look n of an item with looks, see Items.draw_of).
+	{head = "bucket#0", body = "tshirt#22", legs = "cargo#9", feet = "flipflops", waist = "bumbag#1", neck = "bandana"},
+	{head = "hardhat", body = "shirt_short#6", over = "hivis", legs = "slacks", feet = "rubberboots", hands = "gardengloves", face = "goggles", waist = "toolbelt"},
+	{body = "scrubs#1", over = "labcoat", face = "n95", neck = "neckbrace", legs = "slacks", feet = "schoolshoes"},
+	{body = "office_shirt#0", legs = "slacks#0", feet = "schoolshoes", neck = "whistle", arms = "sunsleeves"},
+	{body = "guard_shirt", over = "workvest", legs = "school_shorts", back = "deliverybag"},
+	{body = "hawaii#1", legs = "elephant#0", head = "beanie", hands = "boxing", waist = "pakhaoma"},
+	{body = "tanktop", over = "apron", legs = "fisherman", hands = "rubbergloves", feet = "flipflops"},
+	{body = "school_shirt", legs = "school_shorts", feet = "schoolshoes", back = "schoolbag"},
+	{body = "jersey#0", legs = "shorts", feet = "sneakers"},
+	{body = "polo#3", legs = "jeans"},
+	{body = "mart_shirt#1", legs = "slacks"},
+	{body = "mohom", legs = "fisherman", waist = "pakhaoma#1"},
+	{body = "denim_jacket", legs = "jeans", head = "cap"},
+	{body = "shirt_long#6", legs = "cargo"},
 ]
 const CELL := Vector2(44, 46)
 const ZOOM := 3.0

@@ -399,6 +399,28 @@ func heat() -> float:
 	return h
 
 
+## What everything worn multiplies `field` by (its `field` in data/items.cfg; 1 if not given).
+func wear_mult(field: String) -> float:
+	var m := 1.0
+	for slot in wear_ids:
+		m *= float(Items.def(wear_ids[slot]).get(field, 1.0))
+	return m
+
+
+## How far away a zombie can make you out in the dark, as a share of the usual:
+## pale clothes show up in the dark, dark ones hide you; a hi-vis strip shines.
+func seen_in_dark() -> float:
+	var shirt: Color = look.get("shirt", Color.GRAY)
+	var pants: Color = look.get("pants", Color.GRAY)
+	for slot in ["body", "over"]:
+		if wear_ids.has(slot) and Items.draw_of(wear_ids[slot]).get("shape", "") not in ["vest", "pack", "apron"]:
+			shirt = Items.draw_of(wear_ids[slot]).get("col", shirt)
+	if wear_ids.has("legs"):
+		pants = Items.draw_of(wear_ids.legs).get("col", pants)
+	var pale := (shirt.get_luminance() * 0.65 + pants.get_luminance() * 0.35)
+	return lerpf(0.8, 1.15, clampf(pale, 0.0, 1.0)) * wear_mult("glow")
+
+
 ## You hear the world through a full-face helmet.
 func muffled() -> bool:
 	return wear_ids.values().any(func(id): return Items.def(id).get("muffle", false))
@@ -630,7 +652,7 @@ func refresh_wear() -> void:
 	var ids := {}
 	for slot in worn:
 		if worn[slot] != null:
-			ids[slot] = worn[slot].id
+			ids[slot] = Items.key(worn[slot])  # (with its look: see Items.draw_of)
 	set_wear(ids)
 
 

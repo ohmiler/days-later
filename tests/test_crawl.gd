@@ -18,8 +18,11 @@ func run() -> void:
 	check(not me.wants_punch(), "no punching lying down")
 	me.set_attack_input(false, false)
 
-	# Hard to spot: a zombie facing you sees you standing, not crawling.
-	me.position = me.position
+	# Hard to spot: a zombie facing you sees you standing, not crawling (by day:
+	# at night it wouldn't see you standing that far off either).
+	main.time = 0.45
+	w.is_night = false
+	me.position = w.to_pos(w.spawn_cell)
 	var z := zombie_at(me.position + Vector2(70, 0))
 	z.facing = PI
 	me.prone = false

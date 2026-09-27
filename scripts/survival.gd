@@ -199,7 +199,7 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 	p.step_t -= real_delta
 	if p.move.length() > 0.1 and not p.sneak and not p.prone and p.step_t <= 0.0 and p.riding < 0:  # (a bike makes its own noise)
 		p.step_t = 0.5
-		main._make_noise(p.position, main.NOISE_RUN if running else main.NOISE_WALK, p.storey)
+		main._make_noise(p.position, (main.NOISE_RUN if running else main.NOISE_WALK) * p.wear_mult("noise"), p.storey)  # (rubber boots squeak)
 	# Bleeding, you leave a smell of fresh blood that brings them after you.
 	p.scent_t -= real_delta
 	if p.bleeding and p.scent_t <= 0.0:
@@ -378,8 +378,7 @@ func _spawn_horde_zombie() -> void:
 	for attempt in 20:
 		var pos: Vector2 = p.position + Vector2.from_angle(randf() * TAU) * randf_range(280, 420)
 		if main.world.can_stand(pos, 5):
-			var z := main._add_zombie(main.next_zid, pos)
-			main.next_zid += 1
+			var z := main._add_zombie(main.new_zid(pos), pos)
 			z.sense(p.position)
 			return
 
@@ -415,8 +414,7 @@ func _spawn_zombie() -> void:
 			if q.position.distance_to(pos) < 300:
 				too_close = true
 		if not too_close:
-			main._add_zombie(main.next_zid, pos)
-			main.next_zid += 1
+			main._add_zombie(main.new_zid(pos), pos)
 			return
 
 

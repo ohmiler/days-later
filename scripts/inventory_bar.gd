@@ -97,7 +97,7 @@ func _draw() -> void:
 		draw_rect(Rect2(r.position + Vector2(3, 3), Vector2(r.size.x - 6, 3)), Color(1, 1, 1, 0.1))
 		draw_string(UiTheme.heading(), r.position + Vector2(6, 16), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
 				Color(UiTheme.INK, 0.6))
-		Items.draw_icon(self, r.grow(-12), it.id)
+		Items.draw_icon(self, r.grow(-12), Items.key(it))
 		if it.n > 1:
 			draw_string(UiTheme.heading(), Vector2(r.position.x + 2, r.end.y - 6), "x%d" % it.n, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 6, 14, UiTheme.INK)  # (the whole slot's width: "x100" fits)
 		var d := Items.def(it.id)

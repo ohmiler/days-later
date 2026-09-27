@@ -160,6 +160,9 @@ static func next_swing(p: Player) -> Dictionary:
 	if wid == "":
 		var punch := PUNCH.duplicate()
 		punch[2] *= slow
+		var gloves := p.wear_mult("punch")  # (boxing gloves: harder, and a bigger shove)
+		punch[1] *= gloves
+		punch[4] *= gloves * gloves
 		return {hand = hand, kind = Look.PUNCH_R if hand == "r" else Look.PUNCH_L, stats = tired(p, punch), windup = PUNCH_WINDUP}
 	var w := Items.def(wid)
 	if Items.is_gun(wid):  # not aiming: a blow with it
@@ -359,7 +362,7 @@ func _kill_zombie(z: Zombie, fall_dir: float, how := "") -> void:
 		var full: int = Items.def(id).get("hp", 1)
 		if not z.outfit.is_empty() or randf() < 0.35:
 			var hp := full if not z.outfit.is_empty() else maxi(1, int(full * randf_range(0.3, 0.8)))
-			main._spawn_pickup(z.position + Vector2.from_angle(i * 1.3) * 7, {id = id, n = 1, hp = hp}, z.storey)
+			main._spawn_pickup(z.position + Vector2.from_angle(i * 1.3) * 7, Items.from_key(id, hp), z.storey)
 		i += 1
 	main.zombies.erase(z.zid)
 	z.queue_free()

@@ -11,9 +11,9 @@ const INV_SIZE := 8  # the hotbar; a bag adds slots after these, reached from th
 ## "over" is a second layer on the body: a vest goes on top of a shirt. The
 ## rest are for things worn with anything: masks and glasses, gloves, knee
 ## pads, a bag across the shoulder. (How each is drawn: see Clothes.)
-const SLOTS := ["head", "face", "neck", "body", "over", "arms", "hands", "legs", "knees", "feet", "back", "strap"]
+const SLOTS := ["head", "face", "neck", "body", "over", "arms", "hands", "legs", "knees", "feet", "back", "strap", "waist"]
 const SLOT_NAMES := {head = "หัว", face = "หน้า", neck = "คอ", body = "ตัว", over = "ทับเสื้อ", arms = "แขน", hands = "มือ",
-		legs = "ขา", knees = "เข่า/แข้ง", feet = "เท้า", back = "หลัง", strap = "สะพาย"}
+		legs = "ขา", knees = "เข่า/แข้ง", feet = "เท้า", back = "หลัง", strap = "สะพาย", waist = "เอว"}
 
 ## What you hold, in each hand (kept with what you wear, under these names).
 ## A weapon swung two-handed (a chop or a sweep) takes both: it sits in the
@@ -52,7 +52,11 @@ const OVERLOAD := 1.5
 const OVERLOAD_SPEED := 0.6
 
 const TYPES := ["weapon", "gun", "ammo", "use", "trap", "material", "wear", "junk"]
-const PLACES := ["store", "med", "food", "tools", "valuables", "clothes", "home", "barber", "phone"]
+const PLACES := ["store", "med", "food", "tools", "valuables", "clothes", "home", "barber", "phone",
+		"hospital", "office", "market", "mall"]
+## The big buildings' own places find what their everyday kind does, and more
+## of their own: a hospital's cupboards what a pharmacy's do, and scrubs.
+const PLACE_ALSO := {hospital = "med", office = "home", market = "food", mall = "clothes"}
 ## How often searching turns each up, relative to each other.
 const RARITY := {common = 4, uncommon = 2, rare = 1}
 const RARITY_NAMES := {common = "ธรรมดา", uncommon = "ไม่บ่อย", rare = "หายาก"}
@@ -117,7 +121,27 @@ static func _build_loot() -> Dictionary:
 		for place in DEFS[id].get("places", []):
 			if out.has(place):
 				out[place].append([id, RARITY.get(DEFS[id].get("rarity", "common"), 1)])
+	for place in PLACE_ALSO:
+		for e in out[PLACE_ALSO[place]]:
+			if not out[place].any(func(x): return x[0] == e[0]):
+				out[place].append(e)
 	return out
+
+
+## Where a cupboard is, for what's in it: its own kind of place, or, in a big
+## building (a hospital's pharmacy, an office's desks, a market's stalls), that
+## building's.
+static func place_in(table: String, building_kind: String) -> String:
+	match building_kind:
+		"hospital":
+			return "hospital" if table in ["med", "home"] else table
+		"office":
+			return "office" if table == "home" else table
+		"market":
+			return "market"
+		"mall":
+			return "mall" if table == "clothes" else table
+	return table
 
 
 ## What is wrong with the item table, one line each ([] when all is well).
@@ -190,11 +214,102 @@ const FURNITURE := {
 	"home": ["cabinet", "bed", "table"],
 	"barber": ["mirror", "cabinet", "shelf"],
 	"phone": ["glass", "shelf", "counter"],
+	"hospital": ["shelf", "counter", "cabinet"],
+	"office": ["cabinet", "table", "counter"],
+	"market": ["counter", "table", "crate"],
+	"mall": ["shelf", "cabinet", "counter"],
 }
 
 
 static func def(id: String) -> Dictionary:
-	return DEFS.get(id, {})
+	var d = DEFS.get(id)
+	if d != null:
+		return d
+	return DEFS.get(id.get_slice("#", 0), {}) if "#" in id else {}
+
+
+# --- One item, many looks ------------------------------------------------------------
+# Clothes with `looks` in data/items.cfg come in many colours, patterns and
+# prints: each one found gets its own number (`v` in the item), which picks
+# them. What's worn goes by its key, "id#v" (Player.wear_ids, a zombie's
+# wear): everything that reads an item (def, weight, guard...) takes a key
+# as it takes an id.
+
+## Funny things printed on T-shirts (a `print` pattern picks one by its number).
+const PRINTS := ["อย่ากัดเค้า", "ยังไม่ตาย", "ไม่รับแขก", "ลดน้ำหนักด้วยการวิ่งหนี", "รอดมาได้ไง", "วันจันทร์อีกแล้ว",
+		"ขอกอดหน่อย", "สายมูไม่กลัวผี", "ข้าวมันไก่ที่ดีที่สุด", "ฉันรอดเพราะแม่สั่ง", "กินก่อนค่อยวิ่ง", "โสดแต่ไม่ตาย",
+		"BANGKOK", "SAME SAME", "I ♥ BKK", "NO ZOMBIE"]
+const PATTERN_NAMES := {stripe = "ลายทาง", plaid = "ลายสก็อต", floral = "ลายดอก", camo = "ลายพราง", print = "สกรีน",
+		dots = "ลายจุด"}
+
+
+## The key an item is worn by: its id, and its look's number if it has one.
+static func key(it: Dictionary) -> String:
+	return "%s#%d" % [it.id, it.v] if it.has("v") else String(it.id)
+
+
+static func base_id(k: String) -> String:
+	return k.get_slice("#", 0)
+
+
+## A new one of `id`, as found: full health, and a look of its own if it has looks.
+static func make(id: String, rng: RandomNumberGenerator = null) -> Dictionary:
+	var it := {id = id, n = 1, hp = def(id).get("hp", 0)}
+	if def(id).has("looks"):
+		it.v = (rng.randi() if rng else randi()) % 100000
+	return it
+
+
+## An item from a worn key (taken off a body): its look kept.
+static func from_key(k: String, hp: int) -> Dictionary:
+	var it := {id = base_id(k), n = 1, hp = hp}
+	if "#" in k:
+		it.v = int(k.get_slice("#", 1))
+	return it
+
+
+static var _draws := {}
+
+
+## How the item with key `k` is drawn: its `draw`, with its look's colour,
+## second colour, pattern and print if it has them.
+static func draw_of(k: String) -> Dictionary:
+	if _draws.has(k):
+		return _draws[k]
+	var d := def(k)
+	var out: Dictionary = d.get("draw", {}).duplicate(true)
+	var looks: Dictionary = d.get("looks", {})
+	if "#" in k and not looks.is_empty():
+		var v := int(k.get_slice("#", 1))
+		var cols: Array = looks.get("cols", [])
+		var pats: Array = looks.get("pats", [])
+		var col2s: Array = looks.get("col2", [])
+		if not cols.is_empty():
+			out.col = Color(cols[v % cols.size()])
+		v /= maxi(1, cols.size())
+		if not pats.is_empty():
+			var pat: String = pats[v % pats.size()]
+			if pat != "plain":
+				out.pattern = pat
+			v /= pats.size()
+		if not col2s.is_empty():
+			out.col2 = Color(col2s[v % col2s.size()])
+			v /= col2s.size()
+		if out.get("pattern", "") == "print":
+			out.print = PRINTS[v % PRINTS.size()]
+	_draws[k] = out
+	return out
+
+
+## A word or two on this one's look, for its card: "ลายทาง", "สกรีน 'อย่ากัดเค้า'".
+static func look_text(it: Dictionary) -> String:
+	if not it.has("v"):
+		return ""
+	var d := draw_of(key(it))
+	var pat: String = d.get("pattern", "")
+	if pat == "print":
+		return "สกรีน \"%s\"" % d.get("print", "")
+	return PATTERN_NAMES.get(pat, "")
 
 
 ## One line on what a consumable does, for the hotbar.
@@ -251,51 +366,90 @@ static func is_wear(id: String) -> bool:
 
 ## What a zombie is wearing, picked from its id so every machine agrees:
 ## slot -> item id. Plenty of the city's dead were motorbike taxi riders.
+## Where a zombie was when it turned, as far as its clothes go: a zombie's
+## id carries it (zid % 8, see Main.new_zid), so every machine dresses it the
+## same with nothing more sent.
+const ZOMBIE_PLACES := ["street", "hospital", "office", "market", "mall", "home", "street", "street"]
+## What people wore there: [slot, [[item, weight], ...], chance of wearing anything there].
+const DRESS := {
+	street = [["head", [["cap", 3], ["bucket", 2], ["helmet", 3]], 0.25],
+			["body", [["tshirt", 6], ["polo", 2], ["shirt_short", 2], ["hoodie", 1], ["jersey", 2], ["school_shirt", 1], ["jacket", 1]], 0.85],
+			["over", [["rider", 3], ["hivis", 1], ["apron", 1]], 0.1],
+			["legs", [["jeans", 5], ["shorts", 4], ["slacks", 2], ["cargo", 1], ["school_shorts", 1]], 0.8],
+			["feet", [["sneakers", 4], ["flipflops", 4], ["boots", 1], ["schoolshoes", 1]], 0.6],
+			["back", [["schoolbag", 2], ["backpack", 1], ["deliverybag", 1]], 0.1],
+			["face", [["mask", 3]], 0.1], ["waist", [["bumbag", 1]], 0.05]],
+	hospital = [["body", [["scrubs", 6], ["office_shirt", 1], ["tshirt", 2]], 0.95],
+			["over", [["labcoat", 1]], 0.2],
+			["legs", [["slacks", 3], ["jeans", 1]], 0.6],
+			["face", [["n95", 2], ["mask", 3]], 0.5],
+			["neck", [["neckbrace", 1]], 0.06],
+			["feet", [["sneakers", 2], ["schoolshoes", 1], ["flipflops", 1]], 0.6]],
+	office = [["body", [["office_shirt", 6], ["shirt_long", 2], ["polo", 1], ["guard_shirt", 1]], 0.95],
+			["legs", [["slacks", 6], ["jeans", 1]], 0.9],
+			["feet", [["schoolshoes", 4], ["sneakers", 1]], 0.8],
+			["neck", [["whistle", 1]], 0.05],
+			["strap", [["satchel", 1]], 0.15]],
+	market = [["body", [["tanktop", 3], ["tshirt", 4], ["mohom", 1], ["hawaii", 1]], 0.9],
+			["over", [["apron", 1]], 0.4],
+			["legs", [["fisherman", 3], ["shorts", 3], ["elephant", 1]], 0.85],
+			["feet", [["flipflops", 5], ["rubberboots", 2]], 0.7],
+			["head", [["bucket", 2], ["cap", 1]], 0.3],
+			["waist", [["pakhaoma", 3], ["bumbag", 1]], 0.3],
+			["hands", [["rubbergloves", 1]], 0.1]],
+	mall = [["body", [["tshirt", 5], ["hawaii", 1], ["jersey", 2], ["polo", 2], ["denim_jacket", 1], ["mart_shirt", 1]], 0.95],
+			["legs", [["jeans", 4], ["cargo", 2], ["shorts", 2], ["elephant", 1]], 0.9],
+			["feet", [["sneakers", 5], ["flipflops", 2]], 0.8],
+			["head", [["cap", 2], ["bucket", 2], ["beanie", 1]], 0.3],
+			["face", [["sunglasses", 2], ["mask", 1]], 0.2],
+			["waist", [["bumbag", 1]], 0.15], ["back", [["schoolbag", 2], ["deliverybag", 1]], 0.12]],
+	home = [["body", [["tanktop", 4], ["tshirt", 5], ["school_shirt", 1]], 0.85],
+			["legs", [["shorts", 4], ["fisherman", 2], ["jeans", 1]], 0.8],
+			["feet", [["flipflops", 5]], 0.5],
+			["waist", [["pakhaoma", 2]], 0.2]],
+}
+
+
 static func zombie_wear(zid: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = zid * 7919 + 17
 	var out := {}
-	var roll := rng.randf()
-	if roll < 0.06:
-		out.head = "helmet"
-		out.over = "rider"
-	elif roll < 0.1:
-		out.head = "helmet"
-	elif roll < 0.16:
-		out.head = "cap"
-	roll = rng.randf()
-	if not out.has("over") and roll < 0.02:
-		out.over = "vest"
-	elif not out.has("over"):
-		if roll < 0.1:
-			out.body = "hoodie"
-		elif roll < 0.15:
-			out.body = "jacket"
-	roll = rng.randf()
-	if roll < 0.25:
-		out.legs = "jeans"
-	elif roll < 0.35:
-		out.legs = "shorts"
-	roll = rng.randf()
-	if roll < 0.06:
-		out.feet = "boots"
-	elif roll < 0.14:
-		out.feet = "sneakers"
-	roll = rng.randf()
-	if roll < 0.06:
-		out.back = "schoolbag"
-	elif roll < 0.09:
-		out.back = "backpack"
+	var place: String = ZOMBIE_PLACES[zid % ZOMBIE_PLACES.size()]
+	for e in DRESS[place]:
+		if rng.randf() >= e[2]:
+			continue
+		var weights := {}
+		for c in e[1]:
+			weights[c[0]] = c[1]
+		var id: String = _pick(weights, rng)
+		out[e[0]] = "%s#%d" % [id, rng.randi() % 100000] if def(id).has("looks") else id
+	if out.has("over") and def(out.over).get("draw", {}).get("covers", false):
+		out.erase("body")
 	return out
+
+
+## Which of ZOMBIE_PLACES `pos` is in: the big buildings' blocks by what they
+## are, a big building's own inside, else the street.
+static func zombie_place(w: World, pos: Vector2) -> int:
+	var c := w.to_cell(pos)
+	var b = w.building_at.get(c)
+	var use := ""
+	if b != null and b.data.get("big", false):
+		use = {hospital = "hospital", flats = "home", office = "office", mall = "mall", market = "market"}.get(b.data.kind, "")
+	if use == "":
+		for blk in w.blocks:
+			if blk.rect.has_point(c):
+				use = {hospital = "hospital", military_hospital = "hospital", office = "office", mall = "mall", market = "market"}.get(blk.use, "")
+				break
+	return maxi(0, ZOMBIE_PLACES.find(use)) if use != "" else 0
 
 
 ## The look dictionary's `wear` entry for a set of worn item ids.
 static func wear_draw(ids: Dictionary) -> Dictionary:
 	var out := {}
 	for slot in ids:
-		var d := def(ids[slot])
-		if d.has("draw"):
-			out[slot] = d.draw
+		if def(ids[slot]).has("draw"):
+			out[slot] = draw_of(ids[slot])
 	return out
 
 
@@ -403,12 +557,15 @@ static func chill_out(it: Dictionary, now: float) -> void:
 
 ## Plain: nothing inside, no date on it (only plain items pile up together).
 static func plain(it: Dictionary) -> bool:
-	return not it.has("fill") and not it.has("made")
+	return not it.has("fill") and not it.has("made") and not it.has("v")
 
 
 ## How it is, for its card and its name in the bag: "น้ำคลอง 2/3", "บูดแล้ว"...
 static func state_text(it: Dictionary, now: float) -> String:
 	var parts := []
+	var look := look_text(it)
+	if look != "":
+		parts.append(look)
 	if holds(it.id) > 0:
 		var f := fill_of(it)
 		parts.append("ว่าง" if f.is_empty() else "%s %d/%d" % [LIQUIDS.get(f.what, {}).get("name", f.what), f.n, holds(it.id)])
@@ -453,6 +610,10 @@ const PLACE_BIAS := {
 	tools = {material = 3.0, weapon = 2.0},
 	clothes = {clothes = 5.0},
 	valuables = {junk = 3.0, weapon = 1.5},
+	hospital = {medicine = 5.0, clothes = 1.5},
+	office = {junk = 2.0, clothes = 1.5, drink = 1.5},
+	market = {food = 3.0, clothes = 2.0, drink = 1.5},
+	mall = {clothes = 6.0},
 }
 ## Share of each piece of furniture already picked clean. Fridges most of all:
 ## everyone raided those first.
@@ -540,7 +701,7 @@ static func draw_icon(ci: CanvasItem, r: Rect2, id: String) -> void:
 		ci.draw_set_transform(Vector2.ZERO)
 		return
 	if d.get("type") == "wear":
-		_wear_icon(ci, r, d)
+		_wear_icon(ci, r, draw_of(id), d.get("slot", ""))  # (`id` may be a key: this one's own look)
 		return
 	_shape_icon(ci, r, d.get("icon", {}))
 
@@ -670,10 +831,10 @@ static func _shape_icon(ci: CanvasItem, r: Rect2, icon: Dictionary) -> void:
 
 
 ## Clothes drawn flat, like laid out on a table.
-static func _wear_icon(ci: CanvasItem, r: Rect2, d: Dictionary) -> void:
+static func _wear_icon(ci: CanvasItem, r: Rect2, draw: Dictionary, slot: String) -> void:
 	var c := r.get_center()
 	var s := r.size.x / 40.0
-	var w: Dictionary = d.draw.duplicate()
+	var w: Dictionary = draw.duplicate()
 	w.shape = w.get("icon_shape", w.get("shape", ""))  # (a garment made of parts names its icon)
 	var col: Color = w.col
 	var dark := col.darkened(0.3)
@@ -683,14 +844,18 @@ static func _wear_icon(ci: CanvasItem, r: Rect2, d: Dictionary) -> void:
 			out.append(c + p * s)
 		return out
 	match w.shape:
-		"long", "hoodie", "vest":
-			if d.slot == "legs":
+		"long", "hoodie", "vest", "tee", "tank", "shirt":
+			if slot == "legs":
 				var legs: PackedVector2Array = P.call([Vector2(-10, -14), Vector2(10, -14), Vector2(11, 16), Vector2(3, 16),
 						Vector2(0, -4), Vector2(-3, 16), Vector2(-11, 16)])
 				ci.draw_colored_polygon(legs, col)
 				ci.draw_rect(Rect2(c + Vector2(-10, -14) * s, Vector2(20, 3) * s), dark)
+				if w.has("pattern"):
+					var c2: Color = w.get("col2", dark)
+					for p in [Vector2(-6, -6), Vector2(5, -2), Vector2(-7, 6), Vector2(7, 9), Vector2(-4, 12)]:
+						ci.draw_circle(c + p * s, 1.6 * s, c2)
 				return
-			var sleeve := 0.0 if w.shape == "vest" else 1.0
+			var sleeve: float = {vest = 0.0, tank = 0.0, tee = 0.55}.get(w.shape, 1.0)
 			var body: PackedVector2Array = P.call([Vector2(-6, -14), Vector2(6, -14), Vector2(10 + 6 * sleeve, -10),
 					Vector2(10 + 6 * sleeve, 4 * sleeve - 6 * (1 - sleeve)), Vector2(10, 4 * sleeve - 6 * (1 - sleeve)),
 					Vector2(10, 15), Vector2(-10, 15), Vector2(-10, 4 * sleeve - 6 * (1 - sleeve)),
@@ -704,8 +869,9 @@ static func _wear_icon(ci: CanvasItem, r: Rect2, d: Dictionary) -> void:
 					ci.draw_rect(Rect2(c + Vector2(-8, 2) * s, Vector2(16, 6) * s), col.darkened(0.2))
 				else:
 					ci.draw_rect(Rect2(c + Vector2(-10, 0) * s, Vector2(20, 2.2) * s), Color("e8e4d0"))
-			else:
+			elif w.shape in ["long", "hoodie"]:
 				ci.draw_line(c + Vector2(0, -13) * s, c + Vector2(0, 15) * s, dark, 1.0)  # zip
+			_icon_marks(ci, c, s, w)
 		"shorts":
 			ci.draw_colored_polygon(P.call([Vector2(-11, -10), Vector2(11, -10), Vector2(12, 8), Vector2(2, 8),
 					Vector2(0, 0), Vector2(-2, 8), Vector2(-12, 8)]), col)
@@ -717,6 +883,51 @@ static func _wear_icon(ci: CanvasItem, r: Rect2, d: Dictionary) -> void:
 		"cap":
 			ci.draw_colored_polygon(P.call(_dome(Vector2(-2, 5), 10.0)), col)
 			ci.draw_rect(Rect2(c + Vector2(4, 3) * s, Vector2(12, 3) * s), dark)
+		"sandals":
+			for sx in [-1.0, 1.0]:
+				var f := c + Vector2(sx * 7, 2) * s
+				ci.draw_set_transform(f, 0, Vector2(1, 1.8))
+				ci.draw_circle(Vector2.ZERO, 5 * s, col)
+				ci.draw_set_transform(Vector2.ZERO)
+				ci.draw_line(f + Vector2(0, -6) * s, f + Vector2(-4, 0) * s, Color("f0ece4"), 1.4 * s)
+				ci.draw_line(f + Vector2(0, -6) * s, f + Vector2(4, 0) * s, Color("f0ece4"), 1.4 * s)
+		"bucket":
+			ci.draw_colored_polygon(P.call(_dome(Vector2(0, 2), 9.0)), col)
+			ci.draw_colored_polygon(P.call([Vector2(-15, 2), Vector2(15, 2), Vector2(12, 7), Vector2(-12, 7)]), dark)
+		"beanie":
+			ci.draw_colored_polygon(P.call(_dome(Vector2(0, 5), 12.0)), col)
+			ci.draw_rect(Rect2(c + Vector2(-12, 2) * s, Vector2(24, 5) * s), dark)
+			ci.draw_circle(c + Vector2(0, -9) * s, 3 * s, w.get("col2", col.lightened(0.2)))
+		"hardhat":
+			ci.draw_colored_polygon(P.call(_dome(Vector2(0, 4), 12.0)), col)
+			ci.draw_rect(Rect2(c + Vector2(-15, 3) * s, Vector2(30, 3) * s), dark)
+			ci.draw_rect(Rect2(c + Vector2(-1.5, -8) * s, Vector2(3, 11) * s), col.lightened(0.2))
+		"whistle":
+			ci.draw_line(c + Vector2(-10, -12) * s, c + Vector2(0, 6) * s, w.get("col2", Color("c83a2e")), 1.5 * s)
+			ci.draw_line(c + Vector2(10, -12) * s, c + Vector2(0, 6) * s, w.get("col2", Color("c83a2e")), 1.5 * s)
+			ci.draw_rect(Rect2(c + Vector2(-5, 5) * s, Vector2(10, 6) * s), col)
+			ci.draw_circle(c + Vector2(4, 8) * s, 3 * s, col.darkened(0.2))
+		"apron":
+			ci.draw_colored_polygon(P.call([Vector2(-6, -14), Vector2(6, -14), Vector2(11, 0), Vector2(11, 16), Vector2(-11, 16), Vector2(-11, 0)]), col)
+			ci.draw_rect(Rect2(c + Vector2(-8, 3) * s, Vector2(16, 5) * s), dark)
+			ci.draw_line(c + Vector2(-11, 0) * s, c + Vector2(-16, -2) * s, dark, 1.2)
+			ci.draw_line(c + Vector2(11, 0) * s, c + Vector2(16, -2) * s, dark, 1.2)
+		"sash":
+			ci.draw_rect(Rect2(c + Vector2(-15, -8) * s, Vector2(30, 16) * s), col)
+			var c2s: Color = w.get("col2", Color("f0ece4"))
+			for i in 4:
+				ci.draw_rect(Rect2(c + Vector2(-13 + i * 8, -8) * s, Vector2(3, 16) * s), c2s)
+				ci.draw_rect(Rect2(c + Vector2(-15, -6 + i * 4) * s, Vector2(30, 1.5) * s), Color(c2s, 0.6))
+		"bumbag":
+			ci.draw_line(c + Vector2(-16, -4) * s, c + Vector2(16, -4) * s, dark, 2.0 * s)
+			ci.draw_colored_polygon(P.call([Vector2(-10, -6), Vector2(10, -6), Vector2(8, 7), Vector2(-8, 7)]), col)
+			ci.draw_line(c + Vector2(-8, -1) * s, c + Vector2(8, -1) * s, col.lightened(0.35), 1.0)
+		"toolbelt":
+			ci.draw_rect(Rect2(c + Vector2(-16, -8) * s, Vector2(32, 5) * s), dark)
+			for x in [-12.0, 3.0]:
+				ci.draw_rect(Rect2(c + Vector2(x, -3) * s, Vector2(9, 10) * s), col)
+			ci.draw_line(c + Vector2(-2, -3) * s, c + Vector2(0, 12) * s, Color("5a4a3a"), 2.0 * s)
+			ci.draw_rect(Rect2(c + Vector2(-5, -6) * s, Vector2(8, 3) * s), Color("8a8e92"))
 		"boots", "shoes":
 			var tall := 10.0 if w.shape == "boots" else 3.0
 			ci.draw_colored_polygon(P.call([Vector2(-8, 8 - tall - 4), Vector2(0, 8 - tall - 4), Vector2(1, 2),
@@ -749,6 +960,11 @@ static func _wear_icon(ci: CanvasItem, r: Rect2, d: Dictionary) -> void:
 				ci.draw_rect(Rect2(c + Vector2(-1 + sx * 7 - 5, -4) * s, Vector2(10, 8) * s), col)
 			ci.draw_line(c + Vector2(-16, -3) * s, c + Vector2(16, -3) * s, Color("1a1a1a"), 1.5)
 		"gloves":
+			if w.get("big", false):  # boxing gloves
+				for sx in [-1.0, 1.0]:
+					ci.draw_circle(c + Vector2(sx * 8, -3) * s, 7.5 * s, col)
+					ci.draw_rect(Rect2(c + Vector2(sx * 8 - 5, 3) * s, Vector2(10, 7) * s), Color("f0ece4"))
+				return
 			for sx in [-1.0, 1.0]:
 				ci.draw_rect(Rect2(c + Vector2(sx * 7 - 5, -8) * s, Vector2(10, 14) * s), col)
 				ci.draw_rect(Rect2(c + Vector2(sx * 7 - 5, 4) * s, Vector2(10, 4) * s), dark)
@@ -767,11 +983,62 @@ static func _wear_icon(ci: CanvasItem, r: Rect2, d: Dictionary) -> void:
 			ci.draw_colored_polygon(P.call([Vector2(-6, -14), Vector2(0, -8), Vector2(6, -14), Vector2(0, -18)]), dark)
 			ci.draw_line(c + Vector2(0, -12) * s, c + Vector2(0, 17) * s, dark, 1.0)
 		"pack":
+			if w.get("box", false):
+				ci.draw_rect(Rect2(c + Vector2(-12, -12) * s, Vector2(24, 24) * s), col)
+				ci.draw_rect(Rect2(c + Vector2(-12, -12) * s, Vector2(24, 4) * s), col.lightened(0.2))
+				ci.draw_rect(Rect2(c + Vector2(-12, -1) * s, Vector2(24, 4) * s), w.get("col2", Color.WHITE))
+				return
 			var hw := 11.0 if w.get("big", false) else 9.0
 			ci.draw_rect(Rect2(c + Vector2(-hw, -12) * s, Vector2(hw * 2, 26) * s), col)
 			ci.draw_rect(Rect2(c + Vector2(-hw, -12) * s, Vector2(hw * 2, 7) * s), col.darkened(0.2))
 			ci.draw_rect(Rect2(c + Vector2(-5, 4) * s, Vector2(10, 7) * s), col.darkened(0.12))
 			ci.draw_arc(c + Vector2(0, -12) * s, 4 * s, PI, TAU, 8, dark, 1.5)
+
+
+## A shirt's pattern and details, on its icon (the body from (-10, -12) to (10, 15)).
+static func _icon_marks(ci: CanvasItem, c: Vector2, s: float, w: Dictionary) -> void:
+	var col: Color = w.col
+	var c2: Color = w.get("col2", col.darkened(0.35))
+	var r := func(x: float, y: float, ww: float, hh: float, cc: Color) -> void:
+		ci.draw_rect(Rect2(c + Vector2(x, y) * s, Vector2(ww, hh) * s), cc)
+	match w.get("pattern", ""):
+		"stripe":
+			for i in 5:
+				r.call(-10, -10 + i * 5, 20, 2, c2)
+		"plaid":
+			for i in 4:
+				r.call(-10, -10 + i * 7, 20, 2, Color(c2, 0.6))
+				r.call(-8 + i * 5, -12, 2, 27, Color(c2, 0.6))
+		"floral", "dots":
+			for p in [Vector2(-6, -7), Vector2(4, -4), Vector2(-3, 3), Vector2(6, 8), Vector2(-7, 11)]:
+				ci.draw_circle(c + p * s, (2.2 if w.pattern == "floral" else 1.4) * s, c2)
+				if w.pattern == "floral":
+					ci.draw_circle(c + p * s, 0.8 * s, Color("f0d050"))
+		"camo":
+			for p in [Vector2(-5, -6), Vector2(5, -1), Vector2(-4, 6), Vector2(6, 10)]:
+				ci.draw_circle(c + p * s, 3.2 * s, c2)
+		"print":
+			r.call(-6, -6, 12, 9, c2)
+			r.call(-4, -4, 8, 1.5, c2.lightened(0.5))
+			r.call(-4, -1, 8, 1.5, c2.lightened(0.5))
+	match w.get("detail", ""):
+		"tie":
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-1.5, -12) * s, c + Vector2(1.5, -12) * s, c + Vector2(2.5, 6) * s,
+					c + Vector2(0, 9) * s, c + Vector2(-2.5, 6) * s]), c2)
+		"buttons", "school":
+			ci.draw_line(c + Vector2(0, -12) * s, c + Vector2(0, 15) * s, col.darkened(0.3), 1.0)
+			if w.detail == "school":
+				r.call(3, -8, 6, 2, c2)
+		"number":
+			r.call(-4, -6, 3, 9, c2)
+			r.call(1, -6, 3, 9, c2)
+		"badge":
+			ci.draw_circle(c + Vector2(5, -6) * s, 2 * s, Color("d8b040"))
+		"vneck":
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-4, -14) * s, c + Vector2(4, -14) * s, c + Vector2(0, -7) * s]), col.darkened(0.3))
+		"collar":
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-6, -14) * s, c + Vector2(0, -14) * s, c + Vector2(-2, -9) * s]), col.lightened(0.15))
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(0, -14) * s, c + Vector2(6, -14) * s, c + Vector2(2, -9) * s]), col.lightened(0.15))
 
 
 static func _dome(at: Vector2, rad: float) -> Array:

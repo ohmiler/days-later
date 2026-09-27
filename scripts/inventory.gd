@@ -150,6 +150,9 @@ func req_move(a: Array, b: Array) -> void:
 		if not Items.is_weapon(x.id):
 			main._toast(p, "ถือได้แต่อาวุธ")
 			return
+		if p.worn.get("hands") != null and Items.def(p.worn.hands.id).get("no_grip", false):
+			main._toast(p, "ใส่%sอยู่ · กำอาวุธไม่ได้" % Items.display_name(p.worn.hands.id))
+			return
 		if Items.two_handed(x.id):
 			b = ["worn", "hand_r"]
 			if p.worn.get("hand_l") != null and a != ["worn", "hand_l"]:
@@ -165,6 +168,9 @@ func req_move(a: Array, b: Array) -> void:
 		if a == b:
 			return
 	var y = _ref_get(p, b)
+	if b == ["worn", "hands"] and Items.def(x.id).get("no_grip", false) and (p.worn.get("hand_r") != null or p.worn.get("hand_l") != null):
+		main._toast(p, "วางอาวุธในมือก่อน · ใส่%sแล้วกำอะไรไม่ได้" % Items.display_name(x.id))
+		return
 	# Only clothes go on the body, and only in their own place.
 	if b[0] == "worn" and b[1] not in Items.HANDS and (not Items.is_wear(x.id) or Items.def(x.id).slot != b[1]):
 		main._toast(p, "ใส่ตรงนั้นไม่ได้")
@@ -323,7 +329,7 @@ func _give(p: Player, id: String) -> bool:
 				return true
 	for i in p.inv.size():
 		if p.inv[i] == null:
-			p.inv[i] = {id = id, n = 1, hp = d.get("hp", 0)}
+			p.inv[i] = Items.make(id)
 			return true
 	return false
 
@@ -566,10 +572,12 @@ func _tick_search(p: Player, delta: float) -> void:
 	container_searched.rpc(f.data.id)
 	# What turned up stays in the furniture: the bag screen opens on it and you
 	# take what you want. Anything left behind is still there later.
-	var found := Items.roll(f.data.table, f.data.kind, _loot_rng)
+	var bid := Buildings.at(main.world, f.data.cell)
+	var place := Items.place_in(f.data.table, main.world.buildings[bid].kind if bid >= 0 else "")
+	var found := Items.roll(place, f.data.kind, _loot_rng)
 	f.items.resize(FurnitureProp.SIZE)
 	for id in found:
-		var it := {id = id, n = 1, hp = Items.def(id).get("hp", 0)}
+		var it := Items.make(id, _loot_rng)
 		var slot := _slot_for(f.items, it)
 		if slot >= 0:
 			if f.items[slot] == null:
