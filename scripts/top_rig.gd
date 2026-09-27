@@ -187,7 +187,7 @@ static func _arms(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 		var sleeve: Color = Color(0, 0, 0, 0) if dl.get("sleeveless", false) else (dl.shirt as Color).darkened(0.05)
 		Look._arm(ci, r.sh[i], r.el[i], r.hand[i], sleeve, dl.skin, false, dl.get("long_sleeves", false))
 		if not wear.get("arms", {}).is_empty():
-			Clothes.arm_guard(ci, r.el[i], r.hand[i], wear.arms)
+			Clothes.arm_guard(ci, r.el[i], r.hand[i], wear.arms, r.sh[i])
 		if not wear.get("hands", {}).is_empty():
 			Clothes.glove(ci, r.hand[i], false, wear.hands)
 

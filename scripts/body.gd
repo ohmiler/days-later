@@ -43,6 +43,11 @@ const CONDITIONS := {
 	food_poisoning = {name = "อาหารเป็นพิษ", hours = 10.0, level = 2,
 			text = "ปวดท้อง อ่อนแรง เลือดลดช้า ๆ · พักผ่อน ดื่มน้ำสะอาด",
 			mods = {thirst = 1.8, hunger = 1.3, stamina_regen = 0.5, speed = 0.88}, damage = 0.03},
+	# Soaked (rain, the canal): clothes heavy, tiring, not hot. Set straight
+	# from the weather (Survival), not added up: it dries off after a while.
+	wet = {name = "ตัวเปียก", hours = 0.5, level = 0, icon = "wet",
+			text = "เสื้อผ้าหนักขึ้น เหนื่อยง่ายขึ้นนิด แต่ไม่ร้อน · หลบฝนแล้วจะแห้ง (ผ้าหนาแห้งช้า)",
+			mods = {stamina_regen = 0.85, hunger = 1.1}},
 }
 
 
@@ -273,7 +278,7 @@ static func statuses(p: Player) -> Array:
 		if main_ and main_.has_method("now"):
 			var h: float = (float(p.conditions[kind]) - main_.now()) / Main.HOUR
 			left = " · อีกราว %d ชม." % maxi(1, ceili(h))
-		out.append({icon = "sick", level = c.level, text = "%s · %s%s" % [c.name, c.text, left]})
+		out.append({icon = c.get("icon", "sick"), level = c.level, text = "%s · %s%s" % [c.name, c.text, left]})
 	if p.infection > 0.0:
 		var s: Array = STAGES[infection_stage(p.infection)]
 		out.append({icon = "fever", level = 2 if p.infection >= 60.0 else 1,
@@ -358,6 +363,8 @@ static func draw_icon(ci: CanvasItem, c: Vector2, kind: String, col: Color, s :=
 		"heavy":  # a weight
 			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-4, -2) * s, c + Vector2(4, -2) * s, c + Vector2(6, 6) * s, c + Vector2(-6, 6) * s]), col)
 			ci.draw_arc(c + Vector2(0, -3) * s, 2.5 * s, PI, TAU, 6, col, 1.4 * s)
+		"wet":  # a drop
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(0, -6) * s, c + Vector2(4, 1) * s, c + Vector2(0, 5) * s, c + Vector2(-4, 1) * s]), col)
 		"heat":  # a sun
 			ci.draw_circle(c, 3.2 * s, col)
 			for i in 8:

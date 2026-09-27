@@ -967,7 +967,7 @@ func _process(delta: float) -> void:
 			elif me.alive() and me.on_car >= 0 and me.on_car < world.street_props.size() and move.length() > 0.1:
 				me.position = StreetProp.roof_clamp(world.street_props[me.on_car], me.position + move * Player.SPEED * Player.ROOF_SPEED * delta)
 			elif me.alive() and me.riding < 0 and not me.vaulting() and me.grabbed_by < 0 and not me.sleeping and me.sitting == -1 and me.rest_k < 0.05 and me.on_car < 0:
-				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof, false, me.storey, me.prone)
+				me.position = world.slide(me.position, move * Player.SPEED * me.speed_mult() * world.slow_at(me.position) * delta, Player.RADIUS, me.on_roof, false, me.storey, me.prone, me.floats())
 		# On a bike the camera looks ahead of where you're going, to see what's coming.
 		var lead := Vector2.ZERO
 		if me.riding >= 0 and me.riding < world.vehicles.size() and me.alive():

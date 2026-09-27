@@ -213,11 +213,12 @@ static func _dress(lk: Dictionary, zombie: bool) -> Dictionary:
 	var legs: Dictionary = wear.get("legs", {})
 	if not legs.is_empty():
 		out.pants = (legs.col as Color).darkened(grime)
-		out.shorts = legs.shape == "shorts"
+		out.shorts = legs.shape in ["shorts", "skirt"]  # (a skirt: bare legs below it)
 	var feet: Dictionary = wear.get("feet", {})
 	if not feet.is_empty():
 		out.shoes = (feet.col as Color).darkened(grime)
 		out.boots = feet.shape == "boots"
+		out.heels = feet.shape == "heels"
 		if feet.shape == "sandals":
 			out.shoes = (lk.skin as Color).darkened(0.12)  # (flip-flops: at this size, bare feet)
 	var over: Dictionary = wear.get("over", {})
@@ -251,10 +252,14 @@ static func _draw_leg(ci, leg: Dictionary, lk: Dictionary) -> void:
 	match leg.type:
 		"rect":
 			_leg_rect(ci, leg.x, leg.lift, col, shoe, shin, boot)
+			if lk.get("heels", false):
+				_rect(ci, Rect2(leg.x + 0.4, -leg.lift - 0.1, 0.7, 0.9), shoe.darkened(0.3))  # the heel
 			var lx: float = leg.x + 1.4
 			Clothes.leg_marks(ci, Vector2(lx, -10.5), Vector2(lx, -5.5), Vector2(lx, -leg.lift - 2.0), lk, leg.far)
 		"line":
 			_leg_line(ci, leg.hip, leg.knee, leg.foot, col, shoe, shin, boot)
+			if lk.get("heels", false):
+				_rect(ci, Rect2(leg.foot + Vector2(-1.3, -0.2), Vector2(0.7, 1.1)), shoe.darkened(0.3))  # the heel
 			Clothes.leg_marks(ci, leg.hip, leg.knee, leg.foot, lk, leg.far)
 		"limb":
 			var side: bool = leg.shoe == "side_kick"
@@ -451,7 +456,7 @@ static func _draw_arm(ci, a: Dictionary, lk: Dictionary) -> void:
 		_dot(ci, a.hand, 1.7, skin)
 	var guards: Dictionary = lk.get("wear", {}).get("arms", {})
 	if not guards.is_empty():
-		Clothes.arm_guard(ci, a.elbow, a.hand, guards)
+		Clothes.arm_guard(ci, a.elbow, a.hand, guards, a.sh)
 	var gloves: Dictionary = lk.get("wear", {}).get("hands", {})
 	if not gloves.is_empty():
 		Clothes.glove(ci, a.hand, a.fist, gloves)
