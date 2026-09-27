@@ -13,6 +13,16 @@ func _allowed(p: Player) -> bool:
 	return p != null and (p.peer_id == 1 or "--admin" in OS.get_cmdline_user_args())
 
 
+## Started as a test copy: `-- --admin`, or in the browser with ?admin in the
+## address. (It only opens the panel here; the server still decides: see _allowed.)
+static func asked_for() -> bool:
+	if "--admin" in OS.get_cmdline_user_args():
+		return true
+	if OS.has_feature("web"):
+		return "admin" in str(JavaScriptBridge.eval("window.location.search", true))
+	return false
+
+
 @rpc("any_peer", "call_remote", "reliable")
 func req_give(id: String, n: int) -> void:
 	var p := main._sender()

@@ -25,6 +25,7 @@ var address_edit: LineEdit
 var status: Label
 var hud: Control
 var admin: AdminPanel  # F2, host only (see Admin)
+var perf: PerfOverlay  # F3: frames a second and the like
 var statuses: StatusRow
 var weapons: WeaponPanel
 var vitals: Vitals
@@ -73,6 +74,8 @@ func _ready() -> void:
 	admin = AdminPanel.new()
 	admin.visible = false
 	add_child(admin)
+	perf = PerfOverlay.new()
+	add_child(perf)
 	city_map = CityMap.new()
 	city_map.visible = false
 	add_child(city_map)
@@ -97,6 +100,17 @@ func secret() -> String:
 
 
 var secret_override := ""  # tests pose as someone else
+
+
+## The server a web link names (?join=host:port), or "".
+static func _link_server() -> String:
+	if not OS.has_feature("web"):
+		return ""
+	var q := str(JavaScriptBridge.eval("window.location.search", true))
+	for part in q.trim_prefix("?").split("&"):
+		if part.begins_with("join="):
+			return part.trim_prefix("join=").uri_decode()
+	return ""
 
 
 func player_name() -> String:
@@ -762,6 +776,11 @@ func _build_menu() -> void:
 		join_requested.emit(address_edit.text.strip_edges(), player_name()))
 	row.add_child(join)
 	form.add_child(row)
+	# In the browser, a link can say which server: ...?join=host:port (and it joins).
+	var link := _link_server()
+	if link != "":
+		address_edit.text = link
+		(func(): join_requested.emit(link, player_name())).call_deferred()
 	var gore := _button("", false)
 	var show_gore := func():
 		gore.text = "เลือด: " + ("น้อย" if Look.low_gore else "เต็ม")

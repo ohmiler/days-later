@@ -726,6 +726,24 @@ func _process_body(delta: float) -> void:
 var _redraw_t := 0.0
 var _drawn_still := false
 var _drawn_hp := -1.0
+## At most this many zombies are redrawn in one frame (the rest wait a frame
+## or two): a crowd turning up at once, or a horde, costs a little smoothness
+## instead of a frame that hangs (60 drawn at once: ~50 ms here, ~150 in a browser).
+const REDRAW_BUDGET := 24
+static var _budget_frame := -1
+static var _budget_used := 0
+
+
+## One of this frame's redraws, if there are any left.
+static func _take_redraw() -> bool:
+	var f := Engine.get_process_frames()
+	if f != _budget_frame:
+		_budget_frame = f
+		_budget_used = 0
+	if _budget_used >= REDRAW_BUDGET:
+		return false
+	_budget_used += 1
+	return true
 
 
 func _maybe_redraw(delta: float) -> void:
@@ -740,14 +758,14 @@ func _maybe_redraw(delta: float) -> void:
 		return
 	var busy := _dancing() or kind == "junkie" and state == 2 or moving or flags & 8 != 0 or hit_t > 0.0 or atk_t >= 0.0 or (down_el >= 0.0 and flags & 16 == 0) or up_el >= 0.0 or scream_t > 0.0 or alert_t > 0.0
 	if not busy:
-		if not _drawn_still or hp != _drawn_hp:
+		if (not _drawn_still or hp != _drawn_hp) and _take_redraw():
 			_drawn_still = true
 			_drawn_hp = hp
 			queue_redraw()
 		return
 	_drawn_still = false
 	_redraw_t -= delta
-	if _redraw_t > 0.0:
+	if _redraw_t > 0.0 or not _take_redraw():
 		return
 	var off_centre := at.distance_to(screen.get_center()) / (screen.size.length() * 0.5)
 	# Quick moves (a lunge, a blow landing, a fall, reeling) every frame near
