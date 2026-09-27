@@ -21,6 +21,9 @@ func _draw() -> void:
 	if World.BUILDS.has(kind):
 		_draw_structure(kind)
 		return
+	if door.get("side", false):
+		_draw_side()
+		return
 	var T := World.TILE
 	var wood := Color("7a5634")
 	if door.broken:
@@ -53,6 +56,40 @@ func _draw() -> void:
 		draw_line(Vector2(-1, y - tilt - 1), Vector2(T + 1, y + tilt - 1), Color("c8a878"), 0.6)
 		draw_circle(Vector2(0.5, y - tilt), 0.5, Color("6a6a6a"))
 		draw_circle(Vector2(T - 0.5, y + tilt), 0.5, Color("6a6a6a"))
+
+
+## A door in a wall running up and down the screen, seen from above: shut, a
+## plank the length of the doorway in the line of the wall; open, swung back
+## flat along the top of the doorway, out of the way. (The origin here is the
+## top-left of the doorway.)
+func _draw_side() -> void:
+	var T := World.TILE
+	var wood := Color("7a5634")
+	if door.broken:
+		for i in 3:
+			var y := 2.0 + i * 5.0
+			draw_line(Vector2(T * 0.5 - 2, y), Vector2(T * 0.5 + 1.5, y + 2.5), wood.darkened(0.2), 1.4)
+		return
+	if not door.closed:
+		# Standing open across the top of the doorway, its face to us.
+		var r := Rect2(T * 0.5, 1.5 - 28.0, T * 0.8, 28.0)
+		draw_rect(r, wood.darkened(0.1))
+		draw_rect(Rect2(r.position.x + 1.5, r.position.y + 2, r.size.x - 3, 10), wood.darkened(0.22))  # panels
+		draw_rect(Rect2(r.position.x + 1.5, r.position.y + 14, r.size.x - 3, 11), wood.darkened(0.22))
+		draw_rect(r, wood.darkened(0.4), false, 0.6)
+		draw_circle(Vector2(r.end.x - 2.5, r.position.y + 14), 0.8, Color("c8b070"))
+	else:
+		draw_rect(Rect2(T * 0.5 - 2.5, 0, 5, T), wood)
+		draw_rect(Rect2(T * 0.5 - 2.5, 0, 1.2, T), wood.lightened(0.15))
+		draw_rect(Rect2(T * 0.5 - 2.5, 0, 5, T), wood.darkened(0.35), false, 0.6)
+		draw_circle(Vector2(T * 0.5 + 3.2, T * 0.6), 0.8, Color("c8b070"))  # handle
+		var dmg: float = 1.0 - door.hp / (World.DOOR_HP + door.boards * World.BOARD_HP)
+		if dmg > 0.35:
+			draw_line(Vector2(T * 0.5 - 1.5, 3), Vector2(T * 0.5 + 1.5, 7), Color(0, 0, 0, 0.5), 0.6)
+	for i in door.boards:
+		var y: float = 3.0 + i * 4.5
+		draw_line(Vector2(T * 0.5 - 6, y - 1), Vector2(T * 0.5 + 6, y + 1), Color("a8885a"), 2.4)
+		draw_line(Vector2(T * 0.5 - 6, y - 1.8), Vector2(T * 0.5 + 6, y + 0.2), Color("c8a878"), 0.5)
 
 
 ## One section of a rolling steel shutter (drawn 15 tall, stretched to the storey).

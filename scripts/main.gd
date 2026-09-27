@@ -966,7 +966,7 @@ func _process(delta: float) -> void:
 			if d:
 				lead = d.ride_seen * CAM_LEAD
 		cam_lead = cam_lead.lerp(lead.limit_length(CAM_LEAD_MAX), minf(1.0, 2.5 * delta))
-		camera.position = me.position + Look.CHEST + Vector2(0, -me.lift) + cam_lead
+		camera.position = me.position + Look.CHEST + Vector2(0, -me.lift) + me.climb_offset() + cam_lead
 		camera.offset = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * shake
 		shake = move_toward(shake, 0.0, delta * 14.0)
 		if not me.on_roof:

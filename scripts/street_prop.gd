@@ -20,7 +20,7 @@ const BODY := {van = [19.0, 21.0, 34.0], pickup = [15.0, 16.0, 33.0], songthaew 
 ## (_car_side, _car_end, _army) at VEHICLE_SCALE.
 static func roof_spot(rec: Dictionary) -> Array:
 	var k := VEHICLE_SCALE
-	var pos: Vector2 = rec.pos
+	var pos: Vector2 = rec.pos + draw_shift(rec)
 	match rec.kind:
 		"army":
 			return [pos + Vector2(18 * k, 0.5), 12.0 * k]
@@ -29,6 +29,12 @@ static func roof_spot(rec: Dictionary) -> Array:
 			if rec.get("horizontal", true):
 				return [pos + Vector2(15.5 * k, 0.5), 15.0 * k * low]
 			return [pos + Vector2(8 * k, 0.5), 18.0 * k * low]
+		"pickup", "songthaew":
+			if rec.get("horizontal", true):
+				# Side-on: in the pickup's bed (below the cab), up on the songthaew's canopy.
+				return [pos + Vector2(10.5 * k, 0.5), (7.5 if rec.kind == "pickup" else 18.0) * k]
+			var b: Array = BODY[rec.kind]
+			return [pos + Vector2(8 * k, 0.5), b[1] * k + (b[2] - 32.0) * 0.3 * k]
 		_:
 			if BODY.has(rec.kind):
 				var b: Array = BODY[rec.kind]
@@ -54,6 +60,8 @@ static func roof_area(rec: Dictionary) -> Rect2:
 	var deep := 1.0
 	if rec.kind == "army":
 		along = 12.0
+	elif rec.kind in ["pickup", "songthaew"] and side:
+		along = 7.0  # (the length of the bed, of the canopy)
 	elif BODY.has(rec.kind):
 		along = BODY[rec.kind][2] * 0.5 - 5.0
 		if not side:
@@ -73,12 +81,22 @@ static func roof_clamp(rec: Dictionary, pos: Vector2) -> Vector2:
 ## The middle of a vehicle, as drawn: to tell how near someone is to it.
 static func middle(rec: Dictionary) -> Vector2:
 	var k := VEHICLE_SCALE
+	var pos: Vector2 = rec.pos + draw_shift(rec)
 	if rec.kind == "army":
-		return rec.pos + Vector2(24 * k, -5 * k)
+		return pos + Vector2(24 * k, -5 * k)
 	if BODY.has(rec.kind):
 		var len_: float = BODY[rec.kind][2]
-		return rec.pos + (Vector2(len_ * 0.5 * k, -6 * k) if rec.get("horizontal", true) else Vector2(8 * k, -len_ * 0.45 * k))
-	return rec.pos + (Vector2(16 * k, -6 * k) if rec.get("horizontal", true) else Vector2(8 * k, -15 * k))
+		return pos + (Vector2(len_ * 0.5 * k, -6 * k) if rec.get("horizontal", true) else Vector2(8 * k, -len_ * 0.45 * k))
+	return pos + (Vector2(16 * k, -6 * k) if rec.get("horizontal", true) else Vector2(8 * k, -15 * k))
+
+
+## A vehicle running up the screen is drawn a cell wide at VEHICLE_SCALE:
+## moved left this much, it sits centred on its lane of cells (the same
+## overhang either side: see World's vehicle boxes).
+static func draw_shift(rec: Dictionary) -> Vector2:
+	if rec.kind in VEHICLES and rec.kind not in ["tuktuk", "army"] and not rec.get("horizontal", true):
+		return Vector2(-(VEHICLE_SCALE - 1.0) * World.TILE * 0.5, 0)
+	return Vector2.ZERO
 
 var data: Dictionary
 

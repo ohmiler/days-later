@@ -209,6 +209,24 @@ func _melee(p: Player, kind: int, stats: Array, windup := -1.0) -> void:
 	p.pending_t = windup
 
 
+## A wall, a shut door or window between two people standing on `storey`?
+## (No punching through a wall at someone pressed against its far side.)
+func _wall_between(a: Vector2, b: Vector2, storey: int) -> bool:
+	var w: World = main.world
+	var n := ceili(a.distance_to(b) / 3.0)
+	for i in range(1, n):
+		var c := w.to_cell(a.lerp(b, float(i) / n))
+		if storey > 0:
+			if w.storey_map(storey).get(c, World.WALL) != World.FLOOR:
+				return true
+		elif w.door_at.has(c):
+			if w.doors[w.door_at[c]].closed:
+				return true
+		elif w.get_tile(c) in [World.WALL, World.BUILDING, World.IWALL]:
+			return true
+	return false
+
+
 ## Punch hits the zombie in front that is closest to the aim; a kick hits
 ## everything in front. Generous cone so a blow that looks like it lands, lands.
 func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
@@ -224,7 +242,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 	var hits: Array = []
 	for z: Zombie in main.zombies.values():
 		var v := z.position - p.position
-		if v.length() > reach or z.storey != p.storey:
+		if v.length() > reach or z.storey != p.storey or _wall_between(p.position, z.position, p.storey):
 			continue
 		if Rect2(z.position + Vector2(-8, -31), Vector2(16, 35)).has_point(cursor):
 			if picked == null or v.length() < (picked.position - p.position).length():

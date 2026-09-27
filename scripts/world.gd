@@ -149,9 +149,14 @@ func _spawn_props() -> void:
 			d.closed = false
 		var n := DoorProp.new()
 		n.door = d
+		# In a wall running up and down the screen (between rooms side by side):
+		# seen from above, edge on (see DoorProp).
+		d.side = d.kind == "door" and get_tile(d.cell + Vector2i.UP) in [IWALL, BUILDING, WALL] 				and get_tile(d.cell + Vector2i.DOWN) in [IWALL, BUILDING, WALL]
 		# A hair below the building's front wall so it draws on top of the facade.
 		n.position = Vector2(d.cell.x * TILE, (d.cell.y + 1) * TILE + 0.2)
-		if not World.BUILDS.has(d.kind):
+		if d.side:
+			n.position.y = d.cell.y * TILE + 1.0  # (sorts behind whoever stands in the doorway)
+		elif not World.BUILDS.has(d.kind):
 			# Drawn at the old height, stretched to the storey: a door a person walks through upright.
 			n.scale = Vector2(1, DoorProp.DOOR_STRETCH if d.kind in ["door", "shutter"] else DoorProp.WINDOW_STRETCH)
 		n.z_index = 1
@@ -231,7 +236,7 @@ func _spawn_props() -> void:
 			light_spots.append([rec.pos + Vector2(rec.lamp.x, 0), LAMP_LIGHT])  # (the pool it throws on the street below)
 		var p := StreetProp.new()
 		p.data = rec
-		p.position = rec.pos
+		p.position = rec.pos + StreetProp.draw_shift(rec)
 		p.z_index = 0 if rec.get("flat", false) else 1  # litter lies under everyone
 		if rec.kind in StreetProp.VEHICLES:
 			p.scale = Vector2.ONE * StreetProp.VEHICLE_SCALE  # vehicles the size of vehicles
@@ -808,25 +813,79 @@ func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, sto
 
 func _solid_corner_cells(p: Vector2, r: float, roof: bool, road := false, storey := 0, prone := false) -> Array:
 	var out := []
-	for o in [Vector2(-r, -r), Vector2(r, -r), Vector2(-r, r), Vector2(r, r)]:
+	for o in _feet(r):
 		var c := to_cell(p + o)
 		if prone and storey == 0 and not roof and is_under(c):
 			continue  # (flat on the ground, under a bus or a truck)
 		if (not is_roof(c)) if roof else (is_solid_on(c, storey) if storey > 0 else (is_solid(c) or road and get_tile(c) in [FLOOR, DOOR])):
 			out.append(c)
+		elif storey == 0 and not roof:
+			var box := _in_vehicle(c, p + o, prone)
+			if box.has_area():
+				out.append(to_cell(box.get_center()))  # (away from the vehicle, not the free cell beside it)
 	return out
+
+
+## Vehicles running up the screen are drawn wider than their lane of cells:
+## beside them, what's drawn is solid too (cell -> [[box, high]]).
+var _boxes := {}
+var _boxes_read := false
+
+
+func _in_vehicle(c: Vector2i, p: Vector2, prone := false) -> Rect2:
+	if not _boxes_read:
+		_read_boxes()
+	for e in _boxes.get(c, []):
+		if e[0].has_point(p) and not (prone and e[1]):
+			return e[0]
+	return Rect2()
+
+
+func _read_boxes() -> void:
+	_boxes_read = true
+	for sp in street_props:
+		var shift: Vector2 = StreetProp.draw_shift(sp)
+		if shift == Vector2.ZERO:
+			continue
+		var x := int(sp.pos.x / TILE)
+		var last := int(sp.pos.y / TILE) - 1
+		var top := last
+		var most: int = CityGen.VEHICLE_CELLS.get(sp.kind, 2) + 2
+		while top - 1 >= last - most + 1 and blocked.has(Vector2i(x, top - 1)):
+			top -= 1
+		var box := Rect2(x * TILE + shift.x, top * TILE, TILE - 2.0 * shift.x, (last + 1 - top) * TILE)
+		var high: bool = HIGH_VEHICLES.has(sp.kind)
+		for y in range(top, last + 1):
+			for side in [-1, 1]:
+				var c := Vector2i(x + side, y)
+				if not _boxes.has(c):
+					_boxes[c] = []
+				_boxes[c].append([box, high])
+
+
+## Seen from above at this angle, what someone stands on is wide and shallow:
+## the corners of that footprint, `r` either side and FOOT_DEPTH of that
+## up and down (so you walk right up to a wall above or below you).
+const FOOT_DEPTH := 0.4
+
+
+static func _feet(r: float) -> Array:
+	var d := r * FOOT_DEPTH
+	return [Vector2(-r, -d), Vector2(r, -d), Vector2(-r, d), Vector2(r, d)]
 
 
 ## On the ground, stand anywhere not solid; on the roof, only on shophouse
 ## roofs; upstairs, only on the floor up there.
 func can_stand(p: Vector2, r: float, roof := false, road := false, storey := 0, prone := false) -> bool:
-	for o in [Vector2(-r, -r), Vector2(r, -r), Vector2(-r, r), Vector2(r, r)]:
+	for o in _feet(r):
 		var c := to_cell(p + o)
 		if prone and storey == 0 and not roof and is_under(c):
 			continue
 		if (not is_roof(c)) if roof else is_solid_on(c, storey):
 			return false
 		if road and get_tile(c) in [FLOOR, DOOR]:
+			return false
+		if storey == 0 and not roof and _in_vehicle(c, p + o, prone).has_area():
 			return false
 	return true
 

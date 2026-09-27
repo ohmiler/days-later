@@ -81,6 +81,83 @@ func run() -> void:
 	check(main.survival.can_sleep(me) != "", "no sleeping on a car roof")
 	me.on_car = -1
 
+	# A door in a wall running up and down the screen is drawn edge on (not
+	# facing us), and a blow doesn't go through it shut.
+	var w: World = main.world
+	var sd := {}
+	for d in w.doors:
+		if d.get("side", false) and not d.broken:
+			sd = d
+			break
+	check(not sd.is_empty(), "doors in side walls are known as such")
+	if not sd.is_empty():
+		var dc: Vector2 = w.to_pos(sd.cell)
+		me.position = dc + Vector2(-11, 0)
+		me.storey = 0
+		me.aim = Vector2(20, 0)
+		var zd := zombie_at(dc + Vector2(11, 0))
+		zd.hp = zd.max_hp
+		sd.closed = true
+		main.combat._resolve_melee(me, Look.PUNCH_L, main.combat.PUNCH)
+		check(zd.hp == zd.max_hp, "no punching through a shut door at a zombie on the far side")
+		sd.closed = false
+		zd.position = dc + Vector2(11, 0)
+		main.combat._resolve_melee(me, Look.PUNCH_L, main.combat.PUNCH)
+		check(zd.hp < zd.max_hp, "open, the punch lands")
+		main.zombies.erase(zd.zid)
+		zd.queue_free()
+
+	# Climbing onto a car, the camera follows the body up: no jump when it's done.
+	me.climb_from = Vector2(100, 100)
+	me.climb_to = Vector2(100, 84)
+	me.climb_h = 14.0
+	me.climb_dur = 0.8
+	me.climb_t = 0.8
+	me.on_car = -1
+	me.lift = 0.0
+	var during := me.climb_from + me.climb_offset()  # (still standing where the climb began, lift 0)
+	var after := me.climb_to + Vector2(0, -me.climb_h)
+	check(during.distance_to(after) < 0.5, "climbing up a car, the camera ends where the body does (%s / %s)" % [during, after])
+	me.climb_dur = 0.0
+	# ...and jumping down off one: it comes down with the body.
+	me.lift = 14.0
+	var before_jump := Vector2(0, -me.lift)
+	main.actions.fx_vault(me.peer_id, me.position, me.position + Vector2(0, 20), 0.45, 4.0, 14.0)
+	check((Vector2(0, -me.lift) + me.climb_offset()).distance_to(before_jump) < 0.5, "jumping down off a car, the camera starts from the roof, no snap")
+	me.vault_dur = 0.0
+
+	# You walk right up to a wall above or below you (the footprint is shallow, as feet are seen from here).
+	var probe := {}
+	for d in w.doors:
+		if d.kind == "door" and not d.get("side", false) and d.closed == false:
+			probe = d
+			break
+	if not probe.is_empty():
+		# Stand in the doorway's room side and walk up into the wall beside the door.
+		var inside: Vector2 = w.to_pos(probe.cell + Vector2i(1, -2))
+		var p := inside
+		for i in 240:
+			p = w.slide(p, Vector2(0, 0.5), Player.RADIUS)
+		var edge := float((probe.cell.y) * World.TILE)
+		check(not w.is_solid(probe.cell + Vector2i(1, -1)) and edge - p.y < Player.RADIUS - 1.5,  # (it was a whole RADIUS)
+				"walking up to a wall, the feet stop right at it (%.1f px short)" % (edge - p.y))
+
+	# A vehicle running up the screen is solid as far as it's drawn, not just its lane of cells.
+	for sp in w.street_props:
+		if sp.kind == "van" and not sp.get("horizontal", true):
+			var mid := StreetProp.middle(sp)
+			var zv := mid + Vector2(24, 0)
+			for i in 60:
+				zv = w.slide(zv, Vector2(-1, 0), Zombie.RADIUS)
+			var edge: float = sp.pos.x + StreetProp.draw_shift(sp).x + World.TILE * StreetProp.VEHICLE_SCALE
+			check(zv.x - Zombie.RADIUS >= edge - 0.6, "walking into the side of a van, you stop at its drawn side (%.1f / %.1f)" % [zv.x - Zombie.RADIUS, edge])
+			break
+	# On a pickup you stand in its bed, lower than its cab roof.
+	for sp in w.street_props:
+		if sp.kind == "pickup" and sp.get("horizontal", true):
+			check(StreetProp.roof_spot(sp)[1] < StreetProp.BODY.pickup[0] * StreetProp.VEHICLE_SCALE, "up on a pickup, you stand in the bed, not in the air over it")
+			break
+
 	# Travelling: this zone's bed and open cupboard mean nothing in the next.
 	me.bed = 3
 	me.sleep_bed = 3

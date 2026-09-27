@@ -64,7 +64,7 @@ func run() -> void:
 		main.actions.req_prone()
 		check(me.prone, "and you can't stand up under a bus")
 		# Half out, the body still under the edge: still no room to stand.
-		me.position = w.to_pos(spot.out) + into.normalized() * (World.TILE * 0.5 - 2.0)
+		me.position = w.to_pos(spot.out) + into.normalized() * (World.TILE * 0.5 - 0.5)  # (feet over the edge)
 		check(w.to_cell(me.position) == spot.out and me.under_vehicle(), "half out from under it, you're still under it")
 		main.actions.req_prone()
 		check(me.prone, "and still can't stand up")
