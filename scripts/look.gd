@@ -26,6 +26,7 @@ const LOST_HEAD := 4
 const LOST_LEG := 8  # the near leg, cut off at the thigh: it crawls (Zombie.crawler)
 const BLOOD := Color("7a0e0a")
 const BLOOD_DARK := Color("3e0605")
+const OLD_BLOOD := Color("5a2c1c")  # dried a day or more: brown
 
 const CHEST := Vector2(0, -15)  # where guns and flashlights sit
 const HEAD := Vector2(0, -24)
@@ -178,7 +179,7 @@ static func draw_rig(ci, r: Dictionary, lk: Dictionary) -> void:
 	Clothes.shirt_marks(ci, [Vector2(-tw + 0.8, -19.7), Vector2(tw - 0.8, -19.7), Vector2(tw * 0.85, -10.4), Vector2(-tw * 0.85, -10.4)],
 			lk, r.view == FRONT, r.view == SIDE)
 	if lk.get("gore", -1) >= 0 and not low_gore:
-		_wounds(ci, r.view, lk.gore)
+		_wounds(ci, r.view, lk.gore, lk.skin)
 	Clothes.draw_layer(ci, "torso", r, lk)
 	Clothes.draw_layer(ci, "waist", r, lk)
 	Clothes.draw_layer(ci, "strap", r, lk)
@@ -186,7 +187,8 @@ static func draw_rig(ci, r: Dictionary, lk: Dictionary) -> void:
 		_neck_stump(ci, lk.skin)
 	else:
 		_head(ci, r.view, r.head, lk.skin, lk.hair, lk.get("hair_style", "short"), r.zombie, r.closed, wear.get("head", {}),
-				lk.get("mouth", 0.0), true, lk.get("gore", -1) >= 0 and int(lk.gore) % 2 == 0 and not low_gore, wear.get("face", {}))
+				lk.get("mouth", 0.0), true, lk.get("gore", -1) >= 0 and int(lk.gore) % 2 == 0 and not low_gore, wear.get("face", {}),
+				lk.get("eye", Color(0, 0, 0, 0)))
 		if lk.get("crushed", false) and not low_gore:
 			_crushed(ci, r.head)
 	if not missing & LOST_HEAD:
@@ -570,7 +572,10 @@ static func _crushed(ci, c: Vector2) -> void:
 
 
 ## Bites, gashes and an open ribcage, picked by `seed` so each zombie keeps its own.
-static func _wounds(ci, view: int, seed: int) -> void:
+## A dead body's wounds, from its `seed` (no two alike, the same on every
+## screen): a bite torn in a crescent, a gash bleeding down, an old stain gone
+## brown, the shirt ripped open on grey skin. Two pieces each, whichever.
+static func _wounds(ci, view: int, seed: int, skin := Color("8a9a7a")) -> void:
 	if view == BACK and seed % 3 != 0:
 		return
 	var w := (3.0 if view == SIDE else 4.4) * _girth
@@ -578,8 +583,22 @@ static func _wounds(ci, view: int, seed: int) -> void:
 	for i in seed % 4:  # a quarter of them show no wounds at all
 		var p: Vector2 = spots[(seed + i) % spots.size()]
 		var at := Vector2(p.x * w, p.y)
-		_dot(ci, at, 1.3, BLOOD_DARK)
-		_dot(ci, at + Vector2(-0.2, -0.2), 0.8, BLOOD)
+		match (seed / 4 + i * 3) % 4:
+			0:  # a bite: the dark hole and the torn crescent of teeth round it
+				_dot(ci, at, 1.0, BLOOD_DARK)
+				var arch := PackedVector2Array()  # (four points: one piece to draw)
+				for k in 4:
+					arch.append(at + Vector2.from_angle(PI * (1.05 + k * 0.3)) * 1.7)
+				_poly(ci, arch, BLOOD)
+			1:  # a gash, still running down the front
+				_dot(ci, at, 1.1, BLOOD)
+				_rect(ci, Rect2(at.x - 0.35, at.y, 0.7, 1.6 + float((seed + i) % 3)), BLOOD_DARK)
+			2:  # an old stain, dried brown and spread wide
+				_dot(ci, at, 1.6, OLD_BLOOD)
+				_dot(ci, at + Vector2(0.9, 0.6), 0.9, OLD_BLOOD.darkened(0.15))
+			_:  # the shirt ripped: grey skin through it, a red edge
+				_rect(ci, Rect2(at - Vector2(1.2, 0.9), Vector2(2.4, 1.8)), BLOOD_DARK)
+				_rect(ci, Rect2(at - Vector2(0.9, 0.6), Vector2(1.8, 1.2)), skin.darkened(0.1))
 	if seed % 7 == 3 and view != BACK:
 		# Torn open: ribs showing through.
 		var at := Vector2(-0.3 * w, -15.5)
@@ -600,12 +619,15 @@ static func _spurt(ci, r: Dictionary, missing: int, left: float, seed: int) -> v
 
 
 static func _head(ci, view: int, c: Vector2, skin: Color, hair: Color, style: String,
-		zombie: bool, closed := false, hat := {}, mouth := 0.0, neck := true, drip := false, face := {}) -> void:
+		zombie: bool, closed := false, hat := {}, mouth := 0.0, neck := true, drip := false, face := {},
+		eye_col := Color(0, 0, 0, 0)) -> void:
 	if neck:
 		_rect(ci, Rect2(-1.2, -21, 2.4, 2), skin.darkened(0.25))  # neck
 	_dot(ci, c, 4.2, skin.darkened(0.18))
 	_dot(ci, c + Vector2(-0.4, -0.4), 3.7, skin)
 	var eye := Color("dcd8bc") if zombie else Color("1c1612")  # a dead eye: milky, no pupil
+	if eye_col.a > 0.0:
+		eye = eye_col  # (some kinds show it in the eyes: the junkie's are bloodshot)
 	if closed:
 		eye = skin.darkened(0.45)  # eyes shut
 	var dark := skin.darkened(0.4)

@@ -435,8 +435,11 @@ func arm_left_to_cut() -> int:
 
 ## Everything needed to draw this body (for corpses and flying parts).
 func body_look() -> Dictionary:
-	return {skin = skin, shirt = shirt, pants = pants, hair = hair, hair_style = hair_style, wear = wear_look,
+	var lk := {skin = skin, shirt = shirt, pants = pants, hair = hair, hair_style = hair_style, wear = wear_look,
 			missing = missing, gore = gore, height = height, grime = grime}
+	if kind == "junkie":
+		lk.eye = Color("d84a3a")  # bloodshot
+	return lk
 
 
 func _bash_door_ahead() -> bool:
@@ -571,6 +574,8 @@ func _ready() -> void:
 	facing = RandomNumberGenerator.new().randf_range(-PI, PI) if zid == 0 else float(zid * 2654435761 % 6283) / 1000.0 - PI  # standing about, facing anywhere
 	if outfit.is_empty() and r2.randf() < 0.07:
 		missing = Look.LOST_ARM_L if r2.randf() < 0.5 else Look.LOST_ARM_R  # lost an arm before it turned
+	if kind == "runner":
+		vary.tilt += Vector2(1.3, 0.9)  # the head thrust forward and low even standing: ready to go
 	height = r2.randf_range(0.92, 1.08)
 	grime = r2.randf_range(0.25, 0.55) if outfit.is_empty() else 0.15  # (a survivor who turned: not long in the dirt)
 	_set_wear(wear)  # (dirtied as filthy as it turned out)
