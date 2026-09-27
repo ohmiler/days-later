@@ -81,6 +81,7 @@ var down_t := 0.0  # server: knocked flat, getting up when it runs out
 var missing := 0  # Look.LOST_* bits; arms can be cut off in a fight
 var flags := 0  # 1 = lunging, 2 = down, 8 = holding someone; from the server fields, or from snapshots
 var storey := 0  # 0 on the ground, else the floor upstairs it's on (World.storey_map): it followed someone up the stairs
+var home := -1  # a big building it was shut in (Survival._tick_trapped): its death counts there
 var lift := 0.0  # drawn this far up (eases to its storey while upstairs)
 var climb := Vector2i(-1, -1)  # server: the stairs it is heading for, after someone on the other floor
 var climb_t := 0.0  # server: still climbing the last flight (a floor takes CLIMB_TIME)

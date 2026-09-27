@@ -8,6 +8,8 @@ class_name Buildings
 ##   power    when it has had power: the runs of its generator, [[from, to],
 ##            ...] in game time (`to` is when the fuel runs out, or when it
 ##            was switched off), the last few kept. Lights and fridges ask.
+##   trapped  the zombies still shut inside a big building since the outbreak
+##            (Survival._tick_trapped lets them out when someone comes near)
 ##   owner    who claimed it (not yet: see ROADMAP "เจ้าของ")
 ## The tank isn't topped up as the rain falls (hundreds of buildings, every
 ## few seconds, sent to everyone): Main.rain_total adds up how long it has
@@ -29,7 +31,19 @@ static func start(w: World, id: int) -> Dictionary:
 	var sd := int(rec.get("seed", 0))
 	return {tank = float(sd % (int(START * k) + 1)), tank_at = 0.0,
 			cistern = floorf(CISTERN * k * (0.4 + float(sd % 7) / 10.0)) if rec.get("big", false) else 0.0,
-			power = [], owner = ""}
+			power = [], owner = "", trapped = trapped_start(rec)}
+
+
+const TRAPPED := 1.6  # zombies shut in a big building, for each 100 cells of it (and floor)
+const TRAPPED_MAX := 14
+
+
+## How many were shut inside when it all began: wards, shop floors, offices.
+static func trapped_start(rec: Dictionary) -> int:
+	if not rec.get("big", false):
+		return 0
+	var n := size_k(rec) * TRAPPED * (0.6 + 0.2 * int(rec.get("floors", 1)))
+	return clampi(int(n) + int(rec.get("seed", 0)) % 3, 2, TRAPPED_MAX)
 
 
 ## How much bigger than a shophouse its roof (and its tank) is: 1 for a

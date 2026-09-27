@@ -16,7 +16,7 @@ class_name Body
 const KINDS := {
 	bite = {name = "รอยกัด", heal = 360.0, bare = 0.0, risk = 0.06},  # an open bite doesn't close by itself
 	scratch = {name = "แผลถลอก", heal = 180.0, bare = 120.0, risk = 0.02},
-	sprain = {name = "ข้อเท้าแพลง", heal = 240.0, bare = 240.0, risk = 0.0},
+	sprain = {name = "ข้อเท้าแพลง", heal = 90.0, bare = 240.0, risk = 0.0},
 	bruise = {name = "ฟกช้ำ", heal = 120.0, bare = 120.0, risk = 0.0},
 }
 ## Heal time is in seconds of game (a day is Main.DAY_LENGTH); a bandage
@@ -236,7 +236,18 @@ static func heal_text(w: Dictionary) -> String:
 
 
 static func sprained(wounds: Array) -> bool:
-	return wounds.any(func(w): return w.kind == "sprain")
+	return wounds.any(func(w): return w.kind == "sprain" and not w.bandaged)
+
+
+## Put a splint on a sprained ankle: it can take your weight, and mends
+## faster (a sprain's `heal`). Returns whether there was one to splint.
+static func splint(p: Player) -> bool:
+	for w in p.wounds:
+		if w.kind == "sprain" and not w.bandaged:
+			w.bandaged = true
+			p.body_dirty = true
+			return true
+	return false
 
 
 # --- What to show ---------------------------------------------------------------------
@@ -253,7 +264,7 @@ static func statuses(p: Player) -> Array:
 			"scratch":
 				out.append({icon = "scratch", level = 1, text = "%s · ยังไม่พันแผล" % title(w)})
 			"sprain":
-				out.append({icon = "sprain", level = 1, text = "%s · วิ่งไม่ได้ เดินช้าลง · %s" % [title(w), heal_text(w)]})
+				out.append({icon = "sprain", level = 1, text = "%s · วิ่งไม่ได้ เดินช้าลง · %s · ใส่เฝือกแล้วหายไวขึ้น" % [title(w), heal_text(w)]})
 	# Several of one kind share an icon with a count.
 	var grouped := []
 	for s in out:
