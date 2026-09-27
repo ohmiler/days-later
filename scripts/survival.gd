@@ -170,14 +170,15 @@ func _tick_sleep(p: Player, delta: float) -> void:
 
 ## The owner's copy of their wounds (for the status icons and the body screen).
 func send_body(p: Player) -> void:
-	main._notify(p.peer_id, &"body_sync", [p.wounds])
+	main._notify(p.peer_id, &"body_sync", [p.wounds, p.conditions])
 
 
 @rpc("authority", "call_remote", "reliable")
-func body_sync(wounds: Array) -> void:
+func body_sync(wounds: Array, conditions: Dictionary) -> void:
 	var me: Player = main.players.get(multiplayer.get_unique_id())
 	if me:
 		me.wounds = wounds
+		me.conditions = conditions
 
 
 ## Hunger, thirst, infection, bleeding and stamina (server). The body runs on
@@ -199,10 +200,10 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 		p.step_t = 0.5
 		main._make_noise(p.position, main.NOISE_RUN if running else main.NOISE_WALK)
 	var slow := SLEEP_NEEDS if p.sleeping else 1.0
-	p.hunger = maxf(0.0, p.hunger - HUNGER_RATE * delta * slow * (1.6 if running else 1.0))
+	p.hunger = maxf(0.0, p.hunger - HUNGER_RATE * delta * slow * (1.6 if running else 1.0) * Body.mod(p, "hunger"))
 	# Heavy clothes in Bangkok's heat: sweat it out (less so at night).
 	var sweat := 1.0 + p.heat() * (0.4 if main.world.is_night else 1.0)
-	p.thirst = maxf(0.0, p.thirst - THIRST_RATE * delta * slow * sweat * (1.8 if running else 1.0))
+	p.thirst = maxf(0.0, p.thirst - THIRST_RATE * delta * slow * sweat * (1.8 if running else 1.0) * Body.mod(p, "thirst"))
 	if p.sleeping:
 		pass  # (rested in _tick_sleep)
 	elif running:
@@ -220,6 +221,7 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 			regen *= 1.6  # up out of reach, a moment to breathe
 		if Body.fevered(p.wounds):
 			regen *= 0.6  # a fever wears you out
+		regen *= Body.mod(p, "stamina_regen")
 		p.stamina = minf(100.0, p.stamina + regen * real_delta)
 		if p.exhausted and p.stamina > 35.0:
 			p.exhausted = false
@@ -260,6 +262,9 @@ func _tick_needs(p: Player, real_delta: float) -> void:
 	else:
 		p.last_window = -1
 	var said := Body.tick(p, delta)
+	if said != "":
+		main._toast(p, said)
+	said = Body.tick_conditions(p, main.now(), delta)
 	if said != "":
 		main._toast(p, said)
 	# While anything is healing, the owner's copy is refreshed now and then (for its progress bars).

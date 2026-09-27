@@ -572,6 +572,10 @@ func _draw_card(head: Font, body: Font) -> void:
 		stats.append(["hp", "ทนทาน %d/%d" % [it.hp, d.hp]])
 	if d.get("type") == "gun":
 		stats.push_front(["hit", "กระสุน %d/%d · ใช้%s" % [it.get("ammo", 0), d.mag, Items.display_name(d.ammo)]])
+	var m = get_tree().current_scene
+	var state := Items.state_text(it, m.now() if m != null and m.has_method("now") else 0.0)
+	if state != "":
+		stats.push_front(["use", state])  # (what's in it, how fresh)
 	stats.append(["kg", "%.1f กก." % Items.weight_of(it)])
 	if Items.stack(it.id) > 1:
 		stats.append(["n", "%d/%d" % [it.get("n", 1), Items.stack(it.id)]])

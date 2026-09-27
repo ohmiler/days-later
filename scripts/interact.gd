@@ -96,6 +96,10 @@ static func _candidates(main: Node, p: Player) -> Array:
 		if p.position.distance_to(at) < Things.REACH and w.building_at.get(th.cell) == here:
 			out.append({kind = "thing", id = th.id, pos = at, title = Things.title_of(th)})
 	_corpses(main, p, out)
+	# At the edge of a canal (or any water): scoop some up, or drink it as it is.
+	var wc := water_near(w, p.position)
+	if wc != NONE:
+		out.append({kind = "canal", id = 0, pos = w.to_pos(wc), title = "น้ำคลอง"})
 	for e in w.exits:
 		var r: Rect2i = e.rect
 		if Rect2(r.position * World.TILE, r.size * World.TILE).grow(12.0).has_point(p.position) and not p.up:
@@ -214,6 +218,10 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 			else:
 				var busy: bool = main.players.values().any(func(q): return q != p and q.on_car == t.id)
 				out.append(_act("climb", "ปีนขึ้นหลังคารถ", not busy, "มีคนอยู่บนรถแล้ว"))
+		"canal":
+			var room: bool = main.things._room_for(p, "canal")
+			out.append(_act("scoop", "ตักน้ำคลองใส่ขวด/หม้อ", room, "ไม่มีขวดหรือหม้อที่ว่าง"))
+			out.append(_act("gulp", "ดื่มน้ำคลอง (เสี่ยงท้องเสียมาก)", p.thirst < 98.0, "ยังไม่กระหาย"))
 		"seat":
 			var taken: bool = main.players.values().any(func(q): return q != p and q.sitting == t.id)
 			out.append(_act("sit", "นั่งพัก", not taken, "มีคนนั่งอยู่"))
@@ -253,6 +261,7 @@ static func has_wood(p: Player) -> bool:
 
 const CAR_REACH := 34.0  # how near a car's middle you climb from
 const CORPSE_REACH := 20.0
+const CANAL_REACH := 20.0  # from the middle of a water cell: standing at its edge
 
 
 ## What you can sit on, and what it's called.
@@ -286,6 +295,16 @@ static func jump_spot(w: World, pos: Vector2) -> Vector2:
 		if not w.is_roof(w.to_cell(p)) and w.can_stand(p, 5):
 			return p
 	return Vector2.INF
+
+
+## A water cell right beside `pos` (the canal's edge), or NONE.
+static func water_near(w: World, pos: Vector2) -> Vector2i:
+	var c := w.to_cell(pos)
+	for d in [Vector2i.ZERO, Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+		var at: Vector2i = c + d
+		if w.get_tile(at) == World.WATER and w.to_pos(at).distance_to(pos) < CANAL_REACH:
+			return at
+	return NONE
 
 
 static func trap_near(w: World, pos: Vector2) -> int:

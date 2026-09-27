@@ -27,6 +27,58 @@ const CLOT := 90.0  # a bleeding bite left alone stops bleeding after this long
 const FEVER_DAMAGE := 0.08  # health a second while a wound festers
 const SIDED := ["arms", "hands", "legs"]
 
+## Conditions: how you are, apart from wounds (sick from bad water, from
+## spoiled food...). Each says what it does as `mods` - a multiplier on
+## something the body does, the same everywhere it's used (Body.mod):
+##   speed           walking and running
+##   stamina_regen   getting your breath back
+##   thirst, hunger  how fast they go down
+## and optionally `damage` (health a second). It lasts `hours` of game time
+## from when you got it; getting it again while you have it adds on.
+## Player.conditions: {kind: until (Main.now())} (server; the owner gets a copy).
+const CONDITIONS := {
+	diarrhea = {name = "ท้องเสีย", hours = 16.0, level = 1,
+			text = "กระหายน้ำเร็ว เหนื่อยง่าย · ดื่มน้ำสะอาดแล้วพัก",
+			mods = {thirst = 2.2, stamina_regen = 0.6, speed = 0.93}},
+	food_poisoning = {name = "อาหารเป็นพิษ", hours = 10.0, level = 2,
+			text = "ปวดท้อง อ่อนแรง เลือดลดช้า ๆ · พักผ่อน ดื่มน้ำสะอาด",
+			mods = {thirst = 1.8, hunger = 1.3, stamina_regen = 0.5, speed = 0.88}, damage = 0.03},
+}
+
+
+## Come down with `kind` at game time `now` (or have it longer). Returns what to tell them.
+static func add_condition(p: Player, kind: String, now: float) -> String:
+	var c: Dictionary = CONDITIONS[kind]
+	var had: bool = p.conditions.has(kind)
+	var until: float = maxf(float(p.conditions.get(kind, now)), now) + c.hours * Main.HOUR * (0.5 if had else 1.0)
+	p.conditions[kind] = until
+	p.body_dirty = true
+	return ("%s หนักขึ้น" if had else "%s").replace("%s", c.name) + " · " + c.text
+
+
+## The product of what every condition does to `key` (1 = nothing).
+static func mod(p: Player, key: String) -> float:
+	var m := 1.0
+	for kind in p.conditions:
+		m *= float(CONDITIONS.get(kind, {}).get("mods", {}).get(key, 1.0))
+	return m
+
+
+## Server, every tick: conditions run their course. Returns what to tell them.
+static func tick_conditions(p: Player, now: float, delta: float) -> String:
+	var msg := ""
+	for kind in p.conditions.keys():
+		if now >= float(p.conditions[kind]):
+			p.conditions.erase(kind)
+			p.body_dirty = true
+			msg = "หาย%sแล้ว" % CONDITIONS[kind].name
+			continue
+		var dmg: float = CONDITIONS[kind].get("damage", 0.0)
+		if dmg > 0.0:
+			p.take_damage(dmg * delta)
+	return msg
+
+
 ## Infection stages: [from %, name, what it does].
 const STAGES := [[0.0, "เชื้อเริ่มลาม", "ยังไม่มีอาการ"], [25.0, "มีไข้", "เริ่มอ่อนแรง"],
 		[60.0, "ไข้สูง", "เดินช้าลง ตัวร้อน"], [85.0, "ใกล้กลายร่าง", "อีกไม่นานจะกลายเป็นซอมบี้"]]
@@ -212,6 +264,16 @@ static func statuses(p: Player) -> Array:
 		out.append({icon = "bleed", level = 2, text = "เลือดออก · พันแผลด่วน"})
 	if fevered(p.wounds):
 		out.append({icon = "fever", level = 1, text = "แผลอักเสบ มีไข้ · อ่อนแรง เลือดลดช้า ๆ · รักษาด้วยยาปฏิชีวนะ"})
+	var main_ := p.get_parent()
+	for kind in p.conditions:
+		var c: Dictionary = CONDITIONS.get(kind, {})
+		if c.is_empty():
+			continue
+		var left := ""
+		if main_ and main_.has_method("now"):
+			var h: float = (float(p.conditions[kind]) - main_.now()) / Main.HOUR
+			left = " · อีกราว %d ชม." % maxi(1, ceili(h))
+		out.append({icon = "sick", level = c.level, text = "%s · %s%s" % [c.name, c.text, left]})
 	if p.infection > 0.0:
 		var s: Array = STAGES[infection_stage(p.infection)]
 		out.append({icon = "fever", level = 2 if p.infection >= 60.0 else 1,
@@ -315,6 +377,9 @@ static func draw_icon(ci: CanvasItem, c: Vector2, kind: String, col: Color, s :=
 		"sprain":  # a bent leg
 			ci.draw_polyline(PackedVector2Array([c + Vector2(-2, -7) * s, c + Vector2(1, 0) * s, c + Vector2(-1, 6) * s, c + Vector2(5, 6) * s]), col, 2.0 * s)
 			ci.draw_line(c + Vector2(3, -2) * s, c + Vector2(6, -4) * s, col, 1.2 * s)
+		"sick":  # a belly, a cramp through it
+			ci.draw_arc(c, 6 * s, 0, TAU, 14, col, 1.6 * s)
+			ci.draw_polyline(PackedVector2Array([c + Vector2(-4, -1) * s, c + Vector2(-1.5, 2) * s, c + Vector2(1, -2) * s, c + Vector2(4, 1) * s]), col, 1.4 * s)
 		"bruise":
 			ci.draw_circle(c, 5 * s, Color(col, 0.6))
 			ci.draw_circle(c, 2.5 * s, col)

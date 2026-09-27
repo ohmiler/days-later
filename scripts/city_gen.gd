@@ -151,6 +151,7 @@ static func build(w: World, rng: RandomNumberGenerator) -> void:
 	# Last, so everything above comes out the same for a given seed as it always has.
 	_aftermath(w, rng)
 	Things.place_all(w, rng)
+	Things.place_stoves(w)  # (after the rest, drawing no random numbers: see there)
 	_size_vehicles(w)
 	_size_beds(w)
 	_shop_fronts(w)
