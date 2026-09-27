@@ -54,6 +54,28 @@ func run() -> void:
 	check(fat_downs == 0, "fat zombies are never kicked over")
 	fat.queue_free()
 	main.zombies.erase(fat.zid)
+	# A kick lands on one, not on everyone in front.
+	var k1 := zombie_at(home + Vector2(14, -4))
+	var k2 := zombie_at(home + Vector2(14, 6))
+	k1.hp = 100
+	k2.hp = 100
+	_aim_at(k1.position + Look.CHEST)
+	main.combat._resolve_melee(me, Look.KICK, [26.0, 10.0, 0.5, 0.1, 0.0])
+	check((k1.hp < 100) != (k2.hp < 100), "a kick hits one of two zombies side by side, not both")
+	# The one kicked stumbles back into the one behind it: that one staggers, unhurt.
+	k1.position = home + Vector2(14, 0)
+	k2.position = home + Vector2(26, 0)
+	k1.hp = 100
+	k2.hp = 100
+	k2.stun = 0.0
+	var was := k2.position
+	_aim_at(k1.position + Look.CHEST)
+	main.combat._resolve_melee(me, Look.KICK, [26.0, 10.0, 0.5, 0.1, 6.0])
+	check(k1.hp < 100 and k2.hp == 100 and k2.stun > 0.0 and k2.position.x > was.x,
+			"the zombie behind is bumped back and staggers, unhurt")
+	for kz in [k1, k2]:
+		kz.queue_free()
+		main.zombies.erase(kz.zid)
 
 	# Two hands: a weapon in each, swings alternating; a two-handed one takes both.
 	me.inv.fill(null)

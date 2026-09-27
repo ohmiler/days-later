@@ -129,7 +129,9 @@ func run() -> void:
 	# You walk right up to a wall above or below you (the footprint is shallow, as feet are seen from here).
 	var probe := {}
 	for d in w.doors:
-		if d.kind == "door" and not d.get("side", false) and d.closed == false:
+		var c: Vector2i = d.cell
+		# (A front door with bare wall beside it and clear floor inside, to walk down to that wall.)
+		if d.kind == "door" and not d.get("side", false) and w.get_tile(c + Vector2i(1, 0)) in [World.IWALL, World.BUILDING] 				and not w.door_at.has(c + Vector2i(1, 0)) and not w.is_solid(c + Vector2i(1, -1)) and not w.is_solid(c + Vector2i(1, -2)) 				and not w.is_solid(c + Vector2i(0, -1)) and not w.is_solid(c + Vector2i(2, -1)):
 			probe = d
 			break
 	if not probe.is_empty():
