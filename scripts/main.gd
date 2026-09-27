@@ -1183,6 +1183,8 @@ func _tag(tag: PromptTag, verb: String, ok: bool, more: bool, detail: String, at
 	tag.detail = detail
 	tag.world_pos = at
 	tag.dwell = now - _prompt_since
+	var me: Player = players.get(multiplayer.get_unique_id())
+	tag.body = Rect2(me.position + Vector2(-10, -40 - me.lift), Vector2(20, 42)) if me else Rect2()
 
 
 ## Anything standing in front of the local player turns see-through so you

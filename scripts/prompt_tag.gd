@@ -19,6 +19,7 @@ var detail := ""
 var always_detail := false  # riding: the bike's fuel stays shown
 var world_pos := Vector2.ZERO
 var dwell := 0.0
+var body := Rect2()  # where your own character is drawn (world): the tag never covers it
 
 
 func _ready() -> void:
@@ -47,8 +48,14 @@ func _draw() -> void:
 	var h := 28.0
 	var screen := get_viewport_rect().size
 	var r := Rect2(at.x - w / 2, at.y - h, w, h)
+	# Over your own character (a car roof, a roof edge you're on): up over your head instead.
+	if body.has_area():
+		var xf := get_viewport().get_canvas_transform()
+		var b := Rect2(xf * body.position, (xf * body.end) - (xf * body.position))
+		if r.intersects(b):
+			r.position.y = b.position.y - h - 6.0
 	r.position.x = clampf(r.position.x, 8.0, maxf(8.0, screen.x - w - 8.0))  # (kept on screen)
-	r.position.y = clampf(r.position.y, 8.0, maxf(8.0, screen.y - h - 120.0))
+	r.position.y = clampf(r.position.y, 26.0, maxf(26.0, screen.y - h - 120.0))
 	draw_style_box(UiTheme.box(Color(0.06, 0.06, 0.06, 0.62 * alpha), 6), r)
 	var x := r.position.x + 5.0
 	_key(Rect2(x, r.position.y + 4, kw, h - 8), key, alpha)
@@ -65,11 +72,11 @@ func _draw() -> void:
 		_key(Rect2(x, r.position.y + 4, 22.0, h - 8), s_key, alpha)
 		x += 28.0
 		draw_string(f, Vector2(x, base), s_text, HORIZONTAL_ALIGNMENT_LEFT, -1, SIZE, Color(UiTheme.PAPER, alpha))
-	# What it is, once you stay on it.
+	# What it is, once you stay on it: over the tag, never down over what's below it.
 	var k := 1.0 if always_detail else clampf((dwell - DWELL) / 0.25, 0.0, 1.0)
 	if detail != "" and k > 0.0:
 		var dw := fb.get_string_size(detail, HORIZONTAL_ALIGNMENT_LEFT, -1, DETAIL).x
-		var p := Vector2(r.get_center().x - dw / 2, r.end.y + 15)
+		var p := Vector2(r.get_center().x - dw / 2, r.position.y - 6)
 		draw_string_outline(fb, p, detail, HORIZONTAL_ALIGNMENT_LEFT, -1, DETAIL, 5, Color(0, 0, 0, 0.6 * k))
 		draw_string(fb, p, detail, HORIZONTAL_ALIGNMENT_LEFT, -1, DETAIL, Color(UiTheme.PAPER, 0.85 * k))
 
