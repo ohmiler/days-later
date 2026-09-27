@@ -722,7 +722,9 @@ func _process_body(delta: float) -> void:
 		if state == 2:
 			var cam := get_viewport().get_camera_2d()
 			if cam and cam.global_position.distance_to(global_position) < 300:
-				Sfx.play(get_parent(), "groan", position, -2.0, randf_range(1.05, 1.25))
+				# (its kind's own if found, else any zombie's: audio/WANTED.md)
+				var alert := Sfx.first([kind + "_alert", "zombie_alert", "groan"])
+				Sfx.play(get_parent(), alert, position, 0.0, randf_range(1.05, 1.25) if alert == "groan" else 1.0)
 	shown_state = state
 	alert_t = maxf(0.0, alert_t - delta)
 	groan_t -= delta
@@ -730,7 +732,7 @@ func _process_body(delta: float) -> void:
 		groan_t = randf_range(5.0, 12.0)
 		var cam := get_viewport().get_camera_2d()
 		if cam and cam.global_position.distance_to(global_position) < 260:
-			Sfx.play(get_parent(), "groan", position, -8.0, randf_range(0.85, 1.15))
+			Sfx.play(get_parent(), "groan", position, -3.0, randf_range(0.85, 1.15))  # (a mutter, under the rest)
 	# Flash bright for an instant when struck.
 	modulate = Color(1, 1, 1).lerp(Color(2.2, 1.6, 1.5), clampf(hit_t / 0.25, 0, 1) ** 2)
 	modulate.a = sight_k

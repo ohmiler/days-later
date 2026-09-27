@@ -27,7 +27,7 @@ func tick(me: Player, delta: float) -> void:
 		return
 	_t = randf_range(EVERY.x, EVERY.y)
 	if randf() < 0.3:
-		Sfx.play(main, "groan", me.position + Vector2.from_angle(randf() * TAU) * 60.0, -6.0, randf_range(0.7, 1.3))
+		Sfx.play(main, "groan", me.position + Vector2.from_angle(randf() * TAU) * 60.0, -2.0, randf_range(0.7, 1.3))
 		return
 	var pos: Vector2 = me.position + Vector2.from_angle(randf() * TAU) * randf_range(110.0, 170.0)
 	if not main.world.can_stand(pos, 5):
