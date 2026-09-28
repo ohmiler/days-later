@@ -5,7 +5,7 @@ extends Node2D
 ## rises `h` pixels above the footprint's bottom edge and the roof sits on top.
 
 const FLOOR_H := 24.0
-const GROUND_H := 30.0
+const GROUND_H := 48.0  # a shop floor, 3 m clear by the proportions rule (a person reaches 60% of it)
 
 
 ## How far up the floor of storey `f` is drawn (0: the ground): the ground
@@ -38,20 +38,20 @@ const GRAFFITI := ["ช่วยด้วย", "มีคนรอด", "อย�
 static func height_of(rec: Dictionary) -> float:
 	match rec.kind:
 		"condo":
-			return rec.floors * 11.0 + 8.0
+			return GROUND_H + (rec.floors - 1) * FLOOR_H + 8.0
 		"temple":
 			return 56.0
 		"chedi":
 			return 0.0
 		"sala":
-			return 28.0
+			return 44.0
 		"store":
 			return GROUND_H + 8.0
 		"hospital", "flats", "office", "mall":
-			return GROUND_H + (rec.floors - 1) * FLOOR_H + 6.0
+			return GROUND_H + (rec.floors - 1) * FLOOR_H + 8.0
 		"market":
 			return GROUND_H + 4.0
-	return GROUND_H + (rec.floors - 1) * FLOOR_H + 4.0
+	return GROUND_H + (rec.floors - 1) * FLOOR_H + 8.0  # (+ a 1 m parapet)
 
 
 func setup(rec: Dictionary) -> void:
@@ -195,7 +195,7 @@ func _flat_roof(col: Color) -> void:
 				c.draw_circle(Vector2(5 + i * 5, -h - d + 5), 2.2, Color("4a6a38"))
 	c.draw_rect(roof, Color(0, 0, 0, 0.2), false, 1.5)
 	c.draw_rect(Rect2(0, -h - d, w, 2), col.darkened(0.15))  # back parapet
-	c.draw_rect(Rect2(0, -h - 3, w, 3), col.lightened(0.05))  # front parapet
+	c.draw_rect(Rect2(0, -h - 6, w, 6), col.lightened(0.05))  # front parapet
 	if rng.randf() < 0.7:
 		# Rooftop water tank.
 		var p := Vector2(rng.randf_range(8, maxf(9.0, w - 14)), -h - d + rng.randf_range(10, maxf(11.0, d - 10)))
@@ -215,7 +215,7 @@ func _flat_roof(col: Color) -> void:
 func _roof_life() -> void:
 	var top := -h - d
 	var e := extra
-	c.draw_rect(Rect2(0, -h - 5, w, 2), Color(0, 0, 0, 0.12))  # shade behind the front parapet
+	c.draw_rect(Rect2(0, -h - 8, w, 2), Color(0, 0, 0, 0.12))  # shade behind the front parapet
 	if e.randf() < 0.35:
 		# Moss and weeds along the parapets.
 		for i in e.randi_range(3, 7):
@@ -291,8 +291,8 @@ func _door() -> void:
 	if not data.get("enter", false):
 		return
 	var x: float = data.door * World.TILE
-	c.draw_rect(Rect2(x + 1, -GROUND_H + 1, World.TILE - 2, GROUND_H - 1), Color("120f0c"))  # the DoorProp draws the door itself
-	c.draw_rect(Rect2(x + 0.5, -GROUND_H + 0.5, World.TILE - 1, GROUND_H - 0.5), Color("5a4a3a"), false, 1.0)
+	c.draw_rect(Rect2(x + 1, -DoorProp.DOOR_H - 1.0, World.TILE - 2, DoorProp.DOOR_H + 1.0), Color("120f0c"))  # the DoorProp draws the door itself
+	c.draw_rect(Rect2(x + 0.5, -DoorProp.DOOR_H - 1.5, World.TILE - 1, DoorProp.DOOR_H + 1.5), Color("5a4a3a"), false, 1.0)
 	c.draw_rect(Rect2(x + 2, -2, World.TILE - 4, 2), Color("3a2e24"))  # worn step
 
 
@@ -442,7 +442,7 @@ func _draw_store() -> void:
 	c.draw_rect(Rect2(3, -GROUND_H + 1, w - 6, GROUND_H - 2), Color("a8c8d4"))
 	for i in int((w - 10) / 6):
 		c.draw_rect(Rect2(6 + i * 6, -10, 4, 7), Color("6a8a9a"))  # shelves behind glass
-	c.draw_rect(Rect2(w * 0.5 - 4, -GROUND_H + 1, 8, GROUND_H - 2), Color("c8e0e8"))  # glass door
+	c.draw_rect(Rect2(w * 0.5 - 4, -DoorProp.DOOR_H, 8, DoorProp.DOOR_H), Color("c8e0e8"))  # glass door
 	_door()
 
 
@@ -452,7 +452,7 @@ func _draw_condo() -> void:
 	c.draw_rect(Rect2(w * 0.3, -h - d * 0.7, w * 0.4, d * 0.4), Color("8a867e"))  # lift housing
 	_wall(col)
 	for f in data.floors:
-		var y := -h + 6 + float(f) * 11.0
+		var y := -h + 6 + float(f) * FLOOR_H
 		c.draw_rect(Rect2(3, y, w - 6, 6), Color("2e343a"))
 		c.draw_line(Vector2(3, y + 6.5), Vector2(w - 3, y + 6.5), col.lightened(0.1), 1.2)  # balcony rail
 		for x in range(8, int(w) - 4, 14):
@@ -464,7 +464,7 @@ func _draw_condo() -> void:
 	c.draw_rect(Rect2(0, -h, 3, h), accent)  # painted end panels
 	c.draw_rect(Rect2(w - 3, -h, 3, h), accent)
 	for f in data.floors:
-		var y := -h + 6 + float(f) * 11.0
+		var y := -h + 6 + float(f) * FLOOR_H
 		for x in range(6, int(w) - 8, 14):
 			var roll := e.randf()
 			if roll < 0.12:
@@ -717,7 +717,7 @@ func _big_ground(col: Color) -> void:
 		c.draw_line(Vector2(x, -GROUND_H + 4), Vector2(x, 0), Color("4a5a64"), 0.8)
 	c.draw_line(Vector2(x0, -GROUND_H + 5), Vector2(x1, -GROUND_H + 5), Color(1, 1, 1, 0.2), 1.2)
 	for dx: int in doors:
-		c.draw_rect(Rect2(dx * T + 1, -GROUND_H + 5, T - 2, GROUND_H - 5), Color("1e2428"))  # (the DoorProp draws the door)
+		c.draw_rect(Rect2(dx * T + 1, -DoorProp.DOOR_H - 1.0, T - 2, DoorProp.DOOR_H + 1.0), Color("1e2428"))  # (the DoorProp draws the door)
 	# A canopy over the way in, on two posts.
 	c.draw_rect(Rect2(x0 - 4, -GROUND_H - 2, x1 - x0 + 8, 4), col.darkened(0.25))
 	c.draw_rect(Rect2(x0 - 4, -GROUND_H - 2, x1 - x0 + 8, 1), col.lightened(0.1))
@@ -764,9 +764,9 @@ func _draw_market() -> void:
 	c.draw_rect(Rect2(0, -h, w, h), Color("1e1a16"))
 	var e := extra
 	for x in range(4, int(w) - 8, 12):
-		c.draw_rect(Rect2(x, -GROUND_H + 10, 10, 3), Color.from_hsv(e.randf(), 0.55, 0.7))  # an awning
-		c.draw_rect(Rect2(x + 1, -GROUND_H + 16, 8, 6), Color("5a4a3a"))  # the stall
-		c.draw_rect(Rect2(x + 2, -GROUND_H + 14, 6, 2), Color.from_hsv(e.randf(), 0.5, 0.8))  # what's on it
+		c.draw_rect(Rect2(x, -20.0, 10, 3), Color.from_hsv(e.randf(), 0.55, 0.7))  # an awning
+		c.draw_rect(Rect2(x + 1, -14.0, 8, 6), Color("5a4a3a"))  # the stall
+		c.draw_rect(Rect2(x + 2, -16.0, 6, 2), Color.from_hsv(e.randf(), 0.5, 0.8))  # what's on it
 	for x in range(0, int(w) + 1, 4 * World.TILE):
 		c.draw_rect(Rect2(minf(x, w - 2), -h, 2, h), Color("6a6e70"))
 	var r := Rect2(w * 0.5 - 30, -h + 1, 60, 9)

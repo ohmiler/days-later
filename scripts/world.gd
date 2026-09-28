@@ -158,7 +158,7 @@ func _spawn_props() -> void:
 			n.position.y = d.cell.y * TILE + 1.0  # (sorts behind whoever stands in the doorway)
 		elif not World.BUILDS.has(d.kind):
 			# Drawn at the old height, stretched to the storey: a door a person walks through upright.
-			n.scale = Vector2(1, DoorProp.DOOR_STRETCH if d.kind in ["door", "shutter"] else DoorProp.WINDOW_STRETCH)
+			n.scale = Vector2(1, DoorProp.SHUTTER_STRETCH if d.kind == "shutter" else (DoorProp.DOOR_STRETCH if d.kind == "door" else DoorProp.WINDOW_STRETCH))
 		n.z_index = 1
 		_stream(n, n.position)
 		door_nodes.append(n)

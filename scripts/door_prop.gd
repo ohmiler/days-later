@@ -4,8 +4,10 @@ extends Node2D
 ## Origin is the bottom-left of the doorway cell.
 
 ## Doors and windows are drawn 15 px tall and stretched to BuildingProp.GROUND_H.
-const DOOR_STRETCH := 2.0
-const WINDOW_STRETCH := 1.8
+const DOOR_H := 34.0  # a 2.1 m doorway: a person clears it (docs/reviews/2026-09-28/3-scale.md)
+const DOOR_STRETCH := DOOR_H / 15.0
+const WINDOW_STRETCH := 2.4
+const SHUTTER_STRETCH := (BuildingProp.GROUND_H - 3.0) / 13.5  # a shutter fills the shop front up to its box
 
 var door: Dictionary
 var shut := -1.0  # as drawn: 1 shut, 0 open, in between swinging (or a shutter rolling)
@@ -93,12 +95,12 @@ func _draw_side() -> void:
 		return
 	if shut < 0.5:
 		# Standing open across the top of the doorway, its face to us (rising as it swings open).
-		var hgt := 28.0 * (1.0 - shut * 2.0)
+		var hgt := DOOR_H * (1.0 - shut * 2.0)
 		var r := Rect2(T * 0.5, 1.5 - hgt, T * 0.8, hgt)
 		draw_rect(r, wood.darkened(0.1))
-		if hgt > 26.0:
-			draw_rect(Rect2(r.position.x + 1.5, r.position.y + 2, r.size.x - 3, 10), wood.darkened(0.22))  # panels
-			draw_rect(Rect2(r.position.x + 1.5, r.position.y + 14, r.size.x - 3, 11), wood.darkened(0.22))
+		if hgt > DOOR_H - 2.0:
+			draw_rect(Rect2(r.position.x + 1.5, r.position.y + 2, r.size.x - 3, 12), wood.darkened(0.22))  # panels
+			draw_rect(Rect2(r.position.x + 1.5, r.position.y + 17, r.size.x - 3, 13), wood.darkened(0.22))
 			draw_circle(Vector2(r.end.x - 2.5, r.position.y + 14), 0.8, Color("c8b070"))
 		draw_rect(r, wood.darkened(0.4), false, 0.6)
 	else:

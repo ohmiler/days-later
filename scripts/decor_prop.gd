@@ -90,8 +90,8 @@ func _draw() -> void:
 			draw_line(Vector2(6, -1), Vector2(6, -17), Color("5a5a5a"), 0.8)  # handrail
 			draw_rect(Rect2(-2, -21, 8, 3), Color("2a2622"))  # the hatch above
 		"bulb":
-			draw_line(Vector2(0, -40), Vector2(0, -24), Color("1e1e1e"), 0.5)  # hanging from the ceiling
-			draw_circle(Vector2(0, -23), 1.6, Color("f0e0a0"))
+			draw_line(Vector2(0, -48), Vector2(0, -40), Color("1e1e1e"), 0.5)  # hanging from the ceiling
+			draw_circle(Vector2(0, -39), 1.6, Color("f0e0a0"))
 		"barberchair":
 			# A barber's chair: chrome pedestal, red leather, a headrest.
 			_shadow(6)
@@ -292,14 +292,14 @@ func _draw() -> void:
 						draw_circle(Vector2(x + rng.randf_range(-2, 2), -7 - rng.randf() * 3), 0.9, Color("e04a9a"))
 		"lift":
 			# Lift doors in the wall, shut since the power went: steel, the call button dark.
-			draw_rect(Rect2(-8, -26, 16, 26), Color("8a8c8e"))
-			draw_rect(Rect2(-6.5, -24, 13, 24), Color("b8bcc0"))
-			draw_line(Vector2(0, -24), Vector2(0, 0), Color("6a6c6e"), 0.8)
-			draw_line(Vector2(-4, -22), Vector2(-4, -3), Color(1, 1, 1, 0.25), 0.8)
-			draw_rect(Rect2(-5, -29, 10, 2.5), Color("2a2c2e"))  # the floor display, blank
-			draw_circle(Vector2(7, -12), 0.9, Color("4a4a4a"))
+			draw_rect(Rect2(-8, -37, 16, 37), Color("8a8c8e"))
+			draw_rect(Rect2(-6.5, -34, 13, 34), Color("b8bcc0"))
+			draw_line(Vector2(0, -34), Vector2(0, 0), Color("6a6c6e"), 0.8)
+			draw_line(Vector2(-4, -31), Vector2(-4, -4), Color(1, 1, 1, 0.25), 0.8)
+			draw_rect(Rect2(-5, -41, 10, 3.5), Color("2a2c2e"))  # the floor display, blank
+			draw_circle(Vector2(7, -17), 0.9, Color("4a4a4a"))
 			if rng.randf() < 0.3:
-				draw_line(Vector2(-6, -20), Vector2(5, -8), Color("7a2a1e", 0.7), 1.2)  # someone clawed at it
+				draw_line(Vector2(-6, -28), Vector2(5, -11), Color("7a2a1e", 0.7), 1.2)  # someone clawed at it
 		"wheelchair":
 			_shadow(6)
 			draw_circle(Vector2(-3, -4), 4.0, Color("2a2a2c"))
