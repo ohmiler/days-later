@@ -107,7 +107,7 @@ func _draw_station(node: Node2D) -> void:
 	ci.draw_rect(Rect2(x - 5 * T, y0 + 2, 1.5 * T, y1 - y0 - 4), Color("e8d040"))  # yellow line at the edge
 	ci.draw_rect(Rect2(x + 3.5 * T, y0 + 2, 1.5 * T, y1 - y0 - 4), Color("e8d040"))
 	# The roof, lifted over it all.
-	var ry := y0 - 26
+	var ry := y0 - 36  # (a roof a person stands under on the platform)
 	ci.draw_rect(Rect2(x - 5.5 * T, ry, 11 * T, y1 - y0 + 6), Color("5a7a8a"))
 	ci.draw_rect(Rect2(x - 5.5 * T, ry, 11 * T, 4), Color("8ab0c0"))
 	for k in range(0, int(y1 - y0), 12):
