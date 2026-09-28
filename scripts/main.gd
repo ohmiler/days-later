@@ -106,6 +106,7 @@ var shake := 0.0
 var cam_lead := Vector2.ZERO  # how far ahead the camera looks, riding
 const CAM_LEAD := 0.3  # seconds of travel
 const CAM_LEAD_MAX := 48.0
+const RIDE_ZOOM_OUT := 0.75  # at full speed on a bike the view widens to this share of the zoom
 const CAM_AIM := 0.1  # on foot, the camera looks this share of the way toward where you aim
 const CAM_AIM_GUN := 0.28  # ...with a gun raised, further
 const CAM_FOLLOW := 12.0  # how quickly it catches up (a few pixels behind at a walk)
@@ -1197,7 +1198,9 @@ func _update_death_screen(me: Player, delta: float) -> void:
 		camera.zoom = camera.zoom.lerp(play_zoom * 1.35, delta * 0.8)
 	elif me:
 		var want := play_zoom * lerpf(1.0, 0.78, roof_k)
-		camera.zoom = camera.zoom.lerp(want, delta * 3.0) if camera.zoom.distance_to(want) > 0.01 else want
+		if me.riding >= 0:
+			want *= lerpf(1.0, RIDE_ZOOM_OUT, clampf(me.ride_seen.length() / 170.0, 0.0, 1.0))  # (faster: see further ahead)
+		camera.zoom = camera.zoom.lerp(want, delta * (1.5 if me.riding >= 0 else 3.0)) if camera.zoom.distance_to(want) > 0.01 else want
 
 
 ## Walking into a building lifts its roof and front wall off so you can see inside.

@@ -29,7 +29,13 @@ const DEFS := {
 	# of running left as of `since` (-1: as it was left, worked out from the
 	# seed); running, it burns down by the clock, nothing counts it.
 	"generator": {name = "เครื่องปั่นไฟ", state = {fuel = -1.0, on = false, since = 0.0}, solid = true},
+	# The water jar (โอ่ง) in a shophouse bathroom: what the family kept in
+	# store for when the mains ran dry. `water` is sips left (-1: as it was
+	# left, worked out from the seed). It doesn't fill again by itself: it is
+	# a home's reserve once the rooftop tank is empty. (The decor draws it.)
+	"jar": {name = "โอ่งน้ำ", state = {water = -1}, solid = false},
 }
+const JAR_LEFT := [4, 30]  # sips a jar was left with, the least and the most
 const BOIL_HOURS := 0.5  # game hours to boil a pot of water
 const COOK_HOURS := 0.75  # ...to cook rice
 const COOK_SMELL := 110.0  # cooking smells: zombies this far come to see, every few seconds
@@ -63,6 +69,11 @@ func actions_for(p: Player, id: int) -> Array:
 				return [_act("smash", "ทุบตู้เอาเครื่องดื่ม (เสียงดัง)")]
 		"stove":
 			return _stove_actions(p, th)
+		"jar":
+			var sips := jar_water(th)
+			var room := _room_for(p, "jar")
+			return [_act("drink", "ดื่มน้ำในโอ่ง (ไม่ได้ต้ม)", sips >= 1 and p.thirst < 98.0, "โอ่งแห้งแล้ว" if sips < 1 else "ยังไม่กระหาย"),
+					_act("fill", "ตักน้ำในโอ่งใส่ขวด/หม้อ", sips >= 1 and room, "โอ่งแห้งแล้ว" if sips < 1 else "ไม่มีขวดหรือหม้อที่ว่าง")]
 		"generator":
 			var left := gen_fuel(th, main.now())
 			var can := Crafting.count_in(p.inv, "fuelcan") > 0
@@ -201,6 +212,42 @@ func _do_tap_drink(p: Player, th: Dictionary) -> void:
 		main._toast(p, Body.add_condition(p, "diarrhea", main.now()))
 	else:
 		main._toast(p, "ดื่มน้ำจากก๊อก" + (" · น้ำในแท็งก์ใกล้หมด" if Buildings.tank(main, bid) < 4.0 else ""))
+
+
+## Sips left in a water jar.
+func jar_water(th: Dictionary) -> int:
+	var w: int = th.state.water
+	if w < 0:
+		w = JAR_LEFT[0] + (th.id * 31 + main.world_seed) % (JAR_LEFT[1] - JAR_LEFT[0] + 1)
+	return w
+
+
+func _jar_take(th: Dictionary, n: int) -> int:
+	var got := mini(n, jar_water(th))
+	if got > 0:
+		set_state(th.id, {water = jar_water(th) - got})
+	return got
+
+
+func _do_jar_drink(p: Player, th: Dictionary) -> void:
+	var got := _jar_take(th, TAP_GULP)
+	if got <= 0:
+		return
+	p.thirst = minf(100.0, p.thirst + Items.LIQUIDS.jar.drink * got)
+	main.fx_sound.rpc("eat", p.position)
+	if randf() < Items.LIQUIDS.jar.sick:
+		main._toast(p, Body.add_condition(p, "diarrhea", main.now()))
+	else:
+		main._toast(p, "ดื่มน้ำในโอ่ง · เหลืออีก %d ส่วน" % jar_water(th))
+
+
+func _do_jar_fill(p: Player, th: Dictionary) -> void:
+	var got: int = main.inventory.fill_containers(p, "jar", jar_water(th))
+	if got <= 0:
+		return
+	_jar_take(th, got)
+	main.fx_sound.rpc("eat", p.position)
+	main._toast(p, "ตักน้ำในโอ่ง %d ส่วน · ควรต้มก่อนดื่ม" % got)
 
 
 func _do_tap_fill(p: Player, th: Dictionary) -> void:
@@ -462,6 +509,14 @@ static func place_stoves(w: World) -> void:
 	for d in w.decor:
 		if d.kind == "stove" and (d.get("storey", 0) == 0 or d.building.get("big", false)):
 			_add(w, "stove", d.cell, d.get("storey", 0))
+
+
+## The water jars, from the decor (after everything else, so the things
+## before them keep their ids in old saves).
+static func place_jars(w: World) -> void:
+	for d in w.decor:
+		if d.kind == "jar" and not d.get("outside", false):
+			_add(w, "jar", d.cell, d.get("storey", 0))
 
 
 static func _add(w: World, kind: String, c: Vector2i, storey := 0) -> void:

@@ -12,6 +12,14 @@ extends Node
 
 const PATH := "res://data/quests.cfg"
 const DAILY_COUNT := 2
+const BANGKOK := 7 * 3600  # dailies turn over at midnight Bangkok time
+static var day_shift := 0  # (tests move the calendar on)
+
+
+## Which real day it is (a game day is only minutes long: a task a player sets
+## out to do shouldn't vanish before they get there).
+static func real_day() -> int:
+	return int((Time.get_unix_time_from_system() + BANGKOK) / 86400.0) + day_shift
 const SYNC_EVERY := 0.5
 ## Objectives about what you have rather than what you did: counted afresh.
 const HELD := ["have_tag", "have_item", "hold_weapon"]
@@ -193,17 +201,18 @@ func server_tick(delta: float) -> void:
 			main._notify(p.peer_id, &"quests_sync", [p.quests])
 
 
-## Once the start is done: two everyday tasks for each game day.
+## Once the start is done: two everyday tasks for each real day.
 func _hand_out_daily(p: Player) -> void:
-	if not _start_done(p) or int(p.quests.get("day", -1)) == main.day:
+	var today := real_day()
+	if not _start_done(p) or int(p.quests.get("day", -1)) == today:
 		return
-	p.quests.day = main.day
+	p.quests.day = today
 	for id in p.quests.active.keys():
 		if DEFS[id].get("daily", false):
 			p.quests.active.erase(id)  # (yesterday's, undone: no harm)
 	var pool := DEFS.keys().filter(func(id): return DEFS[id].get("daily", false))
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash("%s:%d" % [p.pname, main.day])
+	rng.seed = hash("%s:%d" % [p.pname, today])
 	for i in mini(DAILY_COUNT, pool.size()):
 		var k := rng.randi() % pool.size()
 		start(p, pool[k])

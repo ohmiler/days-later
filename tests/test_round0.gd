@@ -101,6 +101,24 @@ func run() -> void:
 	for id in ["antibiotic", "bandage", "painkiller", "firstaid"]:
 		check("hospital" in Items.def(id).get("places", []), "%s can be found in a hospital" % id)
 
+	# --- The bathroom water jar is a home's reserve ------------------------
+	var jar := {}
+	for th in w.things:
+		if th.kind == "jar":
+			jar = th
+			break
+	check(not jar.is_empty(), "shophouse bathrooms have water jars you can use")
+	if not jar.is_empty():
+		var left: int = main.things.jar_water(jar)
+		check(left >= Things.JAR_LEFT[0] and left <= Things.JAR_LEFT[1], "a jar starts with some water (%d)" % left)
+		me.inv = [{id = "pbottle", n = 1}, null, null, null, null, null, null, null]
+		me.position = w.to_pos(jar.cell) + Vector2(0, 14)
+		main.things._do_jar_fill(me, jar)
+		var f := Items.fill_of(me.inv[0])
+		check(f.get("what") == "jar" and f.get("n", 0) > 0, "a bottle fills from the jar (%s)" % str(f))
+		check(main.things.jar_water(jar) == left - int(f.get("n", 0)), "and the jar has that much less")
+	check(Quests.real_day() > 20000, "everyday tasks follow the real day")
+
 	# --- Seen zombies fade the roof drawn over them -------------------------
 	var row := Vector2i(shop.rect.get_center().x, shop.rect.position.y - 1)  # just north of the shop: under its roof
 	me.position = w.to_pos(row + Vector2i(0, -6))

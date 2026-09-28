@@ -158,6 +158,7 @@ static func build(w: World, rng: RandomNumberGenerator) -> void:
 	_shop_fronts(w)
 	_zone_exits(w)
 	_landmarks(w)
+	Things.place_jars(w)  # (last of all: new things go after the old ones)
 
 
 ## A zone drawn by hand (data/zones/*.cfg): its streets, roundabout, canal,

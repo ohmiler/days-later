@@ -65,10 +65,16 @@ func run() -> void:
 	main.quests.note(me, "kill", {kind = "runner"})
 	check(me.quests.active.daily_runners[0] == 1, "a runner does")
 
-	# A new day: new tasks.
+	# A new game day changes nothing (it's minutes long); a new real day does.
+	var had: int = me.quests.day
 	main.day += 1
 	_tick()
-	check(me.quests.day == main.day, "a new day hands out the day's tasks")
+	check(me.quests.day == had, "a new game day keeps today's tasks")
+	Quests.day_shift += 1
+	_tick()
+	check(me.quests.day == Quests.real_day(), "a new real day hands out the day's tasks")
+	Quests.day_shift = 0
+	_tick()  # (back to today, so the reload below doesn't see a new day)
 
 	# Kept in the save.
 	main.quests.start(me, "daily_hunt")
