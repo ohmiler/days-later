@@ -7,12 +7,12 @@ var main: Main
 
 
 var rain_t := 120.0  # server: time until the weather next changes
-# Survival tuning, per second. A full stomach lasts about two in-game days.
-## Full to empty, in seconds of game time (a day is Main.DAY_LENGTH, 4 minutes):
-## five days of food, three of water (Bangkok heat: water runs out faster).
-const HUNGER_RATE := 100.0 / 1200.0
-const THIRST_RATE := 100.0 / 720.0
-const INFECTION_RATE := 0.2  # a bite's infection runs its course in about two days untreated
+# Survival tuning, per second of game time (a day is Main.DAY_LENGTH, 24
+# minutes). Full to empty: a day for food, about 14 hours for water (Bangkok
+# heat): you eat and drink every day, as people do.
+const HUNGER_RATE := 100.0 / (24.0 * Main.HOUR)
+const THIRST_RATE := 100.0 / (14.0 * Main.HOUR)
+const INFECTION_RATE := 0.2  # a bite's infection runs its course in about 8 game hours untreated
 const REST_HEAL := 0.05  # health a second while awake, fed, watered and whole...
 const REST_HEAL_UP_TO := 60.0  # ...back up to this much (the rest takes sleep or medicine)
 const STARVE_DAMAGE := 0.6

@@ -7,7 +7,7 @@ extends Node2D
 ## Auto-join from the command line:  godot -- --join=127.0.0.1
 
 const PORT := 9080
-const DAY_LENGTH := 240.0
+const DAY_LENGTH := 1440.0  # 24 real minutes: a game hour is a real minute
 const HOUR := DAY_LENGTH / 24.0  # a game hour, in seconds of game time
 const MAX_ZOMBIES := 40  # around each player (see Survival._spawn_zombie); the city itself is far bigger
 const NEAR := 900.0  # px: a player's surroundings, where zombies are about and sent to them
