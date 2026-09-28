@@ -5,9 +5,12 @@ extends Node2D
 
 const SIZE := 8  # slots in every cupboard, fridge and shelf
 
-## Tall furniture is drawn this much taller than its sketch, so wardrobes,
-## fridges and shelves stand about as high as a person.
-const TALL := {shelf = 1.4, fridge = 1.35, cabinet = 2.0, pantry = 1.4, toolchest = 1.2}
+## Tall furniture is drawn this much taller than its sketch, to its real
+## height by the proportions rule (docs/reviews/2026-09-28/3-scale.md: 16 px a
+## metre up to 3 m): a 1.8 m shelf 29 px, a 2 m drinks cooler 31.5, a 1.9 m
+## wardrobe 30.5. A family's fridge is shorter (HOME_FRIDGE, 1.7 m).
+const TALL := {shelf = 1.45, fridge = 1.5, cabinet = 2.35, pantry = 1.6, toolchest = 1.2}
+const HOME_FRIDGE := 1.3
 
 var data: Dictionary  # {id, kind, cell, table, long (a bed two cells long: 2 = down into the room, 1 = to the right, -1 left)}
 ## What taking each piece apart gives (see Crafting "strip").
@@ -47,7 +50,7 @@ func _draw() -> void:
 	_xf(Vector2.ZERO)
 	_xf(Vector2(0, -1), 0, Vector2(1, 0.35))
 	draw_circle(Vector2.ZERO, 8, Color(0, 0, 0, 0.3))
-	_xf(Vector2.ZERO, 0, Vector2(1, TALL.get(data.kind, 1.0)))
+	_xf(Vector2.ZERO, 0, Vector2(1, HOME_FRIDGE if data.kind == "fridge" and data.table == "home" else TALL.get(data.kind, 1.0)))
 	match data.kind:
 		"shelf":
 			_box(Rect2(-7, -20, 14, 20), Color("8a8e92") if data.table != "clothes" else Color("8a6a48"))

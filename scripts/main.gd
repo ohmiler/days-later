@@ -1526,8 +1526,9 @@ func _draw_pickup(ci: Node2D, pu: Dictionary, lift: float) -> void:
 	ci.draw_set_transform(at + Vector2(0, 1), 0, Vector2(1, 0.4))
 	Look._dot(ci, Vector2.ZERO, 3.5, Color(0, 0, 0, 0.35))
 	ci.draw_set_transform(Vector2.ZERO)
-	Items.draw_icon(ci, Rect2(at + Vector2(-3.5, -6), Vector2(7, 7)), pu.item.id)
-	Look._dot(ci, at + Vector2(2.5, -5.5), 0.9, Color(1, 1, 0.9, 0.9))
+	var s := Items.ground_size(pu.item.id)
+	Items.draw_icon(ci, Rect2(at + Vector2(-s * 0.5, 1.0 - s), Vector2(s, s)), pu.item.id)
+	Look._dot(ci, at + Vector2(s * 0.36, 1.5 - s * 0.93), 0.9, Color(1, 1, 0.9, 0.9))
 
 
 

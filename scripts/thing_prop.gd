@@ -110,8 +110,8 @@ func _draw() -> void:
 				draw_circle(Vector2(-2, -8), 1.0, Color(0.45, 0.25, 0.1, 0.8))  # rust where water used to sit
 		"radio":
 			draw_set_transform(Vector2(0, -1 - lift), 0, Vector2(1, 0.35))
-			draw_circle(Vector2.ZERO, 5.0, Color(0, 0, 0, 0.3))
-			draw_set_transform(Vector2(0, -lift))
+			draw_circle(Vector2.ZERO, 2.8, Color(0, 0, 0, 0.3))
+			draw_set_transform(Vector2(0, -lift), 0, Vector2(0.55, 0.55))  # (a portable radio: 30 cm, not a crate)
 			draw_rect(Rect2(-5, -7, 10, 6), Color("5a4a3a"))
 			draw_rect(Rect2(-4, -6, 4, 4), Color("2a2622"))  # speaker
 			draw_rect(Rect2(1, -6, 3, 2), Color("e8c060") if s.on else Color("6a6250"))  # dial
@@ -142,7 +142,7 @@ func _draw() -> void:
 		"vending":
 			draw_set_transform(Vector2(0, -1 - lift), 0, Vector2(1, 0.35))
 			draw_circle(Vector2.ZERO, 8.0, Color(0, 0, 0, 0.3))
-			draw_set_transform(Vector2(0, -lift))
+			draw_set_transform(Vector2(0, -lift), 0, Vector2(1, 1.25))  # (to its real 1.85 m: 30 px)
 			var body := Color("2a62a8") if thing.id % 2 == 0 else Color("b8302a")
 			draw_rect(Rect2(-6, -24, 12, 24), body)
 			draw_rect(Rect2(-6, -24, 12, 2), body.lightened(0.2))

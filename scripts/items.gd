@@ -725,6 +725,15 @@ static func _pick(weights: Dictionary, rng: RandomNumberGenerator):
 
 # --- Icons ------------------------------------------------------------------
 
+## How big an item is drawn lying on the ground (px square): a weapon as long
+## as it is in the hand, a big thing by its `size`, small things 7.
+static func ground_size(id: String) -> float:
+	var d := def(id)
+	if d.get("type") in ["weapon", "gun"] and d.has("draw"):
+		return float(d.draw.len) + 6.0
+	return float(d.get("size", 7.0))
+
+
 static func draw_icon(ci: CanvasItem, r: Rect2, id: String) -> void:
 	var d := def(id)
 	var c := r.get_center()
