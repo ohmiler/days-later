@@ -320,6 +320,9 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 			main.skills.gain(p, "combat", "head")
 		if z.hp <= 0:
 			main.skills.gain(p, "combat", "kill")
+			main.quests.note(p, "kill", {kind = z.kind})
+			if where == "head":
+				main.quests.note(p, "kill_head")
 			_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0, how, where)
 			p.kills += 1
 			continue
@@ -443,6 +446,8 @@ func _silent_kill(p: Player, z: Zombie, wid: String) -> void:
 	_kill_zombie(z, side, wid, "head", false, "held")
 	main.skills.gain(p, "stealth", "silent_kill")
 	main.skills.gain(p, "combat", "kill")
+	main.quests.note(p, "silent_kill")
+	main.quests.note(p, "kill", {kind = z.kind})
 	p.kills += 1
 	main._toast(p, "ฆ่าเงียบ")
 
@@ -653,6 +658,9 @@ func fire(p: Player, hand: String) -> void:
 			main.skills.gain(p, "combat", "hit")
 			if hit.hp <= 0:
 				main.skills.gain(p, "combat", "kill")
+				main.quests.note(p, "kill", {kind = hit.kind})
+				if where == "head":
+					main.quests.note(p, "kill_head")
 			if hit.hp <= 0 and main.zombies.has(hit.zid):
 				_kill_zombie(hit, 1.0 if dir.x >= 0 else -1.0, "gun", where, int(d.pellets) > 1 and length < 60.0)
 				p.kills += 1

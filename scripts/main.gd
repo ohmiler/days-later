@@ -25,6 +25,7 @@ var things: Things
 var crafting: Crafting
 var admin: Admin
 var skills: Skills
+var quests: Quests
 var vehicles: Vehicles
 var port := PORT  # override with -- --port=N
 var world: World
@@ -141,6 +142,7 @@ func _ready() -> void:
 	crafting = _module(Crafting.new(), "Crafting")
 	admin = _module(Admin.new(), "Admin")
 	skills = _module(Skills.new(), "Skills")
+	quests = _module(Quests.new(), "Quests")
 	vehicles = _module(Vehicles.new(), "Vehicles")
 	world_state = _module(WorldState.new(), "WorldState")
 	phantoms = Phantoms.new()
@@ -581,7 +583,9 @@ func _server_tick(delta: float) -> void:
 			p.dropped = true
 			inventory._drop_everything(p)
 			skills.on_death(p)
+			quests.on_death(p)
 	skills.server_tick(delta)
+	quests.server_tick(delta)
 	var t_ai := Time.get_ticks_usec() if profiling else 0
 	for z: Zombie in zombies.values():
 		if not admin.frozen:
@@ -703,7 +707,7 @@ func _module(m: Node, node_name: String) -> Node:
 func _handler(method: StringName) -> Node:
 	if has_method(method):
 		return self
-	for m in [combat, inventory, doors, survival, net, actions, things, crafting, vehicles, admin, skills]:
+	for m in [combat, inventory, doors, survival, net, actions, things, crafting, vehicles, admin, skills, quests]:
 		if m.has_method(method):
 			return m
 	push_error("No handler for %s" % method)

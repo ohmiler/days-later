@@ -458,6 +458,10 @@ func _use_selected(p: Player) -> void:
 		main._toast(p, Body.add_condition(p, "food_poisoning", main.now()))
 	p.thirst = clampf(p.thirst + d.get("drink", 0.0), 0.0, 100.0)
 	p.stamina = minf(100.0, p.stamina + d.get("stamina", 0.0))
+	if d.get("food", 0.0) > 0.0:
+		main.quests.note(p, "eat", {item = it.id})
+	if d.get("drink", 0.0) > 0.0:
+		main.quests.note(p, "drink", {item = it.id})
 	if d.get("cure", 0.0) > 0.0 and Body.clear_fever(p):
 		main._toast(p, "แผลหายอักเสบแล้ว")
 		main.skills.gain(p, "medic", "cure")
@@ -476,6 +480,7 @@ func _use_selected(p: Player) -> void:
 		if done > 0:
 			main._toast(p, "พันแผลแล้ว")
 			main.skills.gain(p, "medic", "treat", done)
+			main.quests.note(p, "treat", {}, done)
 	it.n -= 1
 	if it.n <= 0:
 		p.inv[p.sel] = null
@@ -583,6 +588,7 @@ func _tick_search(p: Player, delta: float) -> void:
 		return
 	p.search_id = -1
 	container_searched.rpc(f.data.id)
+	main.quests.note(p, "search")
 	# What turned up stays in the furniture: the bag screen opens on it and you
 	# take what you want. Anything left behind is still there later.
 	var bid := Buildings.at(main.world, f.data.cell)

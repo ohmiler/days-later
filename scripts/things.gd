@@ -214,12 +214,10 @@ func _do_tap_fill(p: Player, th: Dictionary) -> void:
 
 
 func _do_stove_boil(p: Player, th: Dictionary) -> void:
-	main.skills.gain(p, "cook", "boil")
 	_stove_on(p, th, _pot_with_water(p, 1), "boil", BOIL_HOURS)
 
 
 func _do_stove_cook(p: Player, th: Dictionary) -> void:
-	main.skills.gain(p, "cook", "cook")
 	var slot := -1
 	for i in p.inv.size():
 		if p.inv[i] != null and Items.def(p.inv[i].id).has("cooks"):
@@ -241,6 +239,8 @@ func _do_stove_cook(p: Player, th: Dictionary) -> void:
 func _stove_on(p: Player, th: Dictionary, slot: int, what: String, hours: float) -> void:
 	if slot < 0:
 		return
+	main.skills.gain(p, "cook", what)  # (only once it's really on the stove)
+	main.quests.note(p, what)
 	var pot: Dictionary = p.inv[slot]
 	p.inv[slot] = null
 	main.inventory._send_inv(p)
