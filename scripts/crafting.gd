@@ -28,9 +28,16 @@ static func _load() -> Dictionary:
 	for id in cf.get_sections():
 		var r := {needs = cf.get_value(id, "needs", {}), makes = cf.get_value(id, "makes", ""),
 				count = cf.get_value(id, "count", 1), time = float(cf.get_value(id, "time", 2.0))}
-		r.name = cf.get_value(id, "name", Items.display_name(r.makes))
+		r.name = cf.get_value(id, "name", "")  # ("": the result's name, looked up when shown)
 		out[id] = r
 	return out
+
+
+## What the craft list calls recipe `id`. (Looked up late: while this table
+## loads, Items may not have read its own yet, and would give back the bare id.)
+static func recipe_name(id: String) -> String:
+	var r: Dictionary = RECIPES.get(id, {})
+	return r.name if r.get("name", "") != "" else Items.display_name(r.get("makes", id))
 
 
 ## What is wrong with the recipe table, one line each (the tests run this).
@@ -157,7 +164,26 @@ func _start(p: Player, job: Dictionary, seconds: float) -> void:
 	job.t = seconds
 	p.craft = job
 	main.fx_sound.rpc("rustle", p.position)
-	main._notify(p.peer_id, &"search_started", [seconds])  # the progress bar over the head
+	# The progress bar (over the head, on the HUD, in the bag), with what it's for.
+	main._notify(p.peer_id, &"search_started", [seconds, work_text(job), job.id if job.kind == "craft" else ""])
+
+
+## What the progress bar says for `job`: "ทำผ้าพันแผล", "ซ่อมไม้เบสบอล".
+static func work_text(job: Dictionary) -> String:
+	match job.kind:
+		"craft":
+			return "ทำ" + recipe_name(job.id)
+		"salvage":
+			return "แยก" + Items.display_name(job.id)
+		"repair":
+			return "ซ่อม" + Items.display_name(job.id)
+		"strip":
+			return "รื้อตู้เอาไม้"
+		"hotwire":
+			return "ต่อสายตรง"
+		"reload":
+			return "บรรจุกระสุน"
+	return ""
 
 
 func server_tick(p: Player, delta: float) -> void:

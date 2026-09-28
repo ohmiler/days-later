@@ -15,6 +15,8 @@ func run() -> void:
 	var bad := Crafting.problems()
 	check(Crafting.RECIPES.size() >= 6, "the recipe table loads (%d)" % Crafting.RECIPES.size())
 	check(bad.is_empty(), "every recipe is filled in correctly" + ("" if bad.is_empty() else ": " + "; ".join(bad)))
+	var bare := Crafting.RECIPES.keys().filter(func(id): return Crafting.recipe_name(id) == id or Crafting.recipe_name(id) == Crafting.RECIPES[id].makes)
+	check(bare.is_empty(), "every recipe shows a Thai name, not its id (%s)" % ", ".join(bare))
 
 	await host(9390)
 	me.inv.fill(null)

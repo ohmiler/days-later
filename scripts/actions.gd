@@ -415,4 +415,4 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			p.search_t = main.inventory.SEARCH_TIME
 			main.fx_sound.rpc("rustle", f.position)
 			main._make_noise(f.position, main.NOISE_SEARCH)
-			main._notify(p.peer_id, &"search_started", [main.inventory.SEARCH_TIME])
+			main._notify(p.peer_id, &"search_started", [main.inventory.SEARCH_TIME, "ค้นหาของ", ""])

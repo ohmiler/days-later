@@ -184,20 +184,30 @@ func _gui_input(e: InputEvent) -> void:
 	cfg.save(GameUI.SETTINGS)
 
 
+const BAR := 44.0  # the title bar
+const LEGEND := 36.0  # the legend along the bottom
+
+
 func _draw() -> void:
 	if tex == null:
 		return
 	var sz := panel
-	draw_rect(Rect2(Vector2.ZERO, sz), Color(0.06, 0.055, 0.045, 0.97))
+	draw_rect(Rect2(-Vector2(4000, 4000), sz + Vector2(8000, 8000)), Color(UiTheme.SURFACE_000, 0.6))  # (the world goes dark behind)
+	UiTheme.panel(self, Rect2(Vector2.ZERO, sz))
 	var span := Vector2(World.W, World.H) * px
 	draw_texture_rect(tex, Rect2(origin, span), false)
 	# Unexplored parts: dark, with just the street grid showing through faintly.
 	draw_texture_rect(fog_tex, Rect2(origin, span), false)
-	draw_rect(Rect2(Vector2.ZERO, sz), UiTheme.LINE, false, 1)
-	draw_rect(Rect2(Vector2.ZERO, Vector2(sz.x, 30)), Color(0.06, 0.055, 0.045, 0.85))
-	draw_string(UiTheme.heading(), Vector2(12, 22), "แผนที่ · " + Zones.name_of(world.zone), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UiTheme.PAPER)
-	draw_string(UiTheme.body(), Vector2(0, 21), "ลูกกลิ้งเมาส์ซูม · คลิกขวาปักหมุด · คลิกหมุดเพื่อเอาออก · [M] ปิด  ", HORIZONTAL_ALIGNMENT_RIGHT, sz.x, 13,
-			Color(UiTheme.PAPER, 0.6))
+	# A bar along the top: where, and how to use it.
+	draw_style_box(UiTheme.rbox(Color(UiTheme.SURFACE_100, 0.92), 0), Rect2(1, 1, sz.x - 2, BAR))
+	draw_line(Vector2(1, BAR + 1), Vector2(sz.x - 1, BAR + 1), UiTheme.BORDER)
+	var P := UiTheme.SPACE_4
+	draw_string(UiTheme.heading(), Vector2(P, 30), "แผนที่", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_TITLE, UiTheme.TEXT)
+	var tw := UiTheme.heading().get_string_size("แผนที่", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_TITLE).x
+	draw_string(UiTheme.medium(), Vector2(P + tw + 10, 29), Zones.name_of(world.zone), HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_BODY, UiTheme.TEXT_MUTED)
+	var hint := "ลูกกลิ้ง ซูม · คลิกขวา ปักหมุด · คลิกหมุด เอาออก · [M] ปิด"
+	var hw := UiTheme.draw_rich(self, Vector2.ZERO, hint, UiTheme.body(), UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED, true, true)
+	UiTheme.draw_rich(self, Vector2(sz.x - P - hw, 29), hint, UiTheme.body(), UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED, false, true)
 	var f := UiTheme.body_bold()
 	# The ways out to other zones.
 	for e in world.exits:
@@ -211,18 +221,26 @@ func _draw() -> void:
 		draw_string(f, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("e8f0e0"))
 	for i in pins.size():
 		var p := origin + (Vector2(pins[i]) + Vector2(0.5, 0.5)) * px
-		draw_circle(p + Vector2(0, -8), 5.5, Color("c83a2e"))
-		draw_colored_polygon(PackedVector2Array([p + Vector2(-4, -6), p + Vector2(4, -6), p]), Color("c83a2e"))
+		draw_circle(p + Vector2(0, -8), 5.5, UiTheme.DANGER_DEEP)
+		draw_colored_polygon(PackedVector2Array([p + Vector2(-4, -6), p + Vector2(4, -6), p]), UiTheme.DANGER_DEEP)
 		draw_string(f, p + Vector2(-5, -5), str(i + 1), HORIZONTAL_ALIGNMENT_CENTER, 10, 9, Color.WHITE)
 	for o in others:
 		var p: Vector2 = origin + o[0] / World.TILE * px
-		draw_circle(p, 3.5, Color("e8e4d0"))
-		draw_string(f, p + Vector2(6, 4), o[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e8e4d0"))
+		draw_circle(p, 3.5, UiTheme.INFO)
+		UiTheme.over_world(self, p + Vector2(7, 4), o[1], f, UiTheme.SIZE_LABEL, UiTheme.INFO)
 	if me:
 		var p := origin + me.position / World.TILE * px
 		var d := me.aim.normalized() if me.aim.length() > 0.1 else Vector2.DOWN
-		draw_colored_polygon(PackedVector2Array([p + d * 9, p + d.orthogonal() * 5 - d * 4, p - d.orthogonal() * 5 - d * 4]), UiTheme.WARN)
-		draw_arc(p, 11, 0, TAU, 20, Color(UiTheme.WARN, 0.5 + 0.3 * sin(Time.get_ticks_msec() / 200.0)), 1.5)
-	draw_rect(Rect2(Vector2(0, sz.y - 24), Vector2(sz.x, 24)), Color(0.06, 0.055, 0.045, 0.85))
-	draw_string(UiTheme.body(), Vector2(12, sz.y - 7), "สีแดง = วัด · สีฟ้า = มินิมาร์ท · สีเทาอ่อน = คอนโด · วงเขียว = ทางไปย่านอื่น · ที่มืดคือที่ยังไม่เคยไป",
-			HORIZONTAL_ALIGNMENT_LEFT, sz.x, 13, Color(UiTheme.PAPER, 0.55))
+		draw_colored_polygon(PackedVector2Array([p + d * 9, p + d.orthogonal() * 5 - d * 4, p - d.orthogonal() * 5 - d * 4]), UiTheme.ACCENT)
+		draw_arc(p, 11, 0, TAU, 20, Color(UiTheme.ACCENT, 0.5 + 0.3 * sin(Time.get_ticks_msec() / 200.0)), 1.5)
+	# The legend along the bottom: a swatch for each thing, then its name.
+	var ly := sz.y - LEGEND
+	draw_style_box(UiTheme.rbox(Color(UiTheme.SURFACE_100, 0.92), 0), Rect2(1, ly, sz.x - 2, LEGEND - 1))
+	draw_line(Vector2(1, ly), Vector2(sz.x - 1, ly), UiTheme.BORDER)
+	var x := P
+	for item in [[Color("b8452a"), "วัด"], [Color("3a72b8"), "มินิมาร์ท"], [Color("8e949a"), "คอนโด"], [Color("1e6a3a"), "ทางไปย่านอื่น"],
+			[UiTheme.ACCENT, "คุณ"], [UiTheme.INFO, "คนอื่น"], [UiTheme.DANGER_DEEP, "หมุด"], [Color(0.03, 0.03, 0.03), "ยังไม่เคยไป"]]:
+		var cy := ly + LEGEND / 2
+		draw_style_box(UiTheme.rbox(item[0], 2, UiTheme.BORDER_STRONG), Rect2(x, cy - 5, 10, 10))
+		draw_string(UiTheme.medium(), Vector2(x + 16, cy + 5), item[1], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)
+		x += 16 + UiTheme.medium().get_string_size(item[1], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL).x + UiTheme.SPACE_4
