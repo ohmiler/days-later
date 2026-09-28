@@ -58,7 +58,11 @@ func _draw() -> void:
 		draw_circle(Vector2.ZERO, 1.5 + 3.5 * pool, Color(0.28, 0.02, 0.02, 0.7))  # it keeps bleeding where it lies
 	draw_set_transform(Vector2(0, 0.5), 0, Vector2(1, 0.35))
 	draw_circle(Vector2.ZERO, 3.0 if kind != "chunk" else 1.4, Color(0, 0, 0, 0.3 * clampf(1.0 - h / 40.0, 0.2, 1.0)))
-	draw_set_transform(Vector2(0, -h - 2.0), rot, Vector2(-1 if flip else 1, 1))
+	# (Sized to the body it came off: see Proportions.)
+	var k := 1.0
+	if Proportions.on:
+		k = {head = Proportions.head_s, arm = Proportions.A, leg = Proportions.L}.get(kind, 1.0)
+	draw_set_transform(Vector2(0, -h - 2.0), rot, Vector2(-k if flip else k, k))
 	var skin: Color = lk.get("skin", Look.ZOMBIE_SKINS[0])
 	match kind:
 		"head":

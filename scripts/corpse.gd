@@ -281,8 +281,10 @@ func _draw_bones(ci: MeshCanvas) -> void:
 		var x := f * (9.0 + i * 2.2)
 		ci.draw_line(Vector2(x, -4), Vector2(x, 0), bone, 0.8)  # ribs
 	ci.draw_rect(Rect2(f * 2 - 2, -3.5, 4, 3), bone)  # pelvis
-	ci.draw_line(Vector2(f * 2, -1), Vector2(f * -8, -1), bone, 1.0)  # legs
-	ci.draw_line(Vector2(f * 2, -2), Vector2(f * -8, -3), bone, 1.0)
+	var leg := 10.0 * (Proportions.L if Proportions.on else 1.0)  # (this body's legs and skull: see Proportions)
+	var skull := 3.0 * (Proportions.head_s if Proportions.on else 1.0)
+	ci.draw_line(Vector2(f * 2, -1), Vector2(f * (2.0 - leg), -1), bone, 1.0)  # legs
+	ci.draw_line(Vector2(f * 2, -2), Vector2(f * (2.0 - leg), -3), bone, 1.0)
 	if not lk.get("missing", 0) & Look.LOST_HEAD:
-		ci.draw_circle(Vector2(f * 21, -2.5), 3.0, bone)  # skull
-		ci.draw_circle(Vector2(f * 21.8, -2.8), 0.7, Color(0.1, 0.08, 0.06))
+		ci.draw_circle(Vector2(f * (18.0 + skull), -2.5), skull, bone)  # skull
+		ci.draw_circle(Vector2(f * (18.8 + skull), -2.8), 0.7 * skull / 3.0, Color(0.1, 0.08, 0.06))

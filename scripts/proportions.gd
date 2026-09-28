@@ -255,17 +255,43 @@ class Warp extends RefCounted:
 	func draw_set_transform_matrix(m: Transform2D) -> void:
 		target.draw_set_transform_matrix(m)
 
+	# (The maps below are map_body and map_head written out with the
+	# landmarks in locals: this runs for every point of every character every
+	# frame, and GDScript calls and static lookups per point cost more than the
+	# arithmetic.)
 	func draw_primitive(pts: PackedVector2Array, cols: PackedColorArray, uvs: PackedVector2Array, tex: Texture2D = null) -> void:
-		match Proportions.mode:
-			Proportions.BODY:
-				var q := PackedVector2Array(pts)
-				for i in q.size():
-					q[i] = Proportions.map_body(q[i])
-				target.draw_primitive(q, cols, uvs, tex)
-			Proportions.HEAD:
-				var q := PackedVector2Array(pts)
-				for i in q.size():
-					q[i] = Proportions.map_head(q[i])
-				target.draw_primitive(q, cols, uvs, tex)
-			_:
-				target.draw_primitive(pts, cols, uvs, tex)
+		var m: int = Proportions.mode
+		if m == Proportions.OFF:
+			target.draw_primitive(pts, cols, uvs, tex)
+			return
+		var q := PackedVector2Array(pts)
+		var n := q.size()
+		var sh: Vector2 = Proportions.shift
+		if m == Proportions.HEAD:
+			var c: Vector2 = Proportions.hc
+			var k: float = Proportions.head_s - 1.0
+			for i in n:
+				var p: Vector2 = q[i]
+				q[i] = p + (p - c) * k + sh
+		else:
+			var sx: float = Proportions.wx_side if Proportions.side else Proportions.wx
+			var l: float = Proportions.L
+			var hip_d: float = Proportions.hip_y - C_HIP
+			var sh_d: float = Proportions.sh_y - C_SH
+			var col_d: float = Proportions.collar_y - C_COLLAR
+			var t1: float = Proportions.T - 1.0
+			var cb1: float = Proportions.CB - 1.0
+			for i in n:
+				var p: Vector2 = q[i]
+				var y := p.y
+				if y >= C_HIP:
+					if y <= 0.0:
+						y *= l
+				elif y >= C_SH:
+					y += hip_d + (y - C_HIP) * t1
+				elif y >= C_COLLAR:
+					y += sh_d + (y - C_SH) * cb1
+				else:
+					y += col_d + (y - C_COLLAR) * t1
+				q[i] = Vector2(p.x * sx + sh.x, y + sh.y)
+		target.draw_primitive(q, cols, uvs, tex)
