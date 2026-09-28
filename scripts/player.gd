@@ -1083,21 +1083,26 @@ func _draw_leap() -> void:
 ## A silent kill, side-on (facing +x, the zombie just ahead): reach in, a
 ## hand over its mouth, the blade raised and driven in, then down with it as
 ## it's lowered to the ground. [time 0..1, pose] keyframes.
-static var STAB_KEYS := [  # (static var, not const: Rig.HIP_Y is live now; built once with the default)
-	[0.0, {seat = Vector2(0, Rig.HIP_Y + 2.0), hands = [Vector2(3.0, -14.0), Vector2(2.0, -12.0)], feet = [Vector2(-3.0, 0.0), Vector2(1.5, 0.0)], lean = 0.1}],
-	[0.25, {seat = Vector2(0.8, Rig.HIP_Y + 0.6), hands = [Vector2(9.5, -19.0), Vector2(4.0, -24.0)], feet = [Vector2(-2.5, 0.0), Vector2(3.0, 0.0)], lean = 0.12}],
-	[0.45, {seat = Vector2(1.0, Rig.HIP_Y + 0.6), hands = [Vector2(9.5, -19.0), Vector2(8.5, -20.5)], feet = [Vector2(-2.5, 0.0), Vector2(3.0, 0.0)], lean = 0.18}],
-	[1.0, {seat = Vector2(1.5, Rig.HIP_Y + 3.5), hands = [Vector2(10.0, -8.0), Vector2(9.0, -7.0)], feet = [Vector2(-3.0, 0.0), Vector2(3.5, 0.0)], lean = 0.5}],
-]
+## (Worked out for the body in use: hips from Rig.HIP_Y, hands where the arms
+## reach on it: Proportions.ay.)
+static func stab_keys() -> Array:
+	var ay := func(y: float) -> float: return Proportions.ay(y) if Proportions.on else y
+	return [
+		[0.0, {seat = Vector2(0, Rig.HIP_Y + 2.0), hands = [Vector2(3.0, ay.call(-14.0)), Vector2(2.0, ay.call(-12.0))], feet = [Vector2(-3.0, 0.0), Vector2(1.5, 0.0)], lean = 0.1}],
+		[0.25, {seat = Vector2(0.8, Rig.HIP_Y + 0.6), hands = [Vector2(9.5, ay.call(-19.0)), Vector2(4.0, ay.call(-24.0))], feet = [Vector2(-2.5, 0.0), Vector2(3.0, 0.0)], lean = 0.12}],
+		[0.45, {seat = Vector2(1.0, Rig.HIP_Y + 0.6), hands = [Vector2(9.5, ay.call(-19.0)), Vector2(8.5, ay.call(-20.5))], feet = [Vector2(-2.5, 0.0), Vector2(3.0, 0.0)], lean = 0.18}],
+		[1.0, {seat = Vector2(1.5, Rig.HIP_Y + 3.5), hands = [Vector2(10.0, ay.call(-8.0)), Vector2(9.0, ay.call(-7.0))], feet = [Vector2(-3.0, 0.0), Vector2(3.5, 0.0)], lean = 0.5}],
+	]
 
 
 func _draw_stab(wdef: Dictionary) -> void:
 	var k := clampf(stab_t / Combat.STAB_TIME, 0.0, 1.0)
+	var keys := stab_keys()
 	var i := 0
-	while i < STAB_KEYS.size() - 2 and k > STAB_KEYS[i + 1][0]:
+	while i < keys.size() - 2 and k > keys[i + 1][0]:
 		i += 1
-	var a: Array = STAB_KEYS[i]
-	var b: Array = STAB_KEYS[i + 1]
+	var a: Array = keys[i]
+	var b: Array = keys[i + 1]
 	var u := smoothstep(0.0, 1.0, clampf((k - a[0]) / (b[0] - a[0]), 0.0, 1.0))
 	var pa: Dictionary = a[1]
 	var pb: Dictionary = b[1]
@@ -1112,6 +1117,16 @@ func _draw_stab(wdef: Dictionary) -> void:
 ## The jump's three moments (push off, in the air, landing) as anchor poses,
 ## side-on (facing +x) or from the front/back.
 static func leap_keys(side: bool) -> Array:
+	var keys := _leap_keys(side)
+	if not Proportions.on:
+		return keys
+	for k: Dictionary in keys:
+		k.hands = k.hands.map(func(h: Vector2) -> Vector2: return Vector2(h.x, Proportions.ay(h.y)))
+		k.feet = k.feet.map(func(f: Vector2) -> Vector2: return Vector2(f.x, f.y * Proportions.L))
+	return keys
+
+
+static func _leap_keys(side: bool) -> Array:
 	if side:
 		return [{seat = Vector2(-0.5, Rig.HIP_Y + 1.4), hands = [Vector2(-4.0, -11.0), Vector2(-3.0, -10.5)], feet = [Vector2(-4.0, 0.0), Vector2(2.5, -1.5)], lean = 0.2},
 				{seat = Vector2(0.0, Rig.HIP_Y), hands = [Vector2(6.0, -17.0), Vector2(5.0, -16.0)], feet = [Vector2(-2.5, -4.0), Vector2(3.5, -5.5)], lean = 0.15},

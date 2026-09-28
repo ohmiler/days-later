@@ -36,7 +36,7 @@ const BIKE_COLORS := {
 ## Where a rider's hips, hands and feet go on each model, facing +x from the
 ## bike's ground point (see Rig anchors). Sports bikes put the feet back and
 ## the bars low; trail bikes sit tall.
-static var fix := false  # (scratch: see rider_anchors)
+static var fix := true  # long legs rest their feet forward on the floorboard (see rider_anchors)
 
 const BIKE_SEATS := {
 	wave = {seat = Vector2(-7, -15.5), bars = Vector2(7.5, -20.5), pegs = Vector2(0, -9.5)},
@@ -107,7 +107,7 @@ static func extra_of(seed_val: int) -> int:
 static func rider_anchors(model: String, view := "side") -> Dictionary:
 	var b: Dictionary = BIKE_SEATS.get(model, BIKE_SEATS.wave)
 	if fix and Proportions.on:
-		# (Scratch mock: long legs put their feet forward on the floorboard, not under the seat.)
+		# Long legs put their feet forward on the floorboard, not under the seat.
 		b = b.duplicate()
 		b.pegs = b.pegs + Vector2(3.5 * (Proportions.L - 1.0) / 0.5, 1.0)
 	var fx := 3.2 * (Proportions.leg_x if fix and Proportions.on else 1.0)
