@@ -36,6 +36,8 @@ func _draw() -> void:
 		return
 	var head := UiTheme.heading()
 	var body := UiTheme.body()
+	var small := UiTheme.medium()
+	var P := UiTheme.SPACE_3
 	var y := 0.0
 	var first := true
 	for id in active:
@@ -43,32 +45,38 @@ func _draw() -> void:
 			continue
 		var d: Dictionary = Quests.DEFS[id]
 		var counts: Array = active[id]
-		var lines: int = 1 + d.objectives.size()
 		var why: bool = first and _full_t > 0.0
 		var why_lines := 0
 		if why:
-			why_lines = mini(3, ceili(body.get_string_size(d.desc, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x / (W - 20)) + 0)
-		var h: float = 12.0 + lines * 20.0 + why_lines * 15.0 + (4.0 if why else 0.0)
-		draw_style_box(UiTheme.box(Color(0.06, 0.055, 0.045, 0.72), 6, Color(UiTheme.WARN, 0.35 if d.get("daily", false) else 0.7), 1),
-				Rect2(0, y, W, h))
-		var tag: String = "ประจำวัน · " if d.get("daily", false) else ""
-		draw_string(head, Vector2(10, y + 20), tag + d.name, HORIZONTAL_ALIGNMENT_LEFT, W - 20, 14, UiTheme.WARN)
-		var ly := y + 20
+			why_lines = mini(3, ceili(body.get_string_size(d.desc, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_CAPTION).x / (W - P * 2)))
+		var h: float = P * 2 + 16 + 22 + d.objectives.size() * 22 + (why_lines * 16.0 + 4.0 if why else 0.0)
+		UiTheme.card(self, Rect2(0, y, W, h))
+		var tag: String = "ภารกิจประจำวัน" if d.get("daily", false) else "ภารกิจ"
+		draw_string(small, Vector2(P, y + P + 12), tag, HORIZONTAL_ALIGNMENT_LEFT, W - P * 2, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)
+		draw_string(head, Vector2(P, y + P + 33), d.name, HORIZONTAL_ALIGNMENT_LEFT, W - P * 2, UiTheme.SIZE_HEADING, UiTheme.ACCENT)
+		var ly := y + P + 38
 		if why:  # (wrapped: it says how, too)
-			draw_multiline_string(body, Vector2(10, ly + 16), d.desc, HORIZONTAL_ALIGNMENT_LEFT, W - 20, 11, why_lines,
-					Color(UiTheme.PAPER, 0.65 * clampf(_full_t, 0.0, 1.0)))
-			ly += why_lines * 15.0 + 4.0
+			draw_multiline_string(body, Vector2(P, ly + 13), d.desc, HORIZONTAL_ALIGNMENT_LEFT, W - P * 2, UiTheme.SIZE_CAPTION, why_lines,
+					Color(UiTheme.TEXT_MUTED, clampf(_full_t, 0.0, 1.0)))
+			ly += why_lines * 16.0 + 4.0
 		for i in d.objectives.size():
 			var o: Dictionary = d.objectives[i]
 			var c: int = counts[i] if i < counts.size() else 0
 			var done: bool = c >= int(o.n)
-			ly += 20
-			var box := Rect2(10, ly - 10, 10, 10)
-			draw_rect(box, Color(UiTheme.WARN, 0.9) if done else Color(UiTheme.PAPER, 0.5), done)
-			var text: String = o.text + ("" if int(o.n) <= 1 else "  %d/%d" % [c, int(o.n)])
-			draw_string(body, Vector2(28, ly), _fit(text, body, 13, W - 38), HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
-					Color(UiTheme.PAPER, 0.45) if done else UiTheme.PAPER)
-		y += h + 6
+			ly += 22
+			var box := Rect2(P, ly - 11, 12, 12)
+			if done:
+				draw_style_box(UiTheme.rbox(UiTheme.OK, 2), box)
+			else:
+				draw_style_box(UiTheme.rbox(Color(0, 0, 0, 0), 2, UiTheme.TEXT_MUTED), box)
+			var count := "" if int(o.n) <= 1 else "%d/%d" % [mini(c, int(o.n)), int(o.n)]
+			var cw := small.get_string_size(count, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL).x
+			var col := UiTheme.TEXT_MUTED if done else UiTheme.TEXT
+			draw_string(body, Vector2(P + 20, ly), _fit(o.text, body, UiTheme.SIZE_BODY, W - P * 2 - 28 - cw), HORIZONTAL_ALIGNMENT_LEFT, -1,
+					UiTheme.SIZE_BODY, col)
+			if count != "":
+				draw_string(small, Vector2(P, ly), count, HORIZONTAL_ALIGNMENT_RIGHT, W - P * 2, UiTheme.SIZE_LABEL, col)
+		y += h + UiTheme.SPACE_2
 		first = false
 
 

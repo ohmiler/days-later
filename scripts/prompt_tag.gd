@@ -56,32 +56,32 @@ func _draw() -> void:
 			r.position.y = b.position.y - h - 6.0
 	r.position.x = clampf(r.position.x, 8.0, maxf(8.0, screen.x - w - 8.0))  # (kept on screen)
 	r.position.y = clampf(r.position.y, 26.0, maxf(26.0, screen.y - h - 120.0))
-	draw_style_box(UiTheme.box(Color(0.06, 0.06, 0.06, 0.62 * alpha), 6), r)
+	draw_style_box(UiTheme.rbox(Color(UiTheme.SURFACE_100, UiTheme.OPACITY_CARD * alpha), UiTheme.RADIUS_SM, Color(UiTheme.BORDER, alpha)), r)
 	var x := r.position.x + 5.0
 	_key(Rect2(x, r.position.y + 4, kw, h - 8), key, alpha)
 	x += kw + 7.0
 	var base := r.position.y + h / 2 + SIZE * 0.36
-	draw_string(f, Vector2(x, base), verb, HORIZONTAL_ALIGNMENT_LEFT, -1, SIZE, Color(UiTheme.PAPER, alpha))
+	draw_string(f, Vector2(x, base), verb, HORIZONTAL_ALIGNMENT_LEFT, -1, SIZE, Color(UiTheme.TEXT, alpha))
 	x += vw
 	if more:
 		for i in 3:
-			draw_circle(Vector2(x + 4 + i * 4.0, base - 3), 1.3, Color(UiTheme.PAPER, 0.6 * alpha))
+			draw_circle(Vector2(x + 4 + i * 4.0, base - 3), 1.3, Color(UiTheme.TEXT, 0.6 * alpha))
 		x += dots
 	if second != "":
 		x += 10.0
 		_key(Rect2(x, r.position.y + 4, 22.0, h - 8), s_key, alpha)
 		x += 28.0
-		draw_string(f, Vector2(x, base), s_text, HORIZONTAL_ALIGNMENT_LEFT, -1, SIZE, Color(UiTheme.PAPER, alpha))
+		draw_string(f, Vector2(x, base), s_text, HORIZONTAL_ALIGNMENT_LEFT, -1, SIZE, Color(UiTheme.TEXT, alpha))
 	# What it is, once you stay on it: over the tag, never down over what's below it.
 	var k := 1.0 if always_detail else clampf((dwell - DWELL) / 0.25, 0.0, 1.0)
 	if detail != "" and k > 0.0:
 		var dw := fb.get_string_size(detail, HORIZONTAL_ALIGNMENT_LEFT, -1, DETAIL).x
 		var p := Vector2(r.get_center().x - dw / 2, r.position.y - 6)
 		draw_string_outline(fb, p, detail, HORIZONTAL_ALIGNMENT_LEFT, -1, DETAIL, 5, Color(0, 0, 0, 0.6 * k))
-		draw_string(fb, p, detail, HORIZONTAL_ALIGNMENT_LEFT, -1, DETAIL, Color(UiTheme.PAPER, 0.85 * k))
+		draw_string(fb, p, detail, HORIZONTAL_ALIGNMENT_LEFT, -1, DETAIL, Color(UiTheme.TEXT, 0.85 * k))
 
 
 func _key(r: Rect2, k: String, alpha: float) -> void:
-	draw_style_box(UiTheme.box(Color(UiTheme.WARN, alpha), 4), r)
+	draw_style_box(UiTheme.rbox(Color(UiTheme.ACCENT, alpha), UiTheme.RADIUS_SM), r)
 	draw_string(UiTheme.medium(), Vector2(r.position.x, r.get_center().y + (SIZE - 1) * 0.36), k, HORIZONTAL_ALIGNMENT_CENTER,
-			r.size.x, SIZE - 1, UiTheme.INK)
+			r.size.x, SIZE - 1, UiTheme.ON_ACCENT)

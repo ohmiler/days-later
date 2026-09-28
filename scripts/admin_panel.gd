@@ -47,8 +47,12 @@ func _ready() -> void:
 	search.placeholder_text = "ค้นหา (ชื่อหรือ id)"
 	search.position = Vector2(W - 220, 92)
 	search.size = Vector2(200, 28)
-	search.add_theme_font_override("font", UiTheme.body())
-	search.add_theme_font_size_override("font_size", 13)
+	UiTheme.style_input(search)
+	search.add_theme_font_size_override("font_size", UiTheme.SIZE_LABEL)
+	for st in ["normal", "focus"]:
+		var sb: StyleBoxFlat = search.get_theme_stylebox(st)
+		sb.content_margin_top = 4
+		sb.content_margin_bottom = 5
 	search.text_changed.connect(func(_t): scroll = 0; queue_redraw())
 	add_child(search)
 	visibility_changed.connect(func():
@@ -195,17 +199,21 @@ func _draw() -> void:
 	var head := UiTheme.heading()
 	var body := UiTheme.body()
 	var m := get_local_mouse_position()
-	draw_style_box(UiTheme.box(Color(0.06, 0.055, 0.045, 0.98), 10, Color("8a3a2a"), 2), Rect2(Vector2.ZERO, size))
-	draw_string(head, Vector2(20, 34), "เมนูแอดมิน (ทดสอบ)", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, UiTheme.PAPER)
-	draw_string(body, Vector2(220, 34), "[F2] ปิด · ทุกอย่างอ่านจากตารางของเกม ของใหม่จะมาเอง", HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
-			Color(UiTheme.PAPER, 0.5))
+	UiTheme.panel(self, Rect2(Vector2.ZERO, size))
+	draw_rect(Rect2(UiTheme.RADIUS_LG, 0, size.x - UiTheme.RADIUS_LG * 2, 3), UiTheme.DANGER_DEEP)  # (red along the top: not part of the game)
+	draw_string(head, Vector2(20, 36), "เมนูแอดมิน", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_TITLE, UiTheme.TEXT)
+	var hw := head.get_string_size("เมนูแอดมิน", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_TITLE).x
+	draw_string(UiTheme.medium(), Vector2(28 + hw, 35), "ทดสอบ · อ่านจากตารางของเกม ของใหม่มาเอง", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_CAPTION,
+			UiTheme.TEXT_MUTED)
+	var cw := UiTheme.draw_rich(self, Vector2.ZERO, "[F2] ปิด", body, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED, true, true)
+	UiTheme.draw_rich(self, Vector2(size.x - 20 - cw, 35), "[F2] ปิด", body, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED, false, true)
 	for i in TABS.size():
 		_button(_tab_rect(i), TABS[i][1], tab == TABS[i][0], m, 14)
 	if tab != "items":
 		_build()
 		for b in _buttons:
 			if b[4] != "":
-				draw_string(head, Vector2(20, b[0].position.y + 21), b[4], HORIZONTAL_ALIGNMENT_LEFT, 100, 13, Color(UiTheme.PAPER, 0.6))
+				draw_string(UiTheme.medium(), Vector2(20, b[0].position.y + 20), b[4], HORIZONTAL_ALIGNMENT_LEFT, 100, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)
 			_button(b[0], b[1], b[3], m, 13)
 		return
 	for i in CATS.size():
@@ -217,26 +225,24 @@ func _draw() -> void:
 		if not _visible(r):
 			continue
 		var lit := r.has_point(m)
-		draw_style_box(UiTheme.box(Color("ad9870"), 6, UiTheme.WARN if lit else Color("6e5b3c"), 2), r)
-		Items.draw_icon(self, r.grow(-11), ids[i])
 		var rarity := Items.rarity_of(ids[i])
-		if rarity != "common":
-			draw_colored_polygon(PackedVector2Array([r.position + Vector2(4, 4), r.position + Vector2(14, 4), r.position + Vector2(4, 14)]),
-					Items.RARITY_COLORS[rarity])
+		UiTheme.slot(self, r, true, false, lit, Items.RARITY_COLORS[rarity] if rarity != "common" else Color(0, 0, 0, 0))
+		Items.draw_icon(self, r.grow(-11), ids[i])
 		if lit:
 			tip = "%s  ·  %s" % [Items.display_name(ids[i]), ids[i]]
 	var rows := ceili(ids.size() / float(COLS))
 	if rows > 5:  # where you are in the list
 		var track := Rect2(W - 10, 132, 4, H - 170)
-		draw_rect(track, Color(1, 1, 1, 0.08))
+		draw_style_box(UiTheme.rbox(UiTheme.SURFACE_200, 2), track)
 		var k := 5.0 / rows
-		draw_rect(Rect2(track.position + Vector2(0, track.size.y * scroll / rows), Vector2(4, track.size.y * k)), Color(UiTheme.WARN, 0.7))
-	draw_string(body, Vector2(20, H - 14), tip, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UiTheme.PAPER)
+		draw_style_box(UiTheme.rbox(UiTheme.BORDER_STRONG, 2), Rect2(track.position + Vector2(0, track.size.y * scroll / rows), Vector2(4, track.size.y * k)))
+	draw_string(body, Vector2(20, H - 14), tip, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)
 
 
 func _button(r: Rect2, text: String, on: bool, m: Vector2, fs: int) -> void:
 	var hot := r.has_point(m)
-	draw_style_box(UiTheme.box(UiTheme.WARN if on else Color(0.91, 0.88, 0.81, 0.14 if hot else 0.06), 6,
-			UiTheme.WARN if hot and not on else Color(0, 0, 0, 0), 1), r)
+	var bg := UiTheme.ACCENT if on else (UiTheme.SURFACE_300 if hot else UiTheme.SURFACE_200)
+	draw_style_box(UiTheme.rbox(bg, UiTheme.RADIUS_SM, bg if on else (UiTheme.BORDER_STRONG if hot else UiTheme.BORDER)), r)
+	fs = maxi(fs, UiTheme.SIZE_LABEL)
 	draw_string(UiTheme.heading(), r.position + Vector2(0, r.size.y * 0.5 + fs * 0.4), text, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, fs,
-			UiTheme.INK if on else UiTheme.PAPER)
+			UiTheme.ON_ACCENT if on else UiTheme.TEXT)

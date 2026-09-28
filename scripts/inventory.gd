@@ -631,9 +631,11 @@ func inv_sync(inv: Array, sel: int, worn: Dictionary) -> void:
 
 
 @rpc("authority", "call_remote", "reliable")
-func search_started(duration: float) -> void:
+func search_started(duration: float, what := "", recipe := "") -> void:
 	main.search_total = maxf(duration, 0.01)
 	main.search_until = Time.get_ticks_msec() / 1000.0 + duration
+	main.search_what = what
+	main.search_recipe = recipe
 
 
 @rpc("authority", "call_local", "reliable")

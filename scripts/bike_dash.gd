@@ -57,16 +57,16 @@ func _draw() -> void:
 	var a := k
 	var off := Vector2(0, (1.0 - k) * 30.0)  # (slides up into place)
 	var r := Rect2(Vector2.ZERO + off, size)
-	draw_style_box(UiTheme.box(Color(0.04, 0.045, 0.05, 0.8 * a), 12, Color(0.24, 0.25, 0.26, a), 1), r)
-	var paper := Color(UiTheme.PAPER, a)
-	var dim := Color(0.66, 0.64, 0.58, a)
-	var off_col := Color(0.27, 0.28, 0.27, a)
+	draw_style_box(UiTheme.rbox(Color(UiTheme.SURFACE_100, UiTheme.OPACITY_CARD * a), UiTheme.RADIUS_LG, Color(UiTheme.BORDER, a), 6), r)
+	var paper := Color(UiTheme.TEXT, a)
+	var dim := Color(UiTheme.TEXT_MUTED, a)
+	var off_col := Color(UiTheme.SURFACE_300, a)
 	# Speed, big, with its unit.
 	var sp := str(roundi(speed * KMH))
 	var fh := UiTheme.heavy()
 	draw_string(fh, r.position + Vector2(18, 44), sp, HORIZONTAL_ALIGNMENT_LEFT, -1, 40, paper)
 	var sw := fh.get_string_size(sp, HORIZONTAL_ALIGNMENT_LEFT, -1, 40).x
-	draw_string(UiTheme.body(), r.position + Vector2(22 + sw, 44), "km/h", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, dim)
+	draw_string(UiTheme.body(), r.position + Vector2(22 + sw, 44), "km/h", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, dim)
 	# Revs: green, amber, red.
 	var lit := roundi(rev * REV_BARS)
 	for i in REV_BARS:
@@ -75,10 +75,10 @@ func _draw() -> void:
 			c = Color("e05a3a") if i >= 9 else (Color("e8b82a") if i >= 6 else Color("7fc36a"))
 			c.a = a
 		draw_rect(Rect2(r.position + Vector2(18 + i * 10, 54), Vector2(7, 10)), c)
-	draw_line(r.position + Vector2(158, 12), r.position + Vector2(158, r.size.y - 12), Color(0.24, 0.25, 0.26, a), 1.0)
+	draw_line(r.position + Vector2(158, 12), r.position + Vector2(158, r.size.y - 12), Color(UiTheme.BORDER, a), 1.0)
 	# The model, the tank, getting off.
 	var x := r.position.x + 172
-	draw_string(UiTheme.body(), Vector2(x, r.position.y + 22), model_name, HORIZONTAL_ALIGNMENT_LEFT, 150, 13, dim)
+	draw_string(UiTheme.body(), Vector2(x, r.position.y + 22), model_name, HORIZONTAL_ALIGNMENT_LEFT, 150, UiTheme.SIZE_LABEL, dim)
 	var bars := ceili(fuel * FUEL_BARS)
 	var low := bars <= 2
 	var blink := low and fmod(t, 0.8) < 0.4
@@ -90,12 +90,12 @@ func _draw() -> void:
 			c = Color("e05a3a", a) if low else paper
 		draw_rect(Rect2(x + 22 + i * 11, r.position.y + 34, 8, 10), c)
 	if broken:
-		draw_string(UiTheme.medium(), Vector2(x, r.position.y + 64), "รถพัง", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("e05a3a", a))
+		draw_string(UiTheme.medium(), Vector2(x, r.position.y + 64), "รถพัง", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, Color("e05a3a", a))
 	else:
 		var kr := Rect2(x, r.position.y + 51, 20, 18)
-		draw_style_box(UiTheme.box(Color(UiTheme.WARN, a), 4), kr)
-		draw_string(UiTheme.medium(), Vector2(kr.position.x, kr.end.y - 4), "E", HORIZONTAL_ALIGNMENT_CENTER, kr.size.x, 13, UiTheme.INK)
-		draw_string(UiTheme.body(), Vector2(x + 26, r.position.y + 65), "ลงรถ", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, dim)
+		draw_style_box(UiTheme.rbox(Color(UiTheme.ACCENT, a), UiTheme.RADIUS_SM), kr)
+		draw_string(UiTheme.medium(), Vector2(kr.position.x, kr.end.y - 4), "E", HORIZONTAL_ALIGNMENT_CENTER, kr.size.x, UiTheme.SIZE_LABEL, UiTheme.ON_ACCENT)
+		draw_string(UiTheme.body(), Vector2(x + 26, r.position.y + 65), "ลงรถ", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, dim)
 
 
 ## A petrol pump, or a battery for the electric one (drawn: the font has no such signs).
@@ -106,6 +106,6 @@ func _tank_icon(p: Vector2, c: Color) -> void:
 		draw_rect(Rect2(p + Vector2(2.5, 4.5), Vector2(6, 4)), c)
 	else:
 		draw_rect(Rect2(p + Vector2(1, 1), Vector2(8, 11)), c)
-		draw_rect(Rect2(p + Vector2(2.5, 2.5), Vector2(5, 3)), Color(0.04, 0.045, 0.05, c.a))
+		draw_rect(Rect2(p + Vector2(2.5, 2.5), Vector2(5, 3)), Color(UiTheme.SURFACE_100, c.a))
 		draw_line(p + Vector2(9, 3), p + Vector2(12, 5), c, 1.2)
 		draw_line(p + Vector2(12, 5), p + Vector2(12, 10), c, 1.2)

@@ -115,6 +115,8 @@ const INTERACT_RANGE := 20.0
 var pickups := {}  # id -> {pos, item: {id, n, hp}} items lying on the ground
 var next_pickup := 1
 var search_until := 0.0  # client: progress bar for our own search
+var search_what := ""  # ...what it's for ("ทำผ้าพันแผล"), shown on the HUD and in the bag
+var search_recipe := ""  # ...and the recipe, when it's one being made
 var search_total := 1.0
 var hidden_building: BuildingProp  # the roof we lifted off because we are inside
 var prompt := ""  # what E would do right now ("" nothing in reach); shown by ui.prompt_tag

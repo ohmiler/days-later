@@ -27,25 +27,39 @@ signal repair_requested(ref: Array)
 signal treat_requested(i: int)  # bandage wound i
 signal box_closed
 
+# One grid for the whole screen: every slot SLOT square with GAP between,
+# PAD round the edge, COL_GAP between the three columns, and every column's
+# slots starting on the same line (TOP), row for row.
 const SLOT := 52.0
-const WSLOT := 50.0  # worn slots, round the doll
-const GAP := 6.0
-const W := 900.0
-const H := 560.0
+const WSLOT := SLOT  # worn slots, round the doll
+const GAP := 8.0
+const PAD := 24.0
+const COL_GAP := 32.0
+const TOP := 64.0  # where the slots start, under the headings
+const ROW := SLOT + GAP
 const COLS := 4
-const X_BAG := 316.0
-const X_FAR := 590.0
-const CARD_Y := H - 100.0
+const FAR_COLS := 5
+const DOLL_W := 140.0  # the doll's column, between the two columns of worn slots
+const X_BAG := PAD + SLOT * 2 + GAP * 2 + DOLL_W + COL_GAP
+const X_FAR := X_BAG + COLS * ROW - GAP + COL_GAP
+const W := X_FAR + FAR_COLS * ROW - GAP + PAD
+const CARD_H := 64.0  # the item card along the bottom
+const H := TOP + 6 * ROW - GAP + 24 + 44 + 24 + 24 + CARD_H + PAD  # (the worn column, the guard strip, a line, the card)
+const CARD_Y := H - PAD - CARD_H
 
-## Where each worn slot sits round the doll: beside the part of the body it's for.
+## Where each worn slot sits round the doll: beside the part of the body it's
+## for, on the rows of the grid (column 0 and 2, the doll between).
+const _L := PAD
+const _R := PAD + SLOT + GAP + DOLL_W + GAP
+const _MID := PAD + SLOT + GAP + DOLL_W / 2
 const WORN_AT := {
-	head = Vector2(120, 44), face = Vector2(22, 62), neck = Vector2(218, 62),
-	body = Vector2(22, 116), over = Vector2(218, 116), arms = Vector2(22, 170), hands = Vector2(218, 170),
-	legs = Vector2(22, 224), knees = Vector2(218, 224), back = Vector2(22, 278), strap = Vector2(218, 278),
-	feet = Vector2(93, 332), waist = Vector2(147, 332),
-	hand_r = Vector2(22, 332), hand_l = Vector2(218, 332),  # what you hold: right hand on the left, as the doll faces you
+	head = Vector2(_MID - SLOT / 2, TOP), face = Vector2(_L, TOP), neck = Vector2(_R, TOP),
+	body = Vector2(_L, TOP + ROW), over = Vector2(_R, TOP + ROW), arms = Vector2(_L, TOP + ROW * 2), hands = Vector2(_R, TOP + ROW * 2),
+	legs = Vector2(_L, TOP + ROW * 3), knees = Vector2(_R, TOP + ROW * 3), back = Vector2(_L, TOP + ROW * 4), strap = Vector2(_R, TOP + ROW * 4),
+	feet = Vector2(_MID - SLOT - GAP / 2, TOP + ROW * 5), waist = Vector2(_MID + GAP / 2, TOP + ROW * 5),
+	hand_r = Vector2(_L, TOP + ROW * 5), hand_l = Vector2(_R, TOP + ROW * 5),  # what you hold: right hand on the left, as the doll faces you
 }
-const DOLL_AT := Vector2(145, 310)  # the doll's feet
+const DOLL_AT := Vector2(_MID, TOP + ROW * 5 - GAP - 12)  # the doll's feet
 const DOLL_SCALE := 5.4
 
 var inv: Array = []
@@ -104,16 +118,16 @@ func _slots() -> Array:
 		out.append([["worn", slot], Rect2(WORN_AT.get(slot, Vector2.ZERO), Vector2(WSLOT, WSLOT))])
 	for i in inv.size():
 		var row := i / COLS
-		var y := 60.0 + row * (SLOT + GAP) + (12.0 if i >= Items.INV_SIZE else 0.0)
+		var y := TOP + row * ROW + (16.0 if i >= Items.INV_SIZE else 0.0)
 		out.append([["inv", i], Rect2(X_BAG + (i % COLS) * (SLOT + GAP), y, SLOT, SLOT)])
 	match tab:
 		"box":
 			for i in box_items.size():
-				out.append([["box", box_id, i], Rect2(X_FAR + (i % 5) * (SLOT + GAP), 60 + (i / 5) * (SLOT + GAP), SLOT, SLOT)])
+				out.append([["box", box_id, i], Rect2(X_FAR + (i % FAR_COLS) * ROW, TOP + (i / FAR_COLS) * ROW, SLOT, SLOT)])
 		"ground":
 			for i in 15:
 				var ref := ["ground", ground[i][0]] if i < ground.size() else ["ground", -1]
-				out.append([ref, Rect2(X_FAR + (i % 5) * (SLOT + GAP), 60 + (i / 5) * (SLOT + GAP), SLOT, SLOT)])
+				out.append([ref, Rect2(X_FAR + (i % FAR_COLS) * ROW, TOP + (i / FAR_COLS) * ROW, SLOT, SLOT)])
 	return out
 
 
@@ -169,7 +183,7 @@ func _ref_at(p: Vector2) -> Array:
 
 
 func _tabs() -> Array:
-	var out := [["ground", "พื้นใกล้ตัว"]]
+	var out := [["ground", "พื้น"]]
 	if box_id >= 0:
 		out.append(["box", box_title])
 	out.append(["craft", "ทำของ"])
@@ -178,12 +192,29 @@ func _tabs() -> Array:
 	return out
 
 
+## Tabs sit in a strip, each as wide as its word (a cupboard's name is cut to fit).
 func _tab_rect(i: int) -> Rect2:
-	return Rect2(X_FAR + i * 74, 18, 70, 28)
+	var tabs := _tabs()
+	var x := X_FAR + 4.0
+	for k in tabs.size():
+		var w := _tab_w(tabs[k][1], tabs.size())
+		if k == i:
+			return Rect2(x, 22, w, 28)
+		x += w + 2.0
+	return Rect2()
+
+
+func _tab_fs(n: int) -> int:
+	return UiTheme.SIZE_BODY if n <= 4 else UiTheme.SIZE_LABEL
+
+
+func _tab_w(label: String, n: int) -> float:
+	var w := UiTheme.medium().get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, _tab_fs(n)).x
+	return minf(w, 60.0) + 36.0
 
 
 func _doll_rect() -> Rect2:
-	return Rect2(78, 100, 134, 216)
+	return Rect2(PAD + SLOT + GAP, TOP + ROW, DOLL_W, ROW * 4 - GAP)
 
 
 # --- Input ---------------------------------------------------------------------
@@ -297,8 +328,12 @@ func _do(action: String, ref: Array) -> void:
 			move_requested.emit(ref, ["worn", "hand_l"])
 
 
+const MENU_W := 140.0
+const MENU_ROW := 30.0
+
+
 func _menu_rect(i: int) -> Rect2:
-	return Rect2(menu_pos + Vector2(0, i * 26), Vector2(130, 26))
+	return Rect2(menu_pos + Vector2(0, i * MENU_ROW), Vector2(MENU_W, MENU_ROW))
 
 
 func _menu_click(p: Vector2) -> void:
@@ -381,14 +416,13 @@ func _shown() -> Array:
 
 # --- Drawing -------------------------------------------------------------------
 
-const DIM := Color(0.91, 0.88, 0.81, 0.45)
-const SLOT_BG := Color(0.11, 0.1, 0.08, 0.8)
-const SLOT_EDGE := Color(0.23, 0.2, 0.17)
-const CARD_BG := Color("ad9870")
+const DIM := UiTheme.TEXT_MUTED
 
 
 func _draw() -> void:
-	draw_style_box(UiTheme.box(Color(0.06, 0.055, 0.045, 0.98), 10, UiTheme.LINE, 1), Rect2(Vector2.ZERO, size))
+	# The world goes dark behind the bag (and the HUD with it: one thing at a time).
+	draw_rect(Rect2(-4000, -4000, 8000 + size.x, 8000 + size.y), Color(UiTheme.SURFACE_000, 0.6))
+	UiTheme.panel(self, Rect2(Vector2.ZERO, size))
 	var head := UiTheme.heading()
 	var body := UiTheme.body()
 	_draw_worn_side(head, body)
@@ -400,46 +434,70 @@ func _draw() -> void:
 		var r: Rect2 = s[1]
 		var it = _item(ref)
 		var lit: bool = ref == hover or ref == picked
+		var rarity := Color(0, 0, 0, 0)
+		if it != null and ref != drag and Items.rarity_of(it.id) != "common":
+			rarity = Items.RARITY_COLORS[Items.rarity_of(it.id)]
+		UiTheme.slot(self, r, it != null and ref != drag, ref == picked or (lit and not drag.is_empty()), lit, rarity)
 		if it == null:
-			draw_style_box(UiTheme.box(SLOT_BG if ref[0] != "ground" else Color(0.91, 0.88, 0.81, 0.03), 6,
-					UiTheme.WARN if lit and not drag.is_empty() else SLOT_EDGE, 2 if ref[0] != "ground" else 1), r)
 			if ref == ["worn", "hand_l"] and worn.get("hand_r") != null and Items.two_handed(worn.hand_r.id):
 				# The left hand is on the other end of a two-handed weapon.
-				Items.draw_icon(self, r.grow(-r.size.x * 0.19), worn.hand_r.id)
-				draw_rect(r.grow(-2), Color(0.06, 0.055, 0.045, 0.55))
-				_label(r, "สองมือ", Color(UiTheme.PAPER, 0.6), false)
+				Items.draw_icon(self, r.grow(-r.size.x * 0.22), worn.hand_r.id)
+				draw_rect(r.grow(-1), Color(UiTheme.SURFACE_200, 0.6))
+				_label(r, "สองมือ", UiTheme.TEXT_MUTED, false)
 			elif ref[0] == "worn":
 				_slot_outline(r, ref[1])
-				_label(r, Items.SLOT_NAMES.get(ref[1], Items.HAND_NAMES.get(ref[1], "")), Color(UiTheme.PAPER, 0.4), false)
-		else:
-			draw_style_box(UiTheme.box(CARD_BG if ref != drag else Color("6e5b3c"), 6, UiTheme.WARN if lit else Color("6e5b3c"), 2), r)
-			if ref != drag:
-				_draw_item(r, it)  # (just the icon: its name is on the card below)
+				_label(r, Items.SLOT_NAMES.get(ref[1], Items.HAND_NAMES.get(ref[1], "")), UiTheme.TEXT_FAINT, false)
+		elif ref != drag:
+			_draw_item(r, it)  # (just the icon: its name is on the card below)
 		if ref[0] == "inv" and ref[1] < Items.INV_SIZE:
-			draw_string(head, r.position + Vector2(5, 14), str(ref[1] + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
-					Color(UiTheme.INK, 0.55) if it != null else Color(UiTheme.PAPER, 0.3))
+			draw_string(UiTheme.medium(), r.position + Vector2(5, 13), str(ref[1] + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 10,
+					UiTheme.TEXT_MUTED if it != null else UiTheme.TEXT_FAINT)
 	_draw_card(head, body)
 	# Dragged item follows the mouse.
 	if not drag.is_empty():
 		var it = _item(drag)
 		if it != null:
 			var m := get_local_mouse_position()
-			_draw_item(Rect2(m - Vector2(SLOT, SLOT) * 0.5, Vector2(SLOT, SLOT)), it)
+			var dr := Rect2(m - Vector2(SLOT, SLOT) * 0.5, Vector2(SLOT, SLOT))
+			UiTheme.slot(self, dr, true, true)
+			_draw_item(dr, it)
 	# Right-click menu.
+	if not menu_items.is_empty():
+		var mr := Rect2(menu_pos - Vector2(0, 4), Vector2(MENU_W, MENU_ROW * menu_items.size() + 8))
+		draw_style_box(UiTheme.rbox(UiTheme.SURFACE_100, UiTheme.RADIUS_SM, UiTheme.BORDER_STRONG, 8), mr)
 	for i in menu_items.size():
 		var r := _menu_rect(i)
-		var over := r.has_point(get_local_mouse_position())
-		draw_rect(r, Color("2a2622") if not over else Color("4a4238"))
-		draw_string(body, r.position + Vector2(10, 18), menu_items[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UiTheme.PAPER)
-	if not menu_items.is_empty():
-		draw_rect(Rect2(menu_pos, Vector2(130, 26 * menu_items.size())), UiTheme.LINE, false, 1)
+		if r.has_point(get_local_mouse_position()):
+			draw_style_box(UiTheme.rbox(UiTheme.SURFACE_300, UiTheme.RADIUS_SM), r.grow_individual(-4, 0, -4, 0))
+		draw_string(body, r.position + Vector2(12, 20), menu_items[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_BODY,
+				UiTheme.DANGER if menu_items[i][1] == "drop" else UiTheme.TEXT)
+
+
+## A button: `primary` in the accent (the one thing to press), else a quiet one;
+## `danger` words in red (throwing away).
+func _button(r: Rect2, text: String, primary := false, danger := false) -> void:
+	var lit := r.has_point(get_local_mouse_position())
+	var bg := UiTheme.ACCENT if primary else (UiTheme.SURFACE_300 if lit else UiTheme.SURFACE_200)
+	if primary and lit:
+		bg = bg.lightened(0.08)
+	draw_style_box(UiTheme.rbox(bg, UiTheme.RADIUS_SM, bg if primary else (UiTheme.BORDER_STRONG if lit else UiTheme.BORDER)), r)
+	var col := UiTheme.ON_ACCENT if primary else (UiTheme.DANGER if danger else UiTheme.TEXT)
+	draw_string(UiTheme.heading(), Vector2(r.position.x, r.get_center().y + 6), text, HORIZONTAL_ALIGNMENT_CENTER, r.size.x,
+			UiTheme.SIZE_BODY, col)
+
+
+## A panel's heading with a small note beside it.
+func _heading(x: float, title: String, note := "") -> void:
+	draw_string(UiTheme.heading(), Vector2(x, 43), title, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_TITLE, UiTheme.TEXT)
+	if note != "":
+		var w := UiTheme.heading().get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_TITLE).x
+		draw_string(UiTheme.medium(), Vector2(x + w + 8, 42), note, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_CAPTION, UiTheme.TEXT_MUTED)
 
 
 ## You, dressed, turned by clicking; the slots round you; what guards each part.
 func _draw_worn_side(head: Font, body: Font) -> void:
-	draw_string(head, Vector2(24, 36), "ที่สวมอยู่", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.PAPER)
-	draw_string(body, Vector2(120, 36), "คลิกตัวละครเพื่อหมุน", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(UiTheme.PAPER, 0.35))
-	draw_style_box(UiTheme.box(Color(0.91, 0.88, 0.81, 0.03), 60), _doll_rect())
+	_heading(24, "ที่สวมอยู่", "คลิกตัวละครเพื่อหมุน")
+	draw_style_box(UiTheme.rbox(UiTheme.SURFACE_200, UiTheme.RADIUS_LG), _doll_rect())
 	if not doll_look.is_empty():
 		var views := [[Look.FRONT, false], [Look.SIDE, false], [Look.BACK, false], [Look.SIDE, true]]
 		var angles := [PI / 2, 0.0, -PI / 2, PI]
@@ -464,33 +522,34 @@ func _draw_worn_side(head: Font, body: Font) -> void:
 	for k in worn:
 		if worn[k] != null:
 			ids.append(worn[k].id)
-	var y := 404.0
-	draw_string(head, Vector2(24, y), "กันกัด", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, UiTheme.PAPER)
-	var x := 70.0
+	var y := TOP + ROW * 6 - GAP + 24 + 16
+	draw_string(UiTheme.medium(), Vector2(PAD, y + 6), "กันกัด", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)
+	var sw := _R + SLOT - (PAD + SLOT + GAP)
+	var strip := Rect2(PAD + SLOT + GAP, y - 16, sw, 40)
+	draw_style_box(UiTheme.rbox(UiTheme.SURFACE_200, UiTheme.RADIUS_SM), strip)
+	var x := strip.position.x
+	var cell := sw / Items.PARTS.size()
 	for part in Items.PARTS:
 		var g := Items.guard_at(ids, part)
-		var col := Color("5a3a30").lerp(Color("4f9a3a"), clampf(g / 0.7, 0.0, 1.0))
-		var r := Rect2(x, y - 12, 30, 16)
-		draw_style_box(UiTheme.box(col, 4), r)
-		draw_string(body, r.position + Vector2(0, 12), "%d" % roundi(g * 100), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 10, UiTheme.PAPER)
-		draw_string(body, r.position + Vector2(0, 28), Items.PART_NAMES[part], HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 9, Color(UiTheme.PAPER, 0.5))
-		x += 31.0
+		var col := UiTheme.TEXT_FAINT if g <= 0.0 else (UiTheme.OK if g >= 0.5 else UiTheme.TEXT)
+		draw_string(UiTheme.heading(), Vector2(x, y + 1), "%d" % roundi(g * 100), HORIZONTAL_ALIGNMENT_CENTER, cell, UiTheme.SIZE_LABEL, col)
+		draw_string(UiTheme.medium(), Vector2(x, y + 18), Items.PART_NAMES[part], HORIZONTAL_ALIGNMENT_CENTER, cell, 10, UiTheme.TEXT_MUTED)
+		x += cell
 	# How hot it all is.
 	var heat := 0.0
 	for id in ids:
 		heat += float(Items.def(id).get("hot", 0.0))
 	if heat > 0.0:
-		draw_string(body, Vector2(24, y + 36), "ร้อน", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("e8904a"))
-		_bar(Rect2(70, y + 29, 216, 5), clampf(heat / 1.2, 0.0, 1.0), Color("e8904a"))
+		UiTheme.meter(self, Rect2(strip.position.x + 4, strip.end.y - 4, sw - 8, 2), clampf(heat / 1.2, 0.0, 1.0), Color("e8904a"))  # (how hot)
 
 
 ## The bag: slots, and a bar for the weight.
 func _draw_bag_side(head: Font, body: Font) -> void:
 	var used := inv.filter(func(x): return x != null).size()
-	draw_string(head, Vector2(X_BAG, 36), "กระเป๋า", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.PAPER)
-	draw_string(body, Vector2(X_BAG + 72, 36), "%d / %d ช่อง" % [used, inv.size()], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, DIM)
+	_heading(X_BAG, "กระเป๋า", "%d/%d ช่อง" % [used, inv.size()])
 	if inv.size() > Items.INV_SIZE:
-		draw_string(body, Vector2(X_BAG, 60 + 2 * (SLOT + GAP) + 9), "จากเป้และกระเป๋า", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(UiTheme.PAPER, 0.4))
+		draw_string(UiTheme.medium(), Vector2(X_BAG, TOP + 2 * ROW + 10), "จากเป้และกระเป๋า", HORIZONTAL_ALIGNMENT_LEFT, -1, 10,
+				UiTheme.TEXT_MUTED)
 	var kg := 0.0
 	for it in inv + worn.values():
 		kg += Items.weight_of(it)
@@ -499,29 +558,37 @@ func _draw_bag_side(head: Font, body: Font) -> void:
 		if worn[k] != null:
 			limit += float(Items.def(worn[k].id).get("carry", 0.0))
 	var rows := ceili(inv.size() / float(COLS))
-	var y := 60.0 + rows * (SLOT + GAP) + (12.0 if inv.size() > Items.INV_SIZE else 0.0) + 14.0
+	var y := TOP + rows * ROW - GAP + (16.0 if inv.size() > Items.INV_SIZE else 0.0) + 24.0
 	var k2 := kg / maxf(limit, 0.1)
-	var col := Color("4f9a3a") if k2 < 0.8 else (UiTheme.WARN if k2 <= 1.0 else Color("c8502a"))
-	draw_string(body, Vector2(X_BAG, y), "น้ำหนัก %.1f / %.0f กก." % [kg, limit], HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
-			col if k2 > 1.0 else DIM)
-	_bar(Rect2(X_BAG, y + 6, COLS * (SLOT + GAP) - GAP, 8), clampf(k2, 0.0, 1.0), col)
+	var col := UiTheme.ACCENT if k2 <= 1.0 else UiTheme.DANGER
+	var bw := COLS * ROW - GAP
+	draw_string(UiTheme.medium(), Vector2(X_BAG, y), "น้ำหนัก", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL,
+			UiTheme.DANGER if k2 > 1.0 else UiTheme.TEXT_MUTED)
+	draw_string(UiTheme.medium(), Vector2(X_BAG, y), "%.1f/%.0f กก." % [kg, limit], HORIZONTAL_ALIGNMENT_RIGHT, bw, UiTheme.SIZE_LABEL,
+			UiTheme.DANGER if k2 > 1.0 else UiTheme.TEXT)
+	UiTheme.meter(self, Rect2(X_BAG, y + 7, bw, 6), k2, col)
 	if k2 > 1.0:
-		draw_string(body, Vector2(X_BAG, y + 30), "หนักเกิน · เดินช้าลง เหนื่อยเร็ว", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
+		draw_string(body, Vector2(X_BAG, y + 32), "หนักเกิน · เดินช้าลง เหนื่อยเร็ว", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, col)
 
 
 ## The right-hand column: tabs, then the ground, a cupboard or the recipes.
 func _draw_far_side(head: Font, body: Font) -> void:
 	var tabs := _tabs()
+	var last := _tab_rect(tabs.size() - 1)
+	draw_style_box(UiTheme.rbox(UiTheme.SURFACE_200, UiTheme.RADIUS_SM), Rect2(X_FAR, 18, W - PAD - X_FAR, 36))
+	var fs := _tab_fs(tabs.size())
 	for i in tabs.size():
 		var r := _tab_rect(i)
 		var on: bool = tab == tabs[i][0]
 		var lit := r.has_point(get_local_mouse_position())
-		draw_style_box(UiTheme.box(UiTheme.WARN if on else Color(0.91, 0.88, 0.81, 0.12 if lit else 0.05), 6), r)
-		_tab_icon(Vector2(r.position.x + 14, r.position.y + 14), tabs[i][0], UiTheme.INK if on else UiTheme.PAPER)
-		draw_string(head, r.position + Vector2(24, 19), _fit(tabs[i][1], head, 12, r.size.x - 28), HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
-				UiTheme.INK if on else UiTheme.PAPER)
+		if on or lit:
+			draw_style_box(UiTheme.rbox(UiTheme.ACCENT if on else UiTheme.SURFACE_300, UiTheme.RADIUS_SM), r)
+		var col := UiTheme.ON_ACCENT if on else (UiTheme.TEXT if lit else UiTheme.TEXT_MUTED)
+		_tab_icon(Vector2(r.position.x + 13, r.position.y + 14), tabs[i][0], col)
+		draw_string(UiTheme.medium(), r.position + Vector2(24, 19), _fit(tabs[i][1], UiTheme.medium(), fs, r.size.x - 36), HORIZONTAL_ALIGNMENT_LEFT,
+				-1, fs, col)
 		if tabs[i][0] == "body" and me and not Body.statuses(me).filter(func(s): return s.level == 2).is_empty():
-			draw_circle(r.position + Vector2(r.size.x - 6, 6), 4, Body.LEVEL_COLORS[2])  # something needs seeing to
+			draw_circle(Vector2(r.end.x - 7, r.get_center().y), 3.0, UiTheme.DANGER)  # something needs seeing to
 	var hint := {ground = "ลากของมาวางที่นี่เพื่อทิ้ง", box = "ลากของมาเก็บไว้ในนี้ได้", craft = "ใช้ของในกระเป๋า · ต้องยืนนิ่ง"}
 	if tab == "body":
 		_draw_body(head, body)
@@ -532,43 +599,47 @@ func _draw_far_side(head: Font, body: Font) -> void:
 	if tab == "craft":
 		_draw_recipes(head, body)
 		return
-	draw_string(body, Vector2(X_FAR, 58 + 3 * (SLOT + GAP) + 12), hint[tab], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(UiTheme.PAPER, 0.4))
+	draw_string(body, Vector2(X_FAR, TOP + 3 * ROW - GAP + 20), hint[tab], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_CAPTION, UiTheme.TEXT_MUTED)
 	if not _far_items().is_empty():
-		var br := _take_all_rect()
-		var lit := br.has_point(get_local_mouse_position())
-		draw_style_box(UiTheme.box(UiTheme.WARN if lit else Color(0.91, 0.88, 0.81, 0.08), 6), br)
-		draw_string(head, br.position + Vector2(0, 19), "เก็บทั้งหมด", HORIZONTAL_ALIGNMENT_CENTER, br.size.x, 14,
-				UiTheme.INK if lit else UiTheme.PAPER)
+		_button(_take_all_rect(), "เก็บทั้งหมด", true)
 
 
 func _take_all_rect() -> Rect2:
-	return Rect2(X_FAR, 60 + 3 * (SLOT + GAP) + 22, 5 * SLOT + 4 * GAP, 28)
+	return Rect2(X_FAR, TOP + 3 * ROW - GAP + 32, FAR_COLS * ROW - GAP, 36)
 
 
 ## The card for the item picked or under the mouse: what it is, its numbers, and buttons.
 func _draw_card(head: Font, body: Font) -> void:
-	draw_line(Vector2(20, CARD_Y - 10), Vector2(W - 20, CARD_Y - 10), UiTheme.LINE, 1)
+	draw_line(Vector2(PAD, CARD_Y - 24), Vector2(W - PAD, CARD_Y - 24), UiTheme.BORDER, 1)
 	var shown := _shown()
 	var it = _item(shown)
 	if not hover.is_empty() and hover[0] == "recipe":
 		var rc: Dictionary = Crafting.RECIPES[hover[1]]
-		Items.draw_icon(self, Rect2(24, CARD_Y + 4, 56, 56), rc.makes)
-		draw_string(head, Vector2(92, CARD_Y + 24), rc.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, UiTheme.PAPER)
-		draw_string(body, Vector2(92, CARD_Y + 46), "ต้องใช้: " + _recipe_line(hover[1]), HORIZONTAL_ALIGNMENT_LEFT, W - 120, 12, DIM)
+		UiTheme.slot(self, Rect2(24, CARD_Y + 2, 64, 64), true)
+		Items.draw_icon(self, Rect2(34, CARD_Y + 12, 44, 44), rc.makes)
+		draw_string(head, Vector2(102, CARD_Y + 24), Crafting.recipe_name(hover[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_HEADING, UiTheme.TEXT)
+		draw_string(body, Vector2(102, CARD_Y + 46), "ต้องใช้: " + _recipe_line(hover[1]), HORIZONTAL_ALIGNMENT_LEFT, W - 130, UiTheme.SIZE_LABEL, DIM)
+		return
+	var work := GameUI.working()
+	if it == null and not work.is_empty():
+		_draw_work(work)
 		return
 	if it == null:
-		draw_string(body, Vector2(24, CARD_Y + 30), "คลิกของเพื่อดูรายละเอียด · ลากเพื่อย้าย · Shift+คลิกส่งข้ามฝั่ง · คลิกขวาเปิดเมนู · [Tab] ปิด",
-				HORIZONTAL_ALIGNMENT_LEFT, W - 48, 13, Color(UiTheme.PAPER, 0.55))
+		UiTheme.draw_rich(self, Vector2(24, CARD_Y + 36), "คลิก ดูรายละเอียด · ลาก ย้าย · [Shift] + คลิก ส่งข้ามฝั่ง · คลิกขวา เมนู",
+				body, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED, false, true)
+		var cw := UiTheme.draw_rich(self, Vector2.ZERO, "[Tab] ปิด", body, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED, true, true)
+		UiTheme.draw_rich(self, Vector2(W - 24 - cw, CARD_Y + 36), "[Tab] ปิด", body, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED, false, true)
 		return
 	var d := Items.def(it.id)
 	var ir := Rect2(24, CARD_Y + 2, 64, 64)
-	draw_style_box(UiTheme.box(CARD_BG, 8, Color("6e5b3c"), 2), ir)
-	_draw_item(ir, it)
 	var rarity := Items.rarity_of(it.id)
-	draw_string(head, Vector2(102, CARD_Y + 22), Items.display_name(it.id), HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.PAPER)
+	UiTheme.slot(self, ir, true, false, false, Items.RARITY_COLORS[rarity] if rarity != "common" else Color(0, 0, 0, 0))
+	_draw_item(ir, it)
+	draw_string(head, Vector2(102, CARD_Y + 22), Items.display_name(it.id), HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_HEADING, UiTheme.TEXT)
 	if rarity != "common":
-		var nw := head.get_string_size(Items.display_name(it.id), HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x
-		draw_string(body, Vector2(110 + nw, CARD_Y + 21), Items.RARITY_NAMES[rarity], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Items.RARITY_COLORS[rarity])
+		var nw := head.get_string_size(Items.display_name(it.id), HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_HEADING).x
+		draw_string(UiTheme.medium(), Vector2(110 + nw, CARD_Y + 21), Items.RARITY_NAMES[rarity], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL,
+				Items.RARITY_COLORS[rarity])
 	# The numbers, each with a small mark for what it is.
 	var stats := []  # [mark, text]
 	match d.get("type"):
@@ -605,36 +676,46 @@ func _draw_card(head: Font, body: Font) -> void:
 	var sy := CARD_Y + 48
 	for s in stats:
 		_mark(Vector2(x + 5, sy - 4), s[0])
-		draw_string(body, Vector2(x + 14, sy), s[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, DIM)
-		x += 22.0 + body.get_string_size(s[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+		draw_string(body, Vector2(x + 14, sy), s[1], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, DIM)
+		x += 22.0 + body.get_string_size(s[1], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL).x
 		if x > W - 330:
 			break
 	# Buttons.
 	var acts := _actions(shown, it)
 	for i in acts.size():
-		var br := _button_rect(i, acts.size())
-		var lit := br.has_point(get_local_mouse_position())
-		var danger: bool = acts[i][1] == "drop"
-		draw_style_box(UiTheme.box(UiTheme.WARN if lit else Color(0.91, 0.88, 0.81, 0.08), 6,
-				Color("8a3a2a") if danger else Color(0, 0, 0, 0), 1 if danger else 0), br)
-		draw_string(head, br.position + Vector2(0, 21), acts[i][0], HORIZONTAL_ALIGNMENT_CENTER, br.size.x, 13,
-				UiTheme.INK if lit else UiTheme.PAPER)
+		_button(_button_rect(i, acts.size()), acts[i][0], i == 0 and acts[i][1] != "drop", acts[i][1] == "drop")
+
+
+## The work under way, in the card's place: what's being made, a bar, and to keep still.
+func _draw_work(w: Dictionary) -> void:
+	var ir := Rect2(24, CARD_Y + 2, 64, 64)
+	UiTheme.slot(self, ir, true, true)
+	if w.recipe != "" and Crafting.RECIPES.has(w.recipe):
+		Items.draw_icon(self, ir.grow(-12), Crafting.RECIPES[w.recipe].makes)
+	else:
+		_tab_icon(ir.get_center(), "craft", UiTheme.ACCENT)
+	var x := 102.0
+	var bw := W - 24 - x
+	draw_string(UiTheme.heading(), Vector2(x, CARD_Y + 22), "กำลัง" + w.what, HORIZONTAL_ALIGNMENT_LEFT, bw - 60, UiTheme.SIZE_HEADING, UiTheme.TEXT)
+	draw_string(UiTheme.medium(), Vector2(x, CARD_Y + 22), "อีก %.1f วิ" % w.left, HORIZONTAL_ALIGNMENT_RIGHT, bw, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)
+	UiTheme.meter(self, Rect2(x, CARD_Y + 32, bw, 8), w.k, UiTheme.ACCENT)
+	draw_string(UiTheme.body(), Vector2(x, CARD_Y + 60), w.hint, HORIZONTAL_ALIGNMENT_LEFT, bw, UiTheme.SIZE_CAPTION, UiTheme.TEXT_MUTED)
 
 
 func _button_rect(i: int, n: int) -> Rect2:
-	var w := 70.0
-	return Rect2(W - 24 - (n - i) * (w + 6) + 6, CARD_Y + 18, w, 32)
+	var w := 72.0
+	return Rect2(W - 24 - (n - i) * (w + 6) + 6, CARD_Y + 16, w, 36)
 
 
 # --- Little drawings -------------------------------------------------------------
 
 ## A slot's name band: what's in it (or what goes in it), cut short to fit.
 func _label(r: Rect2, text: String, col: Color, filled: bool) -> void:
-	var f := UiTheme.body()
-	var size := 9
-	var band := Rect2(r.position.x + 2, r.end.y - 13, r.size.x - 4, 11)
+	var f := UiTheme.medium()
+	var size := 10
+	var band := Rect2(r.position.x + 2, r.end.y - 14, r.size.x - 4, 12)
 	if filled:
-		draw_rect(band, Color(0.1, 0.09, 0.07, 0.72))
+		draw_rect(band, Color(UiTheme.SURFACE_100, 0.72))
 	draw_string(f, Vector2(band.position.x, band.end.y - 2), _fit(text, f, size, band.size.x - 2), HORIZONTAL_ALIGNMENT_CENTER,
 			band.size.x, size, col)
 
@@ -650,14 +731,13 @@ func _fit(text: String, f: Font, size: int, width: float) -> String:
 
 
 func _bar(r: Rect2, frac: float, col: Color) -> void:
-	draw_rect(r, Color(0, 0, 0, 0.35))
-	draw_rect(Rect2(r.position, Vector2(r.size.x * frac, r.size.y)), col)
+	UiTheme.meter(self, r, frac, col, UiTheme.SURFACE_000)
 
 
 ## A faint outline in an empty worn slot of what goes there.
 func _slot_outline(r: Rect2, slot: String) -> void:
 	var c := r.get_center() - Vector2(0, 5)  # (room below for the name)
-	var col := Color(UiTheme.PAPER, 0.22)
+	var col := Color(UiTheme.TEXT_FAINT, 0.7)
 	var w := 1.3
 	match slot:
 		"head":  # a cap
@@ -678,7 +758,7 @@ func _slot_outline(r: Rect2, slot: String) -> void:
 					c + Vector2(9, -11), c + Vector2(4, -11), c + Vector2(0, -5), c + Vector2(-4, -11)]), col, w)
 		"arms":  # a forearm with a guard
 			draw_line(c + Vector2(-12, 8), c + Vector2(12, -8), col, 5.0)
-			draw_line(c + Vector2(-4, 3), c + Vector2(4, -3), SLOT_BG, 2.0)
+			draw_line(c + Vector2(-4, 3), c + Vector2(4, -3), UiTheme.SURFACE_200, 2.0)
 		"hands":  # a glove
 			draw_rect(Rect2(c + Vector2(-7, -4), Vector2(14, 13)), col, false, w)
 			for i in 4:
@@ -711,7 +791,7 @@ func _slot_outline(r: Rect2, slot: String) -> void:
 
 ## A small mark before a number on the card.
 func _mark(c: Vector2, kind: String) -> void:
-	var col := Color(UiTheme.PAPER, 0.6)
+	var col := UiTheme.TEXT_MUTED
 	match kind:
 		"guard":  # a shield
 			draw_colored_polygon(PackedVector2Array([c + Vector2(-4, -4), c + Vector2(4, -4), c + Vector2(4, 1), c + Vector2(0, 5), c + Vector2(-4, 1)]), col)
@@ -720,7 +800,7 @@ func _mark(c: Vector2, kind: String) -> void:
 			draw_line(c + Vector2(-4, 1), c + Vector2(-1, 4), col, 1.5)
 		"hp":  # a little wear bar
 			draw_rect(Rect2(c + Vector2(-5, -1.5), Vector2(10, 3)), Color(0, 0, 0, 0.4))
-			draw_rect(Rect2(c + Vector2(-5, -1.5), Vector2(7, 3)), Color("4f9a3a"))
+			draw_rect(Rect2(c + Vector2(-5, -1.5), Vector2(7, 3)), UiTheme.OK)
 		"kg":  # a weight
 			draw_colored_polygon(PackedVector2Array([c + Vector2(-3, -2), c + Vector2(3, -2), c + Vector2(5, 4), c + Vector2(-5, 4)]), col)
 			draw_arc(c + Vector2(0, -3), 2, PI, TAU, 6, col, 1.0)
@@ -813,12 +893,12 @@ func _body_rows() -> Array:
 
 
 func _body_row_rect(i: int) -> Rect2:
-	return Rect2(X_FAR, 58 + i * 48, W - X_FAR - 24, 44)
+	return Rect2(X_FAR, TOP + i * 68, W - X_FAR - PAD, 60)
 
 
 func _body_button(i: int) -> Rect2:
 	var r := _body_row_rect(i)
-	return Rect2(r.end.x - 74, r.position.y + 8, 66, 28)
+	return Rect2(r.end.x - 74, r.position.y + 12, 66, 34)
 
 
 ## Skills: the survivor level, then each skill's level, how far to the next,
@@ -826,22 +906,21 @@ func _body_button(i: int) -> Rect2:
 func _draw_skills(head: Font, body: Font) -> void:
 	if me == null:
 		return
-	draw_string(head, Vector2(X_FAR, 76), "ระดับผู้รอด %d" % Skills.total(me.skills), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, UiTheme.WARN)
-	draw_string(body, Vector2(X_FAR + 150, 76), "เก่งขึ้นจากการทำจริง", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, DIM)
+	draw_string(head, Vector2(X_FAR, TOP + 14), "ระดับผู้รอด %d" % Skills.total(me.skills), HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_HEADING,
+			UiTheme.ACCENT)
+	draw_string(UiTheme.medium(), Vector2(X_FAR, TOP + 14), "เก่งขึ้นจากการทำจริง", HORIZONTAL_ALIGNMENT_RIGHT, W - X_FAR - 24, UiTheme.SIZE_CAPTION, DIM)
 	var i := 0
 	for id in Skills.DEFS:
 		var d: Dictionary = Skills.DEFS[id]
 		var xp: float = me.skills.get(id, 0.0)
 		var lvl := Skills.level_of(xp)
-		var r := Rect2(X_FAR, 90 + i * 50, W - X_FAR - 24, 44)
-		if r.end.y > CARD_Y - 10:
+		var r := Rect2(X_FAR, TOP + 28 + i * 58, W - X_FAR - PAD, 52)
+		if r.end.y > CARD_Y - 32:
 			break
-		draw_style_box(UiTheme.box(Color(0.91, 0.88, 0.81, 0.05), 6, SLOT_EDGE, 1), r)
-		draw_string(head, r.position + Vector2(10, 19), d.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UiTheme.PAPER)
-		draw_string(head, r.position + Vector2(r.size.x - 70, 19), "Lv %d" % lvl, HORIZONTAL_ALIGNMENT_RIGHT, 60, 14, UiTheme.WARN)
-		var bar := Rect2(r.position + Vector2(10, 27), Vector2(r.size.x - 20, 5))
-		draw_rect(bar, Color(1, 1, 1, 0.08))
-		draw_rect(Rect2(bar.position, Vector2(bar.size.x * Skills.progress(xp), bar.size.y)), UiTheme.WARN)
+		draw_style_box(UiTheme.rbox(UiTheme.SURFACE_200, UiTheme.RADIUS_SM, UiTheme.BORDER), r)
+		draw_string(head, r.position + Vector2(12, 21), d.name, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_BODY, UiTheme.TEXT)
+		draw_string(head, r.position + Vector2(r.size.x - 72, 21), "Lv %d" % lvl, HORIZONTAL_ALIGNMENT_RIGHT, 60, UiTheme.SIZE_BODY, UiTheme.ACCENT)
+		UiTheme.meter(self, Rect2(r.position + Vector2(12, 27), Vector2(r.size.x - 24, 4)), Skills.progress(xp), UiTheme.ACCENT, UiTheme.SURFACE_000)
 		# The next thing it opens, if any is still ahead.
 		var next := ""
 		var unlocks: Dictionary = d.get("unlocks", {})
@@ -851,56 +930,60 @@ func _draw_skills(head: Font, body: Font) -> void:
 		var sub := "เลเวลสูงสุดแล้ว" if lvl >= Skills.MAX_LEVEL else ("อีก %d EXP" % ceili(Skills.xp_for(lvl + 1) - xp))
 		if next != "":
 			sub += " · Lv %s: %s" % [next.get_slice(":", 0), next.get_slice(":", 1)]
-		draw_string(body, r.position + Vector2(10, 41), _fit(sub, body, 10, r.size.x - 20), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, DIM)
+		draw_string(body, r.position + Vector2(12, 45), _fit(sub, body, UiTheme.SIZE_CAPTION, r.size.x - 24), HORIZONTAL_ALIGNMENT_LEFT, -1,
+				UiTheme.SIZE_CAPTION, DIM)
 		i += 1
 
 
 func _draw_body(head: Font, body: Font) -> void:
 	var rows := _body_rows()
 	if rows.is_empty():
-		draw_string(body, Vector2(X_FAR, 80), "ร่างกายปกติดี ไม่มีบาดแผล", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, DIM)
+		draw_string(body, Vector2(X_FAR, TOP + 14), "ร่างกายปกติดี ไม่มีบาดแผล", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_BODY, DIM)
 		return
 	for row in rows:
 		var r := _body_row_rect(row.i)
-		if r.end.y > CARD_Y - 14:
+		if r.end.y > CARD_Y - 32:
 			break
 		var col: Color = Body.LEVEL_COLORS[row.level]
-		draw_style_box(UiTheme.box(Color(0.91, 0.88, 0.81, 0.05), 6, Color(col, 0.6) if row.level > 0 else SLOT_EDGE, 1), r)
-		Body.draw_icon(self, r.position + Vector2(20, 22), row.icon, col, 1.1)
+		draw_style_box(UiTheme.rbox(UiTheme.SURFACE_200, UiTheme.RADIUS_SM, Color(col, 0.6) if row.level > 0 else UiTheme.BORDER), r)
+		Body.draw_icon(self, r.position + Vector2(20, 24), row.icon, col, 1.1)
 		var tw := r.size.x - 44 - (80 if row.button != "" else 0)
-		draw_string(head, r.position + Vector2(40, 19), _fit(row.title, head, 13, tw), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UiTheme.PAPER)
-		draw_string(body, r.position + Vector2(40, 36), _fit(row.sub, body, 11, tw), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, DIM)
+		draw_string(head, r.position + Vector2(40, 19), _fit(row.title, head, UiTheme.SIZE_BODY, tw), HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_BODY,
+				UiTheme.TEXT)
+		draw_multiline_string(body, r.position + Vector2(40, 36), row.sub, HORIZONTAL_ALIGNMENT_LEFT, tw, UiTheme.SIZE_CAPTION, 2, DIM)  # (wrapped: it says what to do)
 		if row.has("infection"):
 			_bar(Rect2(r.position.x + 40, r.end.y - 4, tw, 3), row.infection / 100.0, col)
 		elif row.has("healing") and row.healing[1] >= 0.0:
-			_bar(Rect2(r.position.x + 40, r.end.y - 4, tw, 3), row.healing[0], Color("6ab04a"))  # how far it's healed
+			_bar(Rect2(r.position.x + 40, r.end.y - 4, tw, 3), row.healing[0], UiTheme.OK)  # how far it's healed
 		if row.button != "":
-			var br := _body_button(row.i)
-			var lit := br.has_point(get_local_mouse_position())
-			draw_style_box(UiTheme.box(UiTheme.WARN if lit else Color(0.91, 0.88, 0.81, 0.1), 6), br)
-			draw_string(head, br.position + Vector2(0, 19), "พันแผล" if row.button == "treat" else "ใช้ยา", HORIZONTAL_ALIGNMENT_CENTER,
-					br.size.x, 12, UiTheme.INK if lit else UiTheme.PAPER)
+			_button(_body_button(row.i), "พันแผล" if row.button == "treat" else "ใช้ยา", true)
 
 
 func _recipe_rect(i: int) -> Rect2:
-	return Rect2(X_FAR, 58 + i * 36, W - X_FAR - 24, 32)
+	return Rect2(X_FAR, TOP + i * 40, W - X_FAR - PAD, 36)
 
 
 func _draw_recipes(head: Font, body: Font) -> void:
 	var ids := Crafting.RECIPES.keys()
+	var work := GameUI.working()
 	for i in ids.size():
 		var r: Dictionary = Crafting.RECIPES[ids[i]]
 		var rr := _recipe_rect(i)
-		if rr.end.y > CARD_Y - 14:
+		if rr.end.y > CARD_Y - 32:
 			break
 		var ok := Crafting.can_make(inv, ids[i])
 		var lit: bool = hover == ["recipe", ids[i]]
-		draw_style_box(UiTheme.box(Color(0.91, 0.88, 0.81, 0.12 if lit else 0.04), 6, UiTheme.WARN if lit and ok else SLOT_EDGE, 1), rr)
-		Items.draw_icon(self, Rect2(rr.position + Vector2(4, 4), Vector2(24, 24)), r.makes)
-		draw_string(head, rr.position + Vector2(34, 14), r.name, HORIZONTAL_ALIGNMENT_LEFT, rr.size.x - 38, 13,
-				UiTheme.PAPER if ok else Color(UiTheme.PAPER, 0.4))
-		draw_string(body, rr.position + Vector2(34, 27), _recipe_line(ids[i]), HORIZONTAL_ALIGNMENT_LEFT, rr.size.x - 38, 10,
-				Color("8fc870") if ok else Color(UiTheme.PAPER, 0.35))
+		draw_style_box(UiTheme.rbox(UiTheme.SURFACE_300 if lit else UiTheme.SURFACE_200, UiTheme.RADIUS_SM,
+				UiTheme.ACCENT if lit and ok else (UiTheme.BORDER_STRONG if lit else UiTheme.BORDER)), rr)
+		if work.get("recipe", "") == ids[i]:  # being made now: the row fills up
+			draw_style_box(UiTheme.rbox(UiTheme.SURFACE_300, UiTheme.RADIUS_SM, UiTheme.ACCENT), rr)
+			UiTheme.meter(self, Rect2(rr.position.x + 1, rr.end.y - 3, rr.size.x - 2, 2), work.k, UiTheme.ACCENT, UiTheme.SURFACE_000)
+		Items.draw_icon(self, Rect2(rr.position + Vector2(6, 6), Vector2(23, 23)), r.makes)
+		var fit := rr.size.x - 44
+		draw_string(head, rr.position + Vector2(38, 15), _fit(Crafting.recipe_name(ids[i]), head, UiTheme.SIZE_BODY - 1, fit), HORIZONTAL_ALIGNMENT_LEFT,
+				-1, UiTheme.SIZE_BODY - 1, UiTheme.TEXT if ok else UiTheme.TEXT_MUTED)
+		draw_string(body, rr.position + Vector2(38, 30), _fit(_recipe_line(ids[i]), body, UiTheme.SIZE_CAPTION, fit), HORIZONTAL_ALIGNMENT_LEFT, -1,
+				UiTheme.SIZE_CAPTION, UiTheme.OK if ok else UiTheme.TEXT_FAINT)
 
 
 ## An item in a slot. `named`: room is left at the bottom for its name band.
@@ -909,15 +992,11 @@ func _draw_item(r: Rect2, it: Dictionary, named := false) -> void:
 		Items.draw_icon(self, Rect2(r.position + Vector2(r.size.x * 0.22, r.size.y * 0.1), Vector2(r.size.x * 0.56, r.size.x * 0.56)), Items.key(it))
 	else:
 		Items.draw_icon(self, r.grow(-r.size.x * 0.19), Items.key(it))
-	var rarity := Items.rarity_of(it.id)
-	if rarity != "common":  # a coloured corner marks the harder finds
-		draw_colored_polygon(PackedVector2Array([r.position + Vector2(4, 4), r.position + Vector2(14, 4), r.position + Vector2(4, 14)]),
-				Items.RARITY_COLORS[rarity])
-	if it.get("n", 1) > 1:
-		draw_string(UiTheme.heading(), Vector2(r.position.x + 2, r.end.y - 5), "x%d" % it.n, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 6, 12, UiTheme.INK)  # (the whole slot's width: "x100" fits)
+	if it.get("n", 1) > 1:  # (the whole slot's width: "100" fits)
+		UiTheme.over_world(self, Vector2(r.position.x + 2, r.end.y - 6), "%d" % it.n, UiTheme.heading(), UiTheme.SIZE_LABEL, UiTheme.TEXT,
+				HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 6)
 	var d := Items.def(it.id)
 	if d.get("type") in ["weapon", "wear"] and d.has("hp"):
 		var frac: float = float(it.hp) / d.hp
 		var bar := Rect2(r.position.x + 5, r.end.y - (16.0 if named else 7.0), r.size.x - 10, 2.5 if named else 3.0)
-		draw_rect(bar, Color(0, 0, 0, 0.35))
-		draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), Color("4f9a3a") if frac > 0.3 else Color("c8502a"))
+		UiTheme.meter(self, bar, frac, UiTheme.OK if frac > 0.3 else UiTheme.DANGER, Color(0, 0, 0, 0.4))

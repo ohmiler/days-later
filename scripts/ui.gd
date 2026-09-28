@@ -38,6 +38,7 @@ var prompt_tag: PromptTag  # "E  open" over whatever is in reach
 var dash: BikeDash  # the bike's dashboard while riding
 var help: Control
 var gear: BagScreen
+var work: WorkBar
 var fs_button: Button
 var pause: Control
 var pause_fs: Button
@@ -160,7 +161,7 @@ func toggle_gore() -> void:
 	cfg.set_value("video", "low_gore", Look.low_gore)
 	cfg.save(SETTINGS)
 	if pause_gore:
-		pause_gore.text = "เลือดและชิ้นส่วน: " + ("น้อย" if Look.low_gore else "เต็ม")
+		pause_gore.text = "เลือด: " + ("น้อย" if Look.low_gore else "เต็ม")
 
 
 func set_bus_volume(bus: String, v: float, remember := true) -> void:
@@ -231,14 +232,20 @@ func show_chat(who: String, text: String) -> void:
 	push_feed("%s: %s" % [who, text], "chat")
 
 
+const CHAT_W := 480.0
+
+
 func _build_chat() -> void:
 	chat = _line_edit("", "พิมพ์ข้อความ แล้วกด Enter · Esc ยกเลิก")
+	# Over the hotbar, where the work bar goes: clear of the vitals and the feed.
+	chat.anchor_left = 0.5
+	chat.anchor_right = 0.5
 	chat.anchor_top = 1.0
 	chat.anchor_bottom = 1.0
-	chat.offset_left = 24
-	chat.offset_right = 24 + 420
-	chat.offset_top = -210
-	chat.offset_bottom = -174
+	chat.offset_left = -CHAT_W / 2
+	chat.offset_right = CHAT_W / 2
+	chat.offset_top = -148 - 44
+	chat.offset_bottom = -148
 	chat.max_length = 120
 	chat.visible = false
 	chat.text_submitted.connect(func(t: String):
@@ -260,75 +267,96 @@ func _build_pause() -> void:
 	pause.visible = false
 	add_child(pause)
 	var dim := ColorRect.new()
-	dim.color = Color(0.03, 0.03, 0.02, 0.85)
+	dim.color = Color(UiTheme.SURFACE_000, 0.75)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	pause.add_child(dim)
+	# One panel in the middle: resume, then sound, then settings, then leaving.
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UiTheme.panel_box())
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	panel.custom_minimum_size = Vector2(PAUSE_W, 0)
+	pause.add_child(panel)
 	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_CENTER)
-	box.offset_left = -200
-	box.offset_right = 200
-	box.offset_top = -270
-	box.offset_bottom = 270
-	box.add_theme_constant_override("separation", 12)
-	pause.add_child(box)
-	var title := _label("หยุดพัก", UiTheme.heavy(), 44, UiTheme.PAPER)
-	title.custom_minimum_size = Vector2(0, 64)
-	box.add_child(title)
-	box.add_child(_label("โลกยังเดินต่อระหว่างเปิดเมนูนี้ ระวังตัวด้วย", UiTheme.body(), 15, Color(UiTheme.WARN, 0.9)))
+	box.add_theme_constant_override("separation", int(UiTheme.SPACE_4))
+	panel.add_child(box)
+	var head := VBoxContainer.new()
+	head.add_theme_constant_override("separation", int(UiTheme.SPACE_1))
+	head.add_child(_label("หยุดพัก", UiTheme.heavy(), UiTheme.SIZE_DISPLAY, UiTheme.TEXT))
+	head.add_child(_label("โลกยังเดินต่อระหว่างเปิดเมนูนี้ ระวังตัวด้วย", UiTheme.body(), UiTheme.SIZE_BODY, UiTheme.ACCENT))
+	box.add_child(head)
 	var resume := _button("เล่นต่อ", true)
 	resume.pressed.connect(toggle_pause)
 	box.add_child(resume)
-	var vol_row := HBoxContainer.new()
-	vol_row.add_theme_constant_override("separation", 12)
-	var vl := _label("ระดับเสียง", UiTheme.body(), 16, UiTheme.PAPER)
-	vl.custom_minimum_size = Vector2(90, 0)
-	vol_row.add_child(vl)
-	var vol := HSlider.new()
-	vol.min_value = 0.0
-	vol.max_value = 1.0
-	vol.step = 0.05
-	vol.value = cfg.get_value("video", "volume", 0.8)
-	vol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vol.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	vol.value_changed.connect(func(v: float): set_volume(v))
-	vol_row.add_child(vol)
-	box.add_child(vol_row)
-	for pair in [["Music", "เพลง"], ["Ambience", "บรรยากาศ"]]:
+	box.add_child(UiTheme.divider())
+	var sound := VBoxContainer.new()
+	sound.add_theme_constant_override("separation", int(UiTheme.SPACE_2))
+	box.add_child(sound)
+	for pair in [["", "ระดับเสียง", cfg.get_value("video", "volume", 0.8)], ["Music", "เพลง", cfg.get_value("video", "vol_Music", 1.0)],
+			["Ambience", "บรรยากาศ", cfg.get_value("video", "vol_Ambience", 1.0)]]:
 		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 12)
-		var l := _label(pair[1], UiTheme.body(), 16, UiTheme.PAPER)
-		l.custom_minimum_size = Vector2(90, 0)
+		row.add_theme_constant_override("separation", int(UiTheme.SPACE_4))
+		var l := _label(pair[1], UiTheme.medium(), UiTheme.SIZE_BODY, UiTheme.TEXT_MUTED)
+		l.custom_minimum_size = Vector2(88, 0)
 		row.add_child(l)
 		var sl := HSlider.new()
 		sl.min_value = 0.0
 		sl.max_value = 1.0
 		sl.step = 0.05
-		sl.value = cfg.get_value("video", "vol_" + pair[0], 1.0)
+		sl.value = pair[2]
 		sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		UiTheme.style_slider(sl)
 		var bus: String = pair[0]
-		sl.value_changed.connect(func(v: float): set_bus_volume(bus, v))
+		if bus == "":
+			sl.value_changed.connect(func(v: float): set_volume(v))
+		else:
+			sl.value_changed.connect(func(v: float): set_bus_volume(bus, v))
 		row.add_child(sl)
-		box.add_child(row)
+		sound.add_child(row)
+	box.add_child(UiTheme.divider())
+	var opts := GridContainer.new()
+	opts.columns = 2
+	opts.add_theme_constant_override("h_separation", int(UiTheme.SPACE_2))
+	opts.add_theme_constant_override("v_separation", int(UiTheme.SPACE_2))
+	box.add_child(opts)
 	pause_fs = _button("", false)
 	pause_fs.pressed.connect(func():
 		set_fullscreen(not is_fullscreen())
 		pause_fs.text = "เต็มจอ: " + ("เปิด" if is_fullscreen() else "ปิด") + "  (F11)")
-	box.add_child(pause_fs)
-	pause_gore = _button("เลือดและชิ้นส่วน: " + ("น้อย" if Look.low_gore else "เต็ม"), false)
+	pause_gore = _button("เลือด: " + ("น้อย" if Look.low_gore else "เต็ม"), false)
 	pause_gore.pressed.connect(toggle_gore)
-	box.add_child(pause_gore)
 	var keys := _button("วิธีเล่น (H)", false)
 	keys.pressed.connect(func():
 		toggle_pause()
 		toggle_help())
-	box.add_child(keys)
-	var leave := _button("กลับเมนูหลัก (บันทึกให้)", false)
+	var leave := _button("กลับเมนูหลัก", false)
 	leave.pressed.connect(func(): leave_requested.emit())
-	box.add_child(leave)
-	var quit := _button("ออกจากเกม (บันทึกให้)", false)
+	var quit := _button("ออกจากเกม", false)
 	quit.pressed.connect(func(): quit_requested.emit())
-	box.add_child(quit)
+	for b: Button in [pause_fs, pause_gore]:
+		b.add_theme_font_size_override("font_size", UiTheme.SIZE_BODY)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		opts.add_child(b)
+	keys.add_theme_font_size_override("font_size", UiTheme.SIZE_BODY)
+	box.add_child(keys)
+	box.add_child(UiTheme.divider())
+	var out := HBoxContainer.new()
+	out.add_theme_constant_override("separation", int(UiTheme.SPACE_2))
+	for b: Button in [leave, quit]:
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		out.add_child(b)
+	var bye := VBoxContainer.new()
+	bye.add_theme_constant_override("separation", int(UiTheme.SPACE_2))
+	bye.add_child(out)
+	var saved := _label("บันทึกให้อัตโนมัติทั้งสองทาง", UiTheme.medium(), UiTheme.SIZE_CAPTION, UiTheme.TEXT_MUTED)
+	saved.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bye.add_child(saved)
+	box.add_child(bye)
+
+
+const PAUSE_W := 440.0
 
 
 func is_fullscreen() -> bool:
@@ -379,9 +407,9 @@ func toggle_gear() -> void:
 func announce(text: String, good := false) -> void:
 	banner.text = text
 	banner_t = 3.0 if good else 5.0
-	banner.add_theme_color_override("font_color", UiTheme.WARN if good else Color("ff6a5a"))
+	banner.add_theme_color_override("font_color", UiTheme.ACCENT if good else UiTheme.DANGER)
 	push_feed(text.replace("
-", " · "), "info" if good else "kill")  # (gold edge for good news, red for danger)
+", " · "), "good" if good else "bad")  # (a gold dot for good news, red for danger)
 
 
 func toggle_help() -> void:
@@ -391,6 +419,8 @@ func toggle_help() -> void:
 # --- Message feed ------------------------------------------------------------
 
 const FEED_TEXT_W := 360.0  # widest a message line gets (the feed is 396 wide)
+## The dot in front of a feed line: what kind of news it is.
+const FEED_DOTS := {kill = UiTheme.TEXT_MUTED, chat = UiTheme.INFO, good = UiTheme.ACCENT, bad = UiTheme.DANGER}
 
 
 func push_feed(text: String, kind := "info") -> void:
@@ -404,23 +434,19 @@ func push_feed(text: String, kind := "info") -> void:
 			(last.get_child(0) as Label).text = "%s  ×%d" % [text, n]
 			return
 	var p := PanelContainer.new()
-	var sb := UiTheme.box(UiTheme.CARD, 4)
-	sb.border_width_left = 3
-	sb.border_color = UiTheme.BLOOD if kind == "kill" else (Color("5a9ad8") if kind == "chat" else UiTheme.WARN)
-	sb.content_margin_top = 6
-	sb.content_margin_bottom = 6
-	sb.content_margin_left = 12
-	p.add_theme_stylebox_override("panel", sb)
+	p.add_theme_stylebox_override("panel", UiTheme.toast_box())
+	var dot: Color = FEED_DOTS.get(kind, UiTheme.TEXT_MUTED)
+	p.draw.connect(func() -> void: p.draw_circle(Vector2(UiTheme.SPACE_3 + 3, p.size.y / 2), 3.5, dot))
 	p.size_flags_horizontal = Control.SIZE_SHRINK_END
 	p.set_meta("age", 0.0)
 	p.set_meta("text", text)
 	var l := Label.new()
 	l.text = text
 	l.add_theme_font_override("font", UiTheme.body_bold())
-	l.add_theme_font_size_override("font_size", 16)
-	l.add_theme_color_override("font_color", UiTheme.PAPER)
+	l.add_theme_font_size_override("font_size", UiTheme.SIZE_BODY)
+	l.add_theme_color_override("font_color", UiTheme.TEXT)
 	# A long message wraps onto more lines rather than running off the screen.
-	if UiTheme.body_bold().get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x > FEED_TEXT_W:
+	if UiTheme.body_bold().get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_BODY).x > FEED_TEXT_W:
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		l.custom_minimum_size.x = FEED_TEXT_W
 	p.add_child(l)
@@ -471,7 +497,7 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	vitals.sneak = me.sneak
 	vitals.on_roof = me.on_roof
 	vitals.hint = _hint(me) if me.alive() else ""
-	vitals.offset_top = vitals.offset_bottom - (150 if vitals.hint != "" else 126)
+	vitals.offset_top = vitals.offset_bottom - (134 if vitals.hint != "" else 102)
 	vitals.queue_redraw()
 	statuses.items = Body.statuses(me) if me.alive() else []
 	# Riding: the dashboard comes up, and the hotbar and weapons (no use on a bike) fade back.
@@ -489,7 +515,7 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	weapons.t = vitals.t
 	weapons.queue_redraw()
 	statuses.t = vitals.t
-	statuses.offset_bottom = vitals.offset_bottom - (vitals.offset_bottom - vitals.offset_top) - 6
+	statuses.offset_bottom = vitals.offset_bottom - (vitals.offset_bottom - vitals.offset_top) - UiTheme.SPACE_2
 	statuses.offset_top = statuses.offset_bottom - 30
 	statuses.queue_redraw()
 
@@ -498,6 +524,8 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	clock.day = day
 	clock.time = time
 	clock.online = online
+	# The quests sit a card's gap under whatever the clock is saying.
+	quest_tracker.offset_top = clock.offset_top + clock.used_h + UiTheme.SPACE_4
 	clock.queue_redraw()
 
 	var step := -1
@@ -526,7 +554,7 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	death_sub.modulate.a = k
 	death_label.text = "คุณกลายเป็นซอมบี้" if me.turned else "คุณตายแล้ว"
 	if not me.alive():
-		death_sub.text = "ของที่ถืออยู่ร่วงอยู่ข้างศพ  ·  เกิดใหม่ใน %d วินาที" % ceili(maxf(0.0, Player.RESPAWN_TIME - me.death_t))
+		death_sub.text = "ของที่ถืออยู่ร่วงอยู่ข้างศพ · เกิดใหม่ใน %d วินาที" % ceili(maxf(0.0, Player.RESPAWN_TIME - me.death_t))
 
 
 ## The most urgent thing in the bag that would help right now.
@@ -585,7 +613,7 @@ func _build_hud() -> void:
 	vitals.anchor_top = 1.0
 	vitals.anchor_bottom = 1.0
 	vitals.offset_left = 24
-	vitals.offset_right = 24 + 270
+	vitals.offset_right = 24 + 284
 	vitals.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	vitals.offset_bottom = -24
 	vitals.offset_top = -24 - 126
@@ -655,13 +683,24 @@ func _build_hud() -> void:
 
 	hotbar = InventoryBar.new()
 	hud.add_child(hotbar)
+	work = WorkBar.new()
+	work.anchor_left = 0.5
+	work.anchor_right = 0.5
+	work.anchor_top = 1.0
+	work.anchor_bottom = 1.0
+	work.offset_left = -WorkBar.W / 2
+	work.offset_right = WorkBar.W / 2
+	work.offset_top = -148 - WorkBar.H
+	work.offset_bottom = -148
+	work.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(work)
 	wheel = ActionWheel.new()
 	wheel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	wheel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	wheel.visible = false
 	add_child(wheel)
 
-	banner = _label("", UiTheme.heavy(), 34, Color("ff6a5a"))
+	banner = _label("", UiTheme.heavy(), UiTheme.SIZE_DISPLAY, UiTheme.DANGER)
 	banner.anchor_left = 0.5
 	banner.anchor_right = 0.5
 	banner.offset_left = -520
@@ -669,28 +708,28 @@ func _build_hud() -> void:
 	banner.offset_top = 140
 	banner.offset_bottom = 190
 	banner.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	banner.add_theme_constant_override("outline_size", 12)
-	banner.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	banner.add_theme_constant_override("outline_size", 10)
+	banner.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
 	banner.modulate.a = 0.0
 	hud.add_child(banner)
 
 
 func _build_death() -> void:
-	death_label = _label("คุณตายแล้ว", UiTheme.heavy(), 72, Color("d8342a"))
-	death_sub = _label("", UiTheme.body_bold(), 22, Color(1, 1, 1, 0.9))
+	death_label = _label("คุณตายแล้ว", UiTheme.heavy(), 64, UiTheme.DANGER)  # (the one line bigger than the scale: the moment itself)
+	death_sub = _label("", UiTheme.body_bold(), UiTheme.SIZE_HEADING, UiTheme.TEXT)
 	for l in [death_label, death_sub]:
 		l.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 		l.offset_left = -500
 		l.offset_right = 500
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		l.add_theme_constant_override("outline_size", 12)
-		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+		l.add_theme_constant_override("outline_size", 10)
+		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
 		l.modulate.a = 0.0
 		add_child(l)
-	death_label.offset_top = -140
-	death_label.offset_bottom = -40
-	death_sub.offset_top = -10
-	death_sub.offset_bottom = 30
+	death_label.offset_top = -120
+	death_label.offset_bottom = -24
+	death_sub.offset_top = -16
+	death_sub.offset_bottom = 16
 
 
 func _build_help() -> void:
@@ -699,16 +738,16 @@ func _build_help() -> void:
 	help.visible = false
 	add_child(help)
 	var dim := ColorRect.new()
-	dim.color = Color(0.03, 0.03, 0.02, 0.7)
+	dim.color = Color(UiTheme.SURFACE_000, 0.75)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	help.add_child(dim)
 	var sheet := HelpSheet.new()
 	sheet.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	sheet.offset_left = -410
-	sheet.offset_right = 410
+	sheet.offset_left = -440
+	sheet.offset_right = 440
 	sheet.offset_top = -335
 	sheet.offset_bottom = 335
-	sheet.pivot_offset = Vector2(410, 335)
+	sheet.pivot_offset = Vector2(440, 335)
 	sheet.rotation = 0.01
 	help.add_child(sheet)
 
@@ -731,34 +770,36 @@ func _build_menu() -> void:
 	dim.stretch_mode = TextureRect.STRETCH_SCALE
 	menu.add_child(dim)
 
-	var days := _label("DAYS", UiTheme.heavy(), 104, UiTheme.PAPER)
-	var later := _label("LATER", UiTheme.heavy(), 104, UiTheme.BLOOD)
-	days.add_theme_color_override("font_shadow_color", Color("7a1510"))
-	later.add_theme_color_override("font_shadow_color", Color("3a0806"))
-	for l in [days, later]:
-		l.add_theme_constant_override("shadow_offset_x", 4)
-		l.add_theme_constant_override("shadow_offset_y", 4)
-		menu.add_child(l)
-	days.position = Vector2(86, 60)
-	later.position = Vector2(86, 150)
-	var sub := _label("กรุงเทพฯ · หลังวันสิ้นโลก", UiTheme.medium(), 24, Color(UiTheme.PAPER, 0.75))
-	sub.position = Vector2(92, 282)
-	menu.add_child(sub)
+	# Two columns on one grid: MENU_EDGE in from the sides, the logo and the
+	# form on the left, the creator on the right with the same top and bottom.
+	var left := VBoxContainer.new()
+	left.position = Vector2(MENU_EDGE, MENU_TOP)
+	left.custom_minimum_size = Vector2(MENU_FORM_W, 0)
+	left.add_theme_constant_override("separation", 0)
+	menu.add_child(left)
+	left.add_child(Logo.new())
+	var sub := _label("กรุงเทพฯ · หลังวันสิ้นโลก", UiTheme.medium(), UiTheme.SIZE_TITLE, UiTheme.TEXT_MUTED)
+	left.add_child(sub)
+	var gap := Control.new()
+	gap.custom_minimum_size.y = UiTheme.SPACE_6 + UiTheme.SPACE_4
+	left.add_child(gap)
 
 	var form := VBoxContainer.new()
-	form.position = Vector2(90, 350)
-	form.custom_minimum_size = Vector2(400, 0)
-	form.add_theme_constant_override("separation", 12)
-	menu.add_child(form)
-	form.add_child(_label("ชื่อผู้รอดชีวิต", UiTheme.body(), 15, Color(UiTheme.PAPER, 0.7)))
+	form.add_theme_constant_override("separation", int(UiTheme.SPACE_3))
+	left.add_child(form)
+	menu_left = left
+	form.add_child(_label("ชื่อผู้รอดชีวิต", UiTheme.medium(), UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED))
 	name_edit = _line_edit(cfg.get_value("player", "name", ""), "ใส่ชื่อของคุณ")
 	form.add_child(name_edit)
+	var name_gap := Control.new()
+	name_gap.custom_minimum_size.y = UiTheme.SPACE_1
+	form.add_child(name_gap)
 	# Carry on in the saved city, or start a new one (which replaces it).
 	var info := SaveGame.world_info()
 	if info.has("problem"):
-		form.add_child(_label(info.problem, UiTheme.body_bold(), 15, UiTheme.WARN))
+		form.add_child(_label(info.problem, UiTheme.body_bold(), UiTheme.SIZE_BODY, UiTheme.ACCENT))
 	elif info.get("oldcity", false):
-		form.add_child(_label("เมืองนี้สร้างด้วยเกมรุ่นเก่า · ไปเมืองใหม่ได้ ตัวละครและของยังอยู่ครบ", UiTheme.body(), 14, UiTheme.WARN))
+		form.add_child(_label("เมืองนี้สร้างด้วยเกมรุ่นเก่า · ไปเมืองใหม่ได้ ตัวละครและของยังอยู่ครบ", UiTheme.body(), UiTheme.SIZE_BODY, UiTheme.ACCENT))
 		var move := _button("ย้ายไปเมืองใหม่", true)
 		move.pressed.connect(func():
 			_remember_name()
@@ -780,7 +821,7 @@ func _build_menu() -> void:
 		host_requested.emit(player_name(), false))
 	form.add_child(fresh)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("separation", int(UiTheme.SPACE_2))
 	address_edit = _line_edit("127.0.0.1", "ที่อยู่เซิร์ฟเวอร์")
 	address_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(address_edit)
@@ -799,29 +840,53 @@ func _build_menu() -> void:
 	var show_gore := func():
 		gore.text = "เลือด: " + ("น้อย" if Look.low_gore else "เต็ม")
 	show_gore.call()
-	gore.add_theme_font_size_override("font_size", 16)
+	gore.add_theme_font_size_override("font_size", UiTheme.SIZE_BODY)
 	gore.pressed.connect(func():
 		toggle_gore()
 		show_gore.call())
 	fs_button = _button("", false)
-	fs_button.add_theme_font_size_override("font_size", 16)
+	fs_button.add_theme_font_size_override("font_size", UiTheme.SIZE_BODY)
 	fs_button.pressed.connect(func(): set_fullscreen(not is_fullscreen()))
 	fs_button.text = "เต็มจอ: " + ("เปิด" if cfg.get_value("video", "fullscreen", true) else "ปิด") + "  (F11)"
 	var opts := HBoxContainer.new()
-	opts.add_theme_constant_override("separation", 8)
+	opts.add_theme_constant_override("separation", int(UiTheme.SPACE_2))
 	for b: Button in [gore, fs_button]:
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		opts.add_child(b)
 	form.add_child(opts)
-	status = _label("", UiTheme.body(), 15, UiTheme.WARN)
+	status = _label("", UiTheme.body(), UiTheme.SIZE_BODY, UiTheme.ACCENT)
 	form.add_child(status)
 	_build_creator()
-	var ver := _label("v0.3 · ต้นแบบ · กด H ในเกมเพื่อดูวิธีเล่น", UiTheme.body(), 14, Color(UiTheme.PAPER, 0.4))
+	var ver := _label("v0.3 · ต้นแบบ · กด H ในเกมเพื่อดูวิธีเล่น", UiTheme.medium(), UiTheme.SIZE_CAPTION, UiTheme.TEXT_FAINT)
 	ver.anchor_top = 1.0
 	ver.anchor_bottom = 1.0
-	ver.offset_left = 90
-	ver.offset_top = -30
+	ver.offset_left = MENU_EDGE
+	ver.offset_top = -UiTheme.SPACE_6 - 16
 	menu.add_child(ver)
+	left.resized.connect(_fit_creator)
+	status.resized.connect(_fit_creator)
+	menu.resized.connect(_fit_creator)  # (the window changed size)
+
+
+const MENU_EDGE := 96.0  # the menu's columns this far in from the sides
+const MENU_TOP := 64.0
+const MENU_FORM_W := 400.0
+const CREATOR_W := 440.0
+var menu_left: Control
+var creator: Control
+
+
+## The creator panel spans the left column: same top, and its bottom level with
+## the last button (the status line under it doesn't count).
+func _fit_creator() -> void:
+	if creator == null or menu_left == null:
+		return
+	var screen := get_viewport().get_visible_rect().size
+	var h := menu_left.size.y - (status.size.y + UiTheme.SPACE_3 if status.text == "" else 0.0)
+	var top := maxf(UiTheme.SPACE_6, snappedf((screen.y - h) / 2 - UiTheme.SPACE_4, UiTheme.SPACE_2))  # (centred, a touch high)
+	menu_left.position = Vector2(MENU_EDGE, top)
+	creator.position = Vector2(screen.x - MENU_EDGE - CREATOR_W, top)
+	creator.size = Vector2(CREATOR_W, h)
 
 
 ## Character creator: a turning preview with a picker for each part of the look.
@@ -833,40 +898,48 @@ func _build_creator() -> void:
 		rng.randomize()
 		appearance = Look.random_appearance(rng)
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", UiTheme.box(Color(0.03, 0.03, 0.02, 0.72), 10, UiTheme.LINE, 1))
-	panel.position = Vector2(740, 150)
-	panel.custom_minimum_size = Vector2(430, 0)
+	panel.add_theme_stylebox_override("panel", UiTheme.panel_box(UiTheme.SPACE_6, true))
+	panel.position = Vector2(1280 - MENU_EDGE - CREATOR_W, MENU_TOP)
+	panel.custom_minimum_size = Vector2(CREATOR_W, 0)
 	menu.add_child(panel)
+	creator = panel
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", int(UiTheme.SPACE_4))
+	panel.add_child(outer)
+	outer.add_child(_label("หน้าตาผู้รอดชีวิต", UiTheme.heading(), UiTheme.SIZE_TITLE, UiTheme.TEXT))
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
-	panel.add_child(row)
-	var stage := Control.new()
-	stage.custom_minimum_size = Vector2(130, 260)
+	row.add_theme_constant_override("separation", int(UiTheme.SPACE_4))
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.add_child(row)
+	var stage := StageBox.new()  # (the model stands on a ground of its own)
+	stage.custom_minimum_size = Vector2(140, 0)
+	stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	stage.clip_contents = true
 	row.add_child(stage)
 	preview = Preview.new()
-	preview.position = Vector2(65, 225)
 	preview.scale = Vector2(6.5, 6.5)
 	stage.add_child(preview)
+	stage.resized.connect(func(): preview.position = Vector2(stage.size.x / 2, stage.size.y / 2 + 110))
 	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 4)
+	col.add_theme_constant_override("separation", int(UiTheme.SPACE_2))
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_child(col)
-	col.add_child(_label("หน้าตาผู้รอดชีวิต", UiTheme.heading(), 18, UiTheme.PAPER))
 	var names := {skin = "สีผิว", style = "ทรงผม", hair = "สีผม", shirt = "เสื้อ", pants = "กางเกง", build = "รูปร่าง"}
 	var sizes := {skin = Look.SKINS.size(), style = Look.HAIR_STYLES.size(), hair = Look.HAIRS.size(),
 			shirt = Look.SHIRTS.size(), pants = Look.PANTS.size(), build = Look.BUILDS.size()}
 	var values := {}
 	for key in ["skin", "style", "hair", "shirt", "pants", "build"]:
 		var line := HBoxContainer.new()
-		line.add_theme_constant_override("separation", 6)
+		line.add_theme_constant_override("separation", int(UiTheme.SPACE_2))
 		col.add_child(line)
-		var l := _label(names[key], UiTheme.body(), 15, Color(UiTheme.PAPER, 0.7))
-		l.custom_minimum_size = Vector2(70, 0)
+		var l := _label(names[key], UiTheme.medium(), UiTheme.SIZE_BODY, UiTheme.TEXT_MUTED)
+		l.custom_minimum_size = Vector2(64, 0)
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		line.add_child(l)
 		var prev := _small_button("‹")
-		var val := _label("", UiTheme.medium(), 15, UiTheme.PAPER)
-		val.custom_minimum_size = Vector2(90, 0)
+		var val := _label("", UiTheme.medium(), UiTheme.SIZE_BODY, UiTheme.TEXT)
+		val.custom_minimum_size = Vector2(76, 0)
 		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		var next := _small_button("›")
 		values[key] = val
@@ -879,6 +952,9 @@ func _build_creator() -> void:
 		line.add_child(val)
 		line.add_child(next)
 	var dice := _button("สุ่มหน้าตา", false)
+	var dice_gap := Control.new()
+	dice_gap.custom_minimum_size.y = UiTheme.SPACE_2
+	col.add_child(dice_gap)
 	dice.pressed.connect(func():
 		var rng := RandomNumberGenerator.new()
 		rng.randomize()
@@ -907,9 +983,14 @@ func _refresh_creator(values: Dictionary, save := true) -> void:
 
 func _small_button(text: String) -> Button:
 	var b := _button(text, false)
-	b.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	b.add_theme_font_size_override("font_size", 16)
-	b.custom_minimum_size = Vector2(32, 28)
+	b.add_theme_font_size_override("font_size", UiTheme.SIZE_HEADING)
+	for state in ["normal", "hover", "pressed", "focus"]:
+		var sb: StyleBoxFlat = b.get_theme_stylebox(state)
+		sb.content_margin_left = 0
+		sb.content_margin_right = 0
+		sb.content_margin_top = 2
+		sb.content_margin_bottom = 4
+	b.custom_minimum_size = Vector2(36, 36)
 	return b
 
 
@@ -923,11 +1004,7 @@ func _line_edit(text: String, placeholder: String) -> LineEdit:
 	var e := LineEdit.new()
 	e.text = text
 	e.placeholder_text = placeholder
-	e.add_theme_font_override("font", UiTheme.body())
-	e.add_theme_font_size_override("font_size", 18)
-	e.add_theme_color_override("font_color", UiTheme.PAPER)
-	e.add_theme_stylebox_override("normal", UiTheme.box(Color(0.91, 0.88, 0.81, 0.08), 6, UiTheme.LINE, 1))
-	e.add_theme_stylebox_override("focus", UiTheme.box(Color(0.91, 0.88, 0.81, 0.12), 6, UiTheme.WARN, 1))
+	UiTheme.style_input(e)
 	return e
 
 
@@ -935,29 +1012,35 @@ func _button(text: String, primary: bool) -> Button:
 	var b := Button.new()
 	b.pressed.connect(func(): Sfx.play_ui(self, "ui_click"))
 	b.text = text
-	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	b.add_theme_font_override("font", UiTheme.heading())
-	b.add_theme_font_size_override("font_size", 21)
-	var bg := UiTheme.WARN if primary else Color(0.91, 0.88, 0.81, 0.06)
-	var fg := UiTheme.INK if primary else UiTheme.PAPER
-	for state in ["normal", "hover", "pressed", "focus"]:
-		var c := bg
-		if state == "hover":
-			c = bg.lightened(0.12)
-		elif state == "pressed":
-			c = bg.darkened(0.15)
-		var sb := UiTheme.box(c, 6, UiTheme.LINE if not primary else Color(0, 0, 0, 0), 0 if primary else 1)
-		if primary:
-			sb.shadow_color = Color("9a7a18")
-			sb.shadow_offset = Vector2(0, 4)
-			sb.shadow_size = 1
-		b.add_theme_stylebox_override(state, sb)
-	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
-		b.add_theme_color_override(state, fg)
+	UiTheme.style_button(b, primary)
 	return b
 
 
 # --- Custom-drawn pieces -------------------------------------------------------
+
+## DAYS / LATER, drawn so the two words sit tight (a Label's line is far taller
+## than the capitals) with their left edges on the column's line.
+class Logo extends Control:
+	const SIZE := 96
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(400, 164)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var f := UiTheme.heavy()
+		# (baselines one cap height apart, the first cap's top on this control's top)
+		for w in [["DAYS", 66.0, UiTheme.TEXT, Color("7a1510")], ["LATER", 150.0, UiTheme.DANGER_DEEP, Color("3a0806")]]:
+			var x := -f.get_char_size(w[0].unicode_at(0), SIZE).x * 0.04  # (the first letter's own margin)
+			draw_string(f, Vector2(x + 4, w[1] + 4), w[0], HORIZONTAL_ALIGNMENT_LEFT, -1, SIZE, w[3])
+			draw_string(f, Vector2(x, w[1]), w[0], HORIZONTAL_ALIGNMENT_LEFT, -1, SIZE, w[2])
+
+
+## The creator's stage: a darker ground for the model to stand on.
+class StageBox extends Control:
+	func _draw() -> void:
+		draw_style_box(UiTheme.rbox(UiTheme.SURFACE_200, UiTheme.RADIUS_LG), Rect2(Vector2.ZERO, size))
+
 
 ## The character creator's model: stands and slowly turns, walking now and then.
 class Preview extends Node2D:
@@ -999,67 +1082,83 @@ class Vitals extends Control:
 	## Speaker with 0-3 bars and a word, right-aligned at `right`.
 	func _draw_noise(right: Vector2) -> void:
 		var words := ["เงียบ", "เบา", "ดัง", "ดังมาก"]
-		var cols := [Color(UiTheme.PAPER, 0.4), Color(UiTheme.PAPER, 0.8), UiTheme.WARN, Color("ff5a4a")]
+		var cols := [UiTheme.TEXT_FAINT, UiTheme.TEXT_MUTED, UiTheme.ACCENT, UiTheme.DANGER]
 		var col: Color = cols[noise]
 		var word: String = ("ย่อง · " if sneak else "") + words[noise]
-		var f := UiTheme.body_bold()
-		var tw := f.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
-		draw_string(f, right - Vector2(tw, 0), word, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, col)
+		var f := UiTheme.medium()
+		var tw := f.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL).x
+		draw_string(f, right - Vector2(tw, 0), word, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, col)
 		var x := right.x - tw - 8
 		for i in 3:
 			var h := 4.0 + i * 3.0
 			var bx := x - (2 - i) * 4.0 - 3.0
-			draw_rect(Rect2(bx, right.y - 1 - h, 2.5, h), col if i < noise else Color(UiTheme.PAPER, 0.15))
+			draw_rect(Rect2(bx, right.y - 1 - h, 2.5, h), col if i < noise else UiTheme.SURFACE_300)
 		var sp := x - 12 - 11.0
 		draw_rect(Rect2(sp, right.y - 8, 3, 5), col)
 		draw_colored_polygon(PackedVector2Array([Vector2(sp + 3, right.y - 8), Vector2(sp + 7, right.y - 11),
 				Vector2(sp + 7, right.y), Vector2(sp + 3, right.y - 3)]), col)
 
+	## A small word in a tinted box (a status next to the name). Returns its width.
+	func _chip(pos: Vector2, text: String, col: Color) -> float:
+		var f := UiTheme.medium()
+		var w := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL).x + 14
+		draw_style_box(UiTheme.rbox(Color(col, 0.16), UiTheme.RADIUS_SM), Rect2(pos.x, pos.y - 14, w, 19))
+		draw_string(f, Vector2(pos.x + 7, pos.y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, col)
+		return w
+
+	const PAD := 12.0
+
 	func _draw() -> void:
 		var low := hp > 0 and hp < 30
 		var pulse := 0.5 + 0.5 * sin(t * 7.0)
-		draw_style_box(UiTheme.box(UiTheme.CARD, 8, UiTheme.BLOOD if low else UiTheme.LINE, 2 if low else 1), Rect2(Vector2.ZERO, size))
-		draw_string(UiTheme.heading(), Vector2(16, 32), pname, HORIZONTAL_ALIGNMENT_LEFT, size.x - 150, 20, UiTheme.PAPER)
+		UiTheme.card(self, Rect2(Vector2.ZERO, size), Color(UiTheme.DANGER, 0.5 + 0.5 * pulse) if low else UiTheme.BORDER)
+		# Name, and your survivor level in the accent.
+		var head := UiTheme.heading()
+		var fs := UiTheme.SIZE_HEADING
+		var cut := pname.rfind(" · ")
+		var nm := pname if cut < 0 else pname.left(cut)
+		var lv := "" if cut < 0 else pname.substr(cut)
+		var nm_w := minf(head.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x, 120.0)
+		draw_string(head, Vector2(PAD, 28), nm, HORIZONTAL_ALIGNMENT_LEFT, 120.0, fs, UiTheme.TEXT)
+		var x := PAD + nm_w
+		if lv != "":
+			draw_string(head, Vector2(x, 28), lv, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, UiTheme.ACCENT)
+			x += head.get_string_size(lv, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		# Next to the name: an urgent warning, if any.
-		var alert := "ใกล้ตาย!" if low else ("เลือดออก!" if bleeding else "")
+		var alert := "ใกล้ตาย" if low else ("เลือดออก" if bleeding else "")
 		low = low or bleeding
-		var nw := UiTheme.heading().get_string_size(pname, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x
 		if alert != "":
-			draw_string(UiTheme.body_bold(), Vector2(16 + nw + 10, 31), alert, HORIZONTAL_ALIGNMENT_LEFT, -1, 14,
-					Color(1, 0.42, 0.35, 0.55 + 0.45 * pulse))
+			_chip(Vector2(x + 8, 27), alert, Color(UiTheme.DANGER, 0.6 + 0.4 * pulse))
 		elif on_roof:
-			draw_string(UiTheme.body_bold(), Vector2(16 + nw + 10, 31), "บนดาดฟ้า", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("8ad07a"))
-		_draw_noise(Vector2(size.x - 16, 31))
-		var hc := Color("ff3a2a") if low else UiTheme.BLOOD
-		UiTheme.heart(self, Vector2(27, 60), 12.0 + (1.8 * pulse if low else 0.0), hc)
-		var bar := Rect2(48, 54, size.x - 104, 12)
-		draw_rect(bar, Color(1, 1, 1, 0.08))
-		draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(ghost / 100.0, 0, 1), bar.size.y)), Color(1, 0.86, 0.78, 0.35))
-		draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(hp / 100.0, 0, 1), bar.size.y)), hc)
-		draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(hp / 100.0, 0, 1), 3)), Color(1, 1, 1, 0.18))
-		draw_string(UiTheme.medium(), Vector2(bar.end.x + 10, 66), str(ceili(hp)), HORIZONTAL_ALIGNMENT_LEFT, -1, 17,
-				Color("ff6a5a") if low else UiTheme.PAPER)
-		# Stamina: a thin bar under health.
-		var st := Rect2(48, 70, bar.size.x, 3)
-		draw_rect(st, Color(1, 1, 1, 0.06))
-		draw_rect(Rect2(st.position, Vector2(st.size.x * stamina / 100.0, 3)),
-				Color(1, 0.45, 0.3, 0.5 + 0.5 * pulse) if exhausted else Color(0.95, 0.85, 0.4, 0.8))
-		# Needs row.
-		var needs := [["อิ่ม", hunger, Color("c9a24a"), hunger < 25], ["น้ำ", thirst, Color("4a8ac9"), thirst < 25],
-				["เชื้อ", infection, Color("7ab04a"), infection > 0]]
+			_chip(Vector2(x + 8, 27), "บนดาดฟ้า", UiTheme.OK)
+		_draw_noise(Vector2(size.x - PAD, 27))
+		# Health, with stamina as a thin line under it.
+		var hc := Color("ff3a2a") if low else UiTheme.DANGER_DEEP
+		UiTheme.heart(self, Vector2(PAD + 8, 49), 9.0 + (1.5 * pulse if low else 0.0), hc)
+		var bar := Rect2(PAD + 24, 44, size.x - PAD * 2 - 24 - 34, 10)
+		UiTheme.meter(self, bar, ghost / 100.0, Color(1, 0.86, 0.78, 0.3))
+		if hp > 0:
+			draw_style_box(UiTheme.rbox(hc, 5), Rect2(bar.position, Vector2(maxf(bar.size.x * clampf(hp / 100.0, 0, 1), 10), bar.size.y)))
+		draw_string(UiTheme.heading(), Vector2(bar.end.x, 54), str(ceili(hp)), HORIZONTAL_ALIGNMENT_RIGHT, 34, UiTheme.SIZE_BODY,
+				UiTheme.DANGER if low else UiTheme.TEXT)
+		var st := Rect2(bar.position.x, 58, bar.size.x, 3)
+		UiTheme.meter(self, st, stamina / 100.0, Color(UiTheme.DANGER, 0.5 + 0.5 * pulse) if exhausted else Color(UiTheme.ACCENT, 0.8))
+		# Needs row: the word and the number over a thin bar each.
+		var needs := [["อิ่ม", hunger, UiTheme.ACCENT, hunger < 25], ["น้ำ", thirst, UiTheme.INFO, thirst < 25],
+				["เชื้อ", infection, UiTheme.DANGER, infection > 0]]
+		var cw := (size.x - PAD * 2 - UiTheme.SPACE_3 * 2) / 3.0
 		for i in needs.size():
 			var n: Array = needs[i]
-			var x := 16.0 + i * (size.x - 16) / 3.0
-			var cw := (size.x - 16) / 3.0 - 12
+			var nx := PAD + i * (cw + UiTheme.SPACE_3)
 			var warn: bool = n[3] and (i < 2 or infection > 40)
-			var lc := Color(1, 0.55, 0.45, 0.6 + 0.4 * pulse) if warn else Color(UiTheme.PAPER, 0.75)
-			draw_string(UiTheme.body_bold(), Vector2(x, 100), n[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, lc)
-			var b := Rect2(x, 106, cw, 5)
-			draw_rect(b, Color(1, 1, 1, 0.08))
-			draw_rect(Rect2(b.position, Vector2(b.size.x * n[1] / 100.0, b.size.y)), n[2])
-			draw_string(UiTheme.body(), Vector2(x, 100), "%d" % n[1], HORIZONTAL_ALIGNMENT_RIGHT, cw, 12, Color(UiTheme.PAPER, 0.55))
+			var lc := Color(UiTheme.DANGER, 0.6 + 0.4 * pulse) if warn else UiTheme.TEXT_MUTED
+			draw_string(UiTheme.medium(), Vector2(nx, 82), n[0], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, lc)
+			draw_string(UiTheme.medium(), Vector2(nx, 82), "%d" % n[1], HORIZONTAL_ALIGNMENT_RIGHT, cw, UiTheme.SIZE_LABEL,
+					lc if warn else UiTheme.TEXT)
+			UiTheme.meter(self, Rect2(nx, 87, cw, 4), n[1] / 100.0, n[2])
 		if hint != "":
-			UiTheme.draw_rich(self, Vector2(16, 138), hint, UiTheme.body_bold(), 14, Color(1, 0.8, 0.75))
+			draw_line(Vector2(PAD, 101), Vector2(size.x - PAD, 101), UiTheme.BORDER)
+			UiTheme.draw_rich(self, Vector2(PAD, 122), hint, UiTheme.body_bold(), UiTheme.SIZE_LABEL, UiTheme.TEXT, false, true)
 
 
 ## Icons for what's wrong with you (see Body.statuses): red means deal with it
@@ -1089,25 +1188,66 @@ class WeaponPanel extends Control:
 			var gun := Items.is_gun(it.id)
 			var empty: bool = gun and it.get("ammo", 0) <= 0
 			var pulse := 0.5 + 0.5 * sin(t * 6.0)
-			draw_style_box(UiTheme.box(UiTheme.CARD, 8, Color(1, 0.4, 0.3, pulse) if empty else UiTheme.LINE, 2 if empty else 1), r)
-			Items.draw_icon(self, Rect2(r.position + Vector2(8, 8), Vector2(42, 42)), it.id)
+			UiTheme.card(self, r, Color(UiTheme.DANGER, pulse) if empty else UiTheme.BORDER)
+			var ir := Rect2(r.position + Vector2(8, 8), Vector2(42, 42))
+			UiTheme.slot(self, ir, true)
+			Items.draw_icon(self, ir.grow(-5), it.id)
 			var f := UiTheme.heading()
+			var tw := r.size.x - 70 - (70 if gun else 12)
 			var hand: String = Items.HAND_NAMES[c[0]] + (" · สองมือ" if Items.two_handed(it.id) else "")
-			draw_string(UiTheme.body(), r.position + Vector2(58, 18), hand, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(UiTheme.PAPER, 0.5))
-			draw_string(f, r.position + Vector2(58, 36), Items.display_name(it.id), HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 130, 14, UiTheme.PAPER)
+			draw_string(UiTheme.medium(), r.position + Vector2(60, 21), hand, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)
+			draw_string(f, r.position + Vector2(60, 40), Items.display_name(it.id), HORIZONTAL_ALIGNMENT_LEFT, tw, UiTheme.SIZE_HEADING, UiTheme.TEXT)
 			if d.has("hp") and it.get("hp", 0) > 0:
 				var frac: float = float(it.hp) / d.hp
-				draw_rect(Rect2(r.position + Vector2(58, 44), Vector2(r.size.x - 130, 3)), Color(1, 1, 1, 0.1))
-				draw_rect(Rect2(r.position + Vector2(58, 44), Vector2((r.size.x - 130) * frac, 3)), Color("4f9a3a") if frac > 0.3 else Color("c8502a"))
+				UiTheme.meter(self, Rect2(r.position + Vector2(60, 46), Vector2(tw, 4)), frac, UiTheme.OK if frac > 0.3 else UiTheme.DANGER)
 			if gun:
 				var loaded: int = it.get("ammo", 0)
 				var carried := Crafting.count_in(me.inv, d.ammo)
-				draw_string(UiTheme.medium(), Vector2(r.end.x - 66, r.position.y + 34), "%d" % loaded, HORIZONTAL_ALIGNMENT_RIGHT, 30, 22,
-						Color(1, 0.45, 0.35, 0.5 + 0.5 * pulse) if empty else UiTheme.PAPER)
-				draw_string(UiTheme.body(), Vector2(r.end.x - 34, r.position.y + 34), "/%d" % carried, HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
-						Color(UiTheme.PAPER, 0.55))
-				draw_string(UiTheme.body(), Vector2(r.end.x - 70, r.position.y + 50), "กด R บรรจุ" if empty and carried > 0 else
-						("หมดกระสุน" if empty else ""), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 0.55, 0.45))
+				draw_string(UiTheme.heavy(), Vector2(r.end.x - 70, r.position.y + 34), "%d" % loaded, HORIZONTAL_ALIGNMENT_RIGHT, 32, UiTheme.SIZE_TITLE,
+						Color(UiTheme.DANGER, 0.5 + 0.5 * pulse) if empty else UiTheme.TEXT)
+				draw_string(UiTheme.medium(), Vector2(r.end.x - 36, r.position.y + 34), "/%d" % carried, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL,
+						UiTheme.TEXT_MUTED)
+				draw_string(UiTheme.medium(), Vector2(r.end.x - 72, r.position.y + 50), "กด R บรรจุ" if empty and carried > 0 else
+						("หมดกระสุน" if empty else ""), HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, UiTheme.DANGER)
+
+
+## Over the hotbar while you're busy making, mending or searching something:
+## what it is, how long is left, and that moving stops it.
+class WorkBar extends Control:
+	const W := 280.0
+	const H := 58.0
+	var _on := false
+
+	func _process(_delta: float) -> void:
+		var on := GameUI.working() != {}
+		if on or _on:
+			queue_redraw()
+		_on = on
+
+	func _draw() -> void:
+		var w := GameUI.working()
+		if w.is_empty():
+			return
+		var r := Rect2(Vector2.ZERO, size)
+		UiTheme.card(self, r)
+		var P := UiTheme.SPACE_3
+		draw_string(UiTheme.heading(), Vector2(P, 24), "กำลัง" + w.what, HORIZONTAL_ALIGNMENT_LEFT, W - P * 2 - 44, UiTheme.SIZE_BODY, UiTheme.TEXT)
+		draw_string(UiTheme.medium(), Vector2(P, 24), "%.1f วิ" % w.left, HORIZONTAL_ALIGNMENT_RIGHT, W - P * 2, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)
+		UiTheme.meter(self, Rect2(P, 32, W - P * 2, 6), w.k, UiTheme.ACCENT)
+		draw_string(UiTheme.body(), Vector2(P, 52), w.hint, HORIZONTAL_ALIGNMENT_LEFT, W - P * 2, UiTheme.SIZE_CAPTION, UiTheme.TEXT_MUTED)
+
+
+## The work under way on this screen ({what, recipe, k 0..1, left seconds, hint}), or {}.
+static func working() -> Dictionary:
+	var m = Engine.get_main_loop().current_scene if Engine.get_main_loop() is SceneTree else null
+	if m == null or not ("search_until" in m):
+		return {}
+	var now := Time.get_ticks_msec() / 1000.0
+	if now >= m.search_until:
+		return {}
+	var what: String = m.search_what if m.search_what != "" else "ทำงาน"
+	return {what = what, recipe = m.search_recipe, k = clampf(1.0 - (m.search_until - now) / m.search_total, 0.0, 1.0),
+			left = m.search_until - now, hint = "ขยับตัวได้" if what == "บรรจุกระสุน" else "ยืนนิ่ง ๆ ไว้ · เดินแล้วงานหยุด"}
 
 
 class StatusRow extends Control:
@@ -1122,7 +1262,7 @@ class StatusRow extends Control:
 			var r := Rect2(i * 34, 0, 30, 30)
 			var col: Color = Body.LEVEL_COLORS[it.level]
 			var pulse := 0.5 + 0.5 * sin(t * 6.0) if it.level == 2 else 1.0
-			draw_style_box(UiTheme.box(Color(0.08, 0.07, 0.06, 0.85), 7, Color(col, 0.5 + 0.5 * pulse), 2), r)
+			draw_style_box(UiTheme.rbox(Color(UiTheme.SURFACE_100, UiTheme.OPACITY_CARD), UiTheme.RADIUS_SM, Color(col, 0.35 + 0.45 * pulse), 4), r)
 			Body.draw_icon(self, r.get_center(), it.icon, col, 1.1)
 			if it.get("n", 1) > 1:
 				draw_string_outline(UiTheme.heavy(), r.position + Vector2(0, 30), "%d" % it.n, HORIZONTAL_ALIGNMENT_RIGHT, 28, 12, 4, Color.BLACK)
@@ -1133,14 +1273,15 @@ class StatusRow extends Control:
 			var f := UiTheme.body()
 			var w := f.get_string_size(tip, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 16
 			var tr := Rect2(0, -30, w, 24)
-			draw_style_box(UiTheme.box(Color(0.08, 0.07, 0.06, 0.95), 6, UiTheme.LINE, 1), tr)
-			draw_string(f, Vector2(8, -13), tip, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UiTheme.PAPER)
+			draw_style_box(UiTheme.rbox(UiTheme.SURFACE_100, UiTheme.RADIUS_SM, UiTheme.BORDER_STRONG, 4), tr)
+			draw_string(f, Vector2(8, -13), tip, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_BODY, UiTheme.TEXT)
 
 
 class Clock extends Control:
 	var day := 1
 	var time := 0.3
 	var online := 1
+	var used_h := 56.0  # how far down it drew last time (the quests go under it)
 	var _warn_kind := ""  # which warning is up; its full sentence shows for a while, then a short form
 	var _warn_since := 0.0
 
@@ -1152,8 +1293,7 @@ class Clock extends Control:
 	func _draw() -> void:
 		var w := size.x
 		var title := "วันที่ %d" % day
-		draw_string_outline(UiTheme.heavy(), Vector2(0, 36), title, HORIZONTAL_ALIGNMENT_RIGHT, w, 34, 8, Color(0, 0, 0, 0.55))
-		draw_string(UiTheme.heavy(), Vector2(0, 36), title, HORIZONTAL_ALIGNMENT_RIGHT, w, 34, UiTheme.PAPER)
+		UiTheme.over_world(self, Vector2(0, 30), title, UiTheme.heavy(), UiTheme.SIZE_DISPLAY, UiTheme.TEXT, HORIZONTAL_ALIGNMENT_RIGHT, w)
 		var hour := fmod(time * 24.0 + 2.4, 24.0)
 		var night := time > 0.764 or time < 0.036
 		var phase := "กลางคืน"
@@ -1168,30 +1308,29 @@ class Clock extends Control:
 				phase = "พลบค่ำ"
 		var line := "%02d:%02d · %s" % [int(hour), int(fmod(hour, 1.0) * 60), phase]
 		var f := UiTheme.medium()
-		var tw := f.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
-		draw_string_outline(f, Vector2(0, 64), line, HORIZONTAL_ALIGNMENT_RIGHT, w, 18, 6, Color(0, 0, 0, 0.5))
-		draw_string(f, Vector2(0, 64), line, HORIZONTAL_ALIGNMENT_RIGHT, w, 18, Color(UiTheme.PAPER, 0.9))
-		var ic := Vector2(w - tw - 16, 58)
+		var tw := f.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_BODY).x
+		UiTheme.over_world(self, Vector2(0, 52), line, f, UiTheme.SIZE_BODY, UiTheme.TEXT, HORIZONTAL_ALIGNMENT_RIGHT, w)
+		var ic := Vector2(w - tw - 11, 47)
 		if night:
-			draw_circle(ic, 7, Color("d8dce8"))
-			draw_circle(ic + Vector2(3, -2), 6, Color(0.1, 0.1, 0.12))
+			draw_circle(ic, 5, Color("d8dce8"))
+			draw_circle(ic + Vector2(2, -1.5), 4.2, Color(0.1, 0.1, 0.12))
 		else:
-			draw_circle(ic, 6, Color("ffb35c"))
+			draw_circle(ic, 4.5, UiTheme.ACCENT)
 		# [kind, the full sentence, the short form it shrinks to ("" to go)]
 		var warn := ""
-		var wc := Color("ffb35c")
+		var wc := UiTheme.ACCENT
 		var kind := ""
 		var short := ""
 		if _horde_now():
 			kind = "horde"
 			warn = "ฝูงซอมบี้กำลังบุก! อยู่ในที่ปลอดภัย"
 			short = "ฝูงซอมบี้บุก!"
-			wc = Color("ff5a4a")
+			wc = UiTheme.DANGER
 		elif day % 3 == 0 and time < 0.764:
 			kind = "tonight"
 			warn = "คืนนี้: ฝูงซอมบี้จะบุก"
 			short = "คืนนี้ฝูงบุก"
-			wc = Color("ff7a5a")
+			wc = UiTheme.DANGER
 		elif time >= 0.70 and time < 0.764:
 			kind = "dusk"
 			var mins := ceili((0.764 - time) * 24.0 * 60.0)
@@ -1200,7 +1339,7 @@ class Clock extends Control:
 		elif night:
 			kind = "night"
 			warn = "มืดแล้ว · ซอมบี้เห็นเราแค่ใกล้ ๆ เว้นแต่ยืนใต้ไฟ"
-			wc = Color("ff8a7a")
+			wc = UiTheme.DANGER
 		var now := Time.get_ticks_msec() / 1000.0
 		if kind != _warn_kind:
 			_warn_kind = kind
@@ -1208,10 +1347,11 @@ class Clock extends Control:
 		if now - _warn_since > WARN_FULL:
 			warn = short
 		if warn != "":
-			draw_string_outline(UiTheme.body_bold(), Vector2(0, 88), warn, HORIZONTAL_ALIGNMENT_RIGHT, w, 15, 5, Color(0, 0, 0, 0.55))
-			draw_string(UiTheme.body_bold(), Vector2(0, 88), warn, HORIZONTAL_ALIGNMENT_RIGHT, w, 15, wc)
+			UiTheme.over_world(self, Vector2(0, 74), warn, UiTheme.body_bold(), UiTheme.SIZE_BODY, wc, HORIZONTAL_ALIGNMENT_RIGHT, w)
+		used_h = 56.0 + (20.0 if warn != "" else 0.0) + (20.0 if online > 1 else 0.0)
 		if online > 1:
-			draw_string(UiTheme.body(), Vector2(0, 108), "ผู้เล่นออนไลน์ %d คน" % online, HORIZONTAL_ALIGNMENT_RIGHT, w, 13, Color(UiTheme.PAPER, 0.55))
+			UiTheme.over_world(self, Vector2(0, 94 if warn != "" else 74), "ผู้เล่นออนไลน์ %d คน" % online, UiTheme.medium(), UiTheme.SIZE_LABEL,
+					UiTheme.TEXT_MUTED, HORIZONTAL_ALIGNMENT_RIGHT, w)
 
 
 class TutorialCard extends Control:
@@ -1257,21 +1397,37 @@ class HelpSheet extends Control:
 		["เสื้อผ้า", "กันกัด ลดโอกาสติดเชื้อ แต่ขาดได้"],
 	]
 
+	const M := 40.0  # the paper's margin
+	const COL_W := 380.0
+	const COL_GAP := 40.0
+	const ROW_H := 40.0
+
+	# The story style (PaperNote): a sheet of paper taped over the game.
 	func _draw() -> void:
 		var r := Rect2(Vector2.ZERO, size)
-		draw_rect(Rect2(r.position + Vector2(0, 12), r.size), Color(0, 0, 0, 0.4))
+		draw_rect(Rect2(r.position + Vector2(0, 12), r.size), Color(0, 0, 0, 0.45))
 		draw_rect(r, UiTheme.PAPER)
-		draw_string(UiTheme.heavy(), Vector2(36, 62), "วิธีเล่น", HORIZONTAL_ALIGNMENT_LEFT, -1, 38, UiTheme.INK)
-		draw_string(UiTheme.body(), Vector2(36, 92), "กด H อีกครั้งเพื่อปิด", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(UiTheme.INK, 0.6))
+		draw_set_transform(Vector2(size.x / 2, 2), 0.035)
+		draw_rect(Rect2(-60, -12, 120, 26), Color(UiTheme.TAPE, 0.9))
+		draw_set_transform(Vector2.ZERO)
+		draw_string(UiTheme.heavy(), Vector2(M, 68), "วิธีเล่น", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_DISPLAY + 8, UiTheme.PAPER_INK)
+		draw_string(UiTheme.body(), Vector2(M, 94), "กด H อีกครั้งเพื่อปิด", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_BODY, Color(UiTheme.PAPER_INK, 0.6))
+		# Keys in a column of their own, so the words all start on one line.
+		var key_w := [0.0, 0.0]
+		for i in ROWS.size():
+			key_w[i % 2] = maxf(key_w[i % 2], UiTheme.draw_rich(self, Vector2.ZERO, ROWS[i][0], UiTheme.heading(), UiTheme.SIZE_BODY, UiTheme.PAPER_INK, true))
 		for i in ROWS.size():
 			var col := i % 2
-			var row := i / 2
-			var p := Vector2(36 + col * 390, 130 + row * 40)
-			var kw := UiTheme.draw_rich(self, p, ROWS[i][0], UiTheme.heading(), 16, UiTheme.INK)
-			draw_string(UiTheme.body_bold(), p + Vector2(maxf(kw, 60) + 14, 0), ROWS[i][1], HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UiTheme.INK)
-			draw_dashed_line(p + Vector2(0, 16), p + Vector2(360, 16), UiTheme.PAPER_DARK, 1.0, 4.0)
-		draw_string(UiTheme.body(), Vector2(36, size.y - 30), "ทุก 3 วันจะมีคืนฝูง: ยึดร้านสักหลัง กด E ปิดประตู แล้วกด R ตอกไม้ให้แน่น",
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(UiTheme.INK, 0.65))
+			var p := Vector2(M + col * (COL_W + COL_GAP), 136 + (i / 2) * ROW_H)
+			UiTheme.draw_rich(self, p, ROWS[i][0], UiTheme.heading(), UiTheme.SIZE_BODY, UiTheme.PAPER_INK)
+			var tx: float = key_w[col] + UiTheme.SPACE_4
+			var fs := UiTheme.SIZE_BODY  # (a long line steps down a size rather than running into the next column)
+			if UiTheme.body_bold().get_string_size(ROWS[i][1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > COL_W - tx:
+				fs = UiTheme.SIZE_LABEL
+			draw_string(UiTheme.body_bold(), p + Vector2(tx, 0), ROWS[i][1], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, UiTheme.PAPER_INK)
+			draw_dashed_line(p + Vector2(0, 14), p + Vector2(COL_W, 14), UiTheme.PAPER_DARK, 1.0, 4.0)
+		draw_string(UiTheme.body_bold(), Vector2(M, size.y - M + 6), "ทุก 3 วันจะมีคืนฝูง: ยึดร้านสักหลัง กด E ปิดประตู แล้วกด R ตอกไม้ให้แน่น",
+				HORIZONTAL_ALIGNMENT_LEFT, size.x - M * 2, UiTheme.SIZE_BODY, UiTheme.DANGER_DEEP)
 
 
 ## Hold E: every action for the thing in front of you, around a ring. Point the
@@ -1313,9 +1469,9 @@ class ActionWheel extends Control:
 		return centre + Vector2.from_angle(a) * (R if items.size() > 1 else 0.0) + (Vector2(0, -R) if items.size() == 1 else Vector2.ZERO)
 
 	func _draw() -> void:
-		draw_circle(centre, R + 46, Color(0, 0, 0, 0.35))
-		draw_circle(centre, 22, UiTheme.CARD)
-		draw_string(UiTheme.heading(), centre + Vector2(-120, 6), title, HORIZONTAL_ALIGNMENT_CENTER, 240, 15, UiTheme.PAPER)
+		draw_circle(centre, R + 46, Color(UiTheme.SURFACE_000, 0.45))
+		draw_circle(centre, 22, Color(UiTheme.SURFACE_100, UiTheme.OPACITY_CARD))
+		draw_string(UiTheme.heading(), centre + Vector2(-120, 6), title, HORIZONTAL_ALIGNMENT_CENTER, 240, UiTheme.SIZE_BODY, UiTheme.TEXT)
 		for i in items.size():
 			var a: Dictionary = items[i]
 			var p := _slot_pos(i)
@@ -1324,10 +1480,10 @@ class ActionWheel extends Control:
 			var h := 34.0 if a.ok else 50.0
 			var r := Rect2(p - Vector2(w / 2, h / 2), Vector2(w, h))
 			var sel := i == selected
-			var bg := UiTheme.WARN if sel and a.ok else (Color(0.2, 0.18, 0.15, 0.95) if a.ok else Color(0.12, 0.11, 0.1, 0.9))
-			draw_style_box(UiTheme.box(bg, 8, UiTheme.WARN if sel else UiTheme.LINE, 2 if sel else 1), r)
-			var col := UiTheme.INK if sel and a.ok else (UiTheme.PAPER if a.ok else Color(UiTheme.PAPER, 0.4))
+			var bg := UiTheme.ACCENT if sel and a.ok else (UiTheme.SURFACE_200 if a.ok else Color(UiTheme.SURFACE_100, 0.92))
+			draw_style_box(UiTheme.rbox(bg, UiTheme.RADIUS_SM, UiTheme.ACCENT if sel else UiTheme.BORDER_STRONG, 6), r)
+			var col := UiTheme.ON_ACCENT if sel and a.ok else (UiTheme.TEXT if a.ok else UiTheme.TEXT_FAINT)
 			draw_string(f, Vector2(r.position.x, r.position.y + 23), a.label, HORIZONTAL_ALIGNMENT_CENTER, w, 16, col)
 			if not a.ok:
-				draw_string(UiTheme.body(), Vector2(r.position.x, r.position.y + 42), a.why, HORIZONTAL_ALIGNMENT_CENTER, w, 12, Color(1, 0.55, 0.45, 0.8))
-		draw_string(UiTheme.body(), centre + Vector2(-160, R + 70), "ชี้เมาส์แล้วปล่อย E", HORIZONTAL_ALIGNMENT_CENTER, 320, 13, Color(UiTheme.PAPER, 0.6))
+				draw_string(UiTheme.body(), Vector2(r.position.x, r.position.y + 42), a.why, HORIZONTAL_ALIGNMENT_CENTER, w, UiTheme.SIZE_LABEL, UiTheme.DANGER)
+		draw_string(UiTheme.body(), centre + Vector2(-160, R + 70), "ชี้เมาส์แล้วปล่อย E", HORIZONTAL_ALIGNMENT_CENTER, 320, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)
