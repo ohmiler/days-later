@@ -592,8 +592,9 @@ func _tick_search(p: Player, delta: float) -> void:
 	# What turned up stays in the furniture: the bag screen opens on it and you
 	# take what you want. Anything left behind is still there later.
 	var bid := Buildings.at(main.world, f.data.cell)
-	var place := Items.place_in(f.data.table, main.world.buildings[bid].kind if bid >= 0 else "")
-	var found := Items.roll(place, f.data.kind, _loot_rng)
+	var bkind: String = main.world.buildings[bid].kind if bid >= 0 else ""
+	var place := Items.place_in(f.data.table, bkind)
+	var found := Items.roll(place, f.data.kind, _loot_rng, Items.tier_of(f.data.table, bkind))
 	f.items.resize(FurnitureProp.SIZE)
 	for id in found:
 		var it := Items.make(id, _loot_rng)

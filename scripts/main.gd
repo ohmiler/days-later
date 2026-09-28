@@ -789,6 +789,25 @@ func show_toast(text: String) -> void:
 	ui.push_feed(text)
 
 
+## Walking into one of the big dangerous buildings says so, once each time in.
+const DANGER_NAMES := {hospital = "โรงพยาบาล", mall = "ห้าง", market = "ตลาด", office = "ตึกออฟฟิศ"}
+var _danger_bid := -1
+
+
+func _note_danger(me: Player) -> void:
+	var bid := Buildings.at(world, world.to_cell(me.position))
+	var kind: String = world.buildings[bid].kind if bid >= 0 else ""
+	if Items.BUILDING_TIER.get(kind, 1) < 2:
+		_danger_bid = -1
+		return
+	if bid == _danger_bid:
+		return
+	_danger_bid = bid
+	var tier: int = Items.BUILDING_TIER[kind]
+	show_toast("%s · %s: %s" % [DANGER_NAMES.get(kind, kind), Items.TIER_NAMES[tier],
+			"ของดีกว่าที่อื่น แต่ซอมบี้ยังติดอยู่ข้างใน" if tier >= Items.TIERS else "ของดีกว่าบ้านทั่วไป"])
+
+
 @rpc("authority", "call_local", "reliable")
 func pickup_add(id: int, pos: Vector2, item: Dictionary, storey := 0) -> void:
 	pickups[id] = {pos = pos, item = item, storey = storey}
@@ -957,6 +976,7 @@ func _process(delta: float) -> void:
 		map_t = 0.3
 		if me.alive():
 			ui.city_map.reveal(me.position)
+			_note_danger(me)
 		ui.city_map.me = me
 		var others := []
 		for p: Player in players.values():

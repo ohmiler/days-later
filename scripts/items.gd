@@ -59,6 +59,21 @@ const PLACES := ["store", "med", "food", "tools", "valuables", "clothes", "home"
 const PLACE_ALSO := {hospital = "med", office = "home", market = "food", mall = "clothes"}
 ## How often searching turns each up, relative to each other.
 const RARITY := {common = 4, uncommon = 2, rare = 1}
+## How far into danger a place is, for what it still holds: 1 everyday (homes,
+## corner shops), 2 a trade worth breaking into (hardware, pharmacy, gold shop,
+## offices, the market), 3 the big buildings with the dead still shut inside
+## (hospital, mall). The greater of what the shop is and the building it's in.
+const TABLE_TIER := {tools = 2, med = 2, valuables = 2, office = 2, market = 2, hospital = 3, mall = 3}
+const BUILDING_TIER := {hospital = 3, mall = 3, market = 2, office = 2}
+const TIERS := 3
+const TIER_NAMES := ["", "ที่ทั่วไป", "ร้านเฉพาะ", "ที่อันตราย"]
+## Rarity weights at each tier: the small places were picked over by the people
+## who fled first, and nobody dared the big ones.
+const TIER_RARITY := [{}, {common = 4, uncommon = 1.5, rare = 0.25}, {common = 4, uncommon = 2, rare = 0.6},
+		{common = 3, uncommon = 3, rare = 2}]
+## Share of furniture already bare, times EMPTY; and how many finds [least, most].
+const TIER_EMPTY := [1.0, 1.0, 1.0, 0.4]
+const TIER_FINDS := [[1, 3], [1, 3], [1, 3], [2, 4]]
 const RARITY_NAMES := {common = "ธรรมดา", uncommon = "ไม่บ่อย", rare = "หายาก"}
 const RARITY_COLORS := {common = Color("c8c4b8"), uncommon = Color("6ab0e0"), rare = Color("e0b840")}
 ## Icon shapes an item's `icon` can use (drawn in draw_icon).
@@ -144,6 +159,16 @@ static func place_in(table: String, building_kind: String) -> String:
 	return table
 
 
+## How far into danger a cupboard of `table` in a `building_kind` building is (1-3).
+static func tier_of(table: String, building_kind: String) -> int:
+	return maxi(TABLE_TIER.get(place_in(table, building_kind), 1), BUILDING_TIER.get(building_kind, 1))
+
+
+## The least tier of place an item turns up in (its `tier`, 1 when not given).
+static func tier(id: String) -> int:
+	return int(def(id).get("tier", 1))
+
+
 ## What is wrong with the item table, one line each ([] when all is well).
 ## The tests run this, so a typo in data/items.cfg is caught straight away.
 static func problems() -> Array:
@@ -162,6 +187,8 @@ static func problems() -> Array:
 		for place in d.get("places", []):
 			if place not in PLACES:
 				out.append("%s: unknown place %s" % [id, place])
+		if d.has("tier") and (not (d.tier is int or d.tier is float) or d.tier < 1 or d.tier > TIERS):
+			out.append("%s: tier must be 1-%d" % [id, TIERS])
 		for part in d.get("salvage", {}):
 			if not DEFS.has(part):
 				out.append("%s: salvage gives unknown item %s" % [id, part])
@@ -674,41 +701,61 @@ static func category(id: String) -> String:
 	return "junk"
 
 
-## 0-3 random items from a piece of furniture (`kind`) in a kind of place (`table`).
-static func roll(table: String, kind: String, rng: RandomNumberGenerator) -> Array:
+## 0-4 random items from a piece of furniture (`kind`) in a kind of place
+## (`table`) that far into danger (`place_tier`, 0: what the table alone is).
+static func roll(table: String, kind: String, rng: RandomNumberGenerator, place_tier := 0) -> Array:
 	var out := []
-	if rng.randf() < EMPTY.get(kind, EMPTY_DEFAULT):
+	var t: int = clampi(place_tier if place_tier > 0 else TABLE_TIER.get(table, 1), 1, TIERS)
+	if rng.randf() < EMPTY.get(kind, EMPTY_DEFAULT) * TIER_EMPTY[t]:
 		return out
 	var cats: Dictionary = FURN_LOOT.get(kind, FURN_LOOT.shelf)
 	var bias: Dictionary = PLACE_BIAS.get(table, {})
 	var weighted := {}
 	for c in cats:
-		if _in_category(table, c).is_empty():
+		if _in_category(table, c, t).is_empty():
 			continue
 		# What the place doesn't sell is only there by chance (a pharmacy's snack).
-		var sold: bool = table == "home" or LOOT.get(table, []).any(func(e): return category(e[0]) == c)
+		var sold: bool = table == "home" or _by_cat(table).has(c)
 		weighted[c] = cats[c] * bias.get(c, 1.0) * (1.0 if sold else 0.2)
 	if weighted.is_empty():
 		return out
-	for i in rng.randi_range(1, 3):
-		var entries := _in_category(table, _pick(weighted, rng))
+	for i in rng.randi_range(TIER_FINDS[t][0], TIER_FINDS[t][1]):
+		var entries := _in_category(table, _pick(weighted, rng), t)
 		var by_rarity := {}
 		for e in entries:
-			by_rarity[e[0]] = e[1]
+			by_rarity[e[0]] = TIER_RARITY[t].get(rarity_of(e[0]), 1.0)
 		out.append(_pick(by_rarity, rng))
 	return out
 
 
-## [[item, rarity weight]] of a category found in a kind of place (falling back
-## to what homes have, so any furniture anywhere can hold its basics).
-static func _in_category(table: String, cat: String) -> Array:
+## [[item, rarity weight, tier]] of a category found in a kind of place that far into
+## danger (falling back to what homes have, so any furniture anywhere can hold
+## its basics).
+static func _in_category(table: String, cat: String, t := TIERS) -> Array:
 	var out := []
-	for e in LOOT.get(table, []):
-		if category(e[0]) == cat:
+	for e in _by_cat(table).get(cat, []):
+		if e[2] <= t:
 			out.append(e)
 	if out.is_empty() and table != "home":
-		return _in_category("home", cat)
+		return _in_category("home", cat, t)
 	return out
+
+
+## A place's LOOT split by category, [item, rarity weight, tier] (made once:
+## searching asks it every time).
+static var _cat_cache := {}
+
+
+static func _by_cat(table: String) -> Dictionary:
+	if not _cat_cache.has(table):
+		var out := {}
+		for e in LOOT.get(table, []):
+			var c := category(e[0])
+			if not out.has(c):
+				out[c] = []
+			out[c].append([e[0], e[1], tier(e[0])])
+		_cat_cache[table] = out
+	return _cat_cache[table]
 
 
 static func _pick(weights: Dictionary, rng: RandomNumberGenerator):
