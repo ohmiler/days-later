@@ -91,6 +91,7 @@ func _reinforce(p: Player, id: int) -> void:
 	main.fx_sound.rpc("door", p.position)
 	main._make_noise(p.position, main.NOISE_SWING)  # hammering is loud
 	main.skills.gain(p, "craft", "board")
+	main.quests.note(p, "board")
 	main.inventory._send_inv(p)
 
 

@@ -30,6 +30,7 @@ var statuses: StatusRow
 var weapons: WeaponPanel
 var vitals: Vitals
 var clock: Clock
+var quest_tracker: QuestTracker  # what you're working toward, under the clock (Quests)
 var tut: TutorialCard
 var feed: VBoxContainer
 var hotbar: InventoryBar
@@ -380,7 +381,7 @@ func announce(text: String, good := false) -> void:
 	banner_t = 3.0 if good else 5.0
 	banner.add_theme_color_override("font_color", UiTheme.WARN if good else Color("ff6a5a"))
 	push_feed(text.replace("
-", " · "), "kill")
+", " · "), "info" if good else "kill")  # (gold edge for good news, red for danger)
 
 
 func toggle_help() -> void:
@@ -449,6 +450,7 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	if me == null:
 		return
 	vitals.t += delta
+	quest_tracker.me = me
 	vitals.pname = "%s · %d" % [me.pname if me.pname != "" else player_name(), Skills.total(me.skills)]  # (and your survivor level)
 	vitals.hp = me.hp
 	vitals.ghost = move_toward(vitals.ghost, me.hp, delta * 18.0) if vitals.ghost > me.hp else me.hp
@@ -609,6 +611,14 @@ func _build_hud() -> void:
 	statuses.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(statuses)
 
+	quest_tracker = QuestTracker.new()
+	quest_tracker.anchor_left = 1.0
+	quest_tracker.anchor_right = 1.0
+	quest_tracker.offset_left = -24 - QuestTracker.W
+	quest_tracker.offset_right = -24
+	quest_tracker.offset_top = 128
+	quest_tracker.offset_bottom = 520
+	hud.add_child(quest_tracker)
 	clock = Clock.new()
 	clock.anchor_left = 1.0
 	clock.anchor_right = 1.0

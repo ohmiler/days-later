@@ -197,6 +197,7 @@ func server_tick(p: Player, delta: float) -> void:
 
 func _finish_craft(p: Player, id: String) -> void:
 	main.skills.gain(p, "craft", "craft")
+	main.quests.note(p, "craft", {item = id})
 	if not can_make(p.inv, id):
 		return  # something was dropped meanwhile
 	var r: Dictionary = RECIPES[id]

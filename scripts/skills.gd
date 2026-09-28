@@ -104,6 +104,19 @@ func gain(p: Player, id: String, what: String, times := 1.0) -> void:
 		survivor_level.rpc(p.peer_id, total(p.skills))
 
 
+## Experience straight into a skill (a quest's reward).
+func add(p: Player, id: String, amount: float) -> void:
+	if not DEFS.has(id) or amount <= 0.0:
+		return
+	var before := level(p, id)
+	p.skills[id] = float(p.skills.get(id, 0.0)) + amount
+	p.skills_dirty = true
+	var after := level(p, id)
+	if after > before:
+		fx_level_up.rpc(p.peer_id, id, after)
+		survivor_level.rpc(p.peer_id, total(p.skills))
+
+
 ## Dying: part of the way into each level is lost, never a level.
 func on_death(p: Player) -> void:
 	for id in p.skills:
