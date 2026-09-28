@@ -1340,6 +1340,17 @@ func _fade_trees_near(pos: Vector2) -> void:
 				or inside.has_area() and b.position.y > inside.end.y and b.visual_rect().intersects(inside)):
 			b.modulate.a = 0.3
 			faded.append(b)
+	# Inside, the front's doors, windows and shutter (as tall as a real shop
+	# front) would stand over the front of the room: see-through.
+	if hidden_building:
+		var fr: Rect2i = hidden_building.data.rect
+		for x in range(fr.position.x, fr.end.x):
+			var id: int = world.door_at.get(Vector2i(x, fr.end.y - 1), -1)
+			if id >= 0 and id < world.door_nodes.size():
+				var dn = world.door_nodes[id]
+				if is_instance_valid(dn) and not faded.has(dn):
+					dn.modulate.a = 0.25
+					faded.append(dn)
 	# Anyone your character can see, standing where a roof or a tree is drawn
 	# over them: that turns see-through too, so what you see is never hidden.
 	var me: Player = players.get(multiplayer.get_unique_id())
