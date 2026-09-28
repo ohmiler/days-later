@@ -906,7 +906,7 @@ static func _street_furniture(w: World, rng: RandomNumberGenerator) -> void:
 				w.street_props.append({kind = "pole", pos = pos, lamp = side[1] if n % 2 == 0 else Vector2.ZERO,
 						seed = rng.randi()})
 				if prev != Vector2.INF:
-					w.wires.append([prev + Vector2(0, -44), pos + Vector2(0, -44)])
+					w.wires.append([prev + Vector2(0, -100), pos + Vector2(0, -100)])
 				prev = pos
 		# Street trees on the outer edge of the pavement.
 		var outer := [r.position.y - 2, r.end.y + 1] if rd.horizontal else [r.position.x - 2, r.end.x + 1]
@@ -1268,21 +1268,16 @@ static func _size_vehicles(w: World) -> void:
 	for p in w.street_props:
 		var extra := []
 		var base := Vector2i((p.pos / World.TILE).floor())
-		match p.kind:
-			"car", "taxi", "van", "pickup", "songthaew":
-				if p.horizontal:
-					extra = [Vector2i(base.x + 2, base.y - 1)]  # longer: one more cell ahead
-				else:
-					extra = [Vector2i(base.x, base.y - 3)]  # seen end-on it grows up the screen
-			"tuktuk":
-				extra = [Vector2i(base.x + 1, base.y - 1)]
-			"wreck":
-				extra = [Vector2i(base.x + 2, base.y - 1)] if p.horizontal else [Vector2i(base.x, base.y - 3)]
-			"army":
-				extra = [Vector2i(base.x + 3, base.y - 1), Vector2i(base.x + 4, base.y - 1)]
-			"bus":
-				extra = [Vector2i(base.x + 7, base.y - 1), Vector2i(base.x + 8, base.y - 1)] if p.horizontal \
-						else [Vector2i(base.x, base.y - 8), Vector2i(base.x, base.y - 9)]
+		# Cells ahead of what the layout blocked, to the vehicle's real length
+		# (see StreetProp.stretch_of): a sedan, pickup or van 5, a tuk-tuk 3,
+		# an army truck 8, a bus 12. Side-on it runs right, end-on up the screen.
+		var cells: int = {car = 5, taxi = 5, wreck = 5, pickup = 5, songthaew = 5, van = 5, tuktuk = 3, army = 8, bus = 12}.get(p.kind, 0)
+		var from: int = 1 if p.kind == "tuktuk" else VEHICLE_CELLS.get(p.kind, 2)
+		for i in range(from, cells):
+			if p.get("horizontal", true) or p.kind in ["tuktuk", "army"]:
+				extra.append(Vector2i(base.x + i, base.y - 1))
+			else:
+				extra.append(Vector2i(base.x, base.y - 1 - i))
 		for c in extra:
 			if w.get_tile(c) in [World.ROAD, World.SOI] and not w.blocked.has(c) and not w.in_intersection(c) 					and not World.DIRS.any(func(d): return w.get_tile(c + d) == World.DOOR):
 				w.blocked[c] = true
