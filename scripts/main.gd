@@ -1300,8 +1300,8 @@ func _tag(tag: PromptTag, verb: String, ok: bool, more: bool, detail: String, at
 func _fade_over(pos: Vector2) -> void:
 	var body := Rect2(pos + Vector2(-6, -28), Vector2(12, 28))
 	var c := world.to_cell(pos)
-	for dy in range(0, 4):
-		for dx in range(-1, 2):
+	for dy in range(0, 7):
+		for dx in range(-2, 3):
 			var t: TreeProp = world.props.get(c + Vector2i(dx, dy))
 			if t and not faded.has(t):
 				t.modulate.a = 0.45
@@ -1323,8 +1323,8 @@ func _fade_trees_near(pos: Vector2) -> void:
 			t.modulate.a = 1.0
 	faded.clear()
 	var c := world.to_cell(pos)
-	for dy in range(0, 4):  # (trees are big: see TreeProp.SCALE)
-		for dx in range(-2, 3):
+	for dy in range(0, 7):  # (trees are big: see TreeProp.SCALE)
+		for dx in range(-3, 4):
 			var t: TreeProp = world.props.get(c + Vector2i(dx, dy))
 			if t:
 				t.modulate.a = 0.45
@@ -1341,9 +1341,16 @@ func _fade_trees_near(pos: Vector2) -> void:
 			b.modulate.a = 0.3
 			faded.append(b)
 	# Inside, the front's doors, windows and shutter (as tall as a real shop
-	# front) would stand over the front of the room: see-through.
+	# front) would stand over the front of the room: see-through. So do the
+	# street trees just outside whose crowns reach over it.
 	if hidden_building:
 		var fr: Rect2i = hidden_building.data.rect
+		for ty in range(fr.end.y, fr.end.y + 7):
+			for tx in range(fr.position.x - 3, fr.end.x + 3):
+				var tt: TreeProp = world.props.get(Vector2i(tx, ty))
+				if tt and not faded.has(tt):
+					tt.modulate.a = 0.45
+					faded.append(tt)
 		for x in range(fr.position.x, fr.end.x):
 			var id: int = world.door_at.get(Vector2i(x, fr.end.y - 1), -1)
 			if id >= 0 and id < world.door_nodes.size():

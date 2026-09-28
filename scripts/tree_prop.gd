@@ -3,7 +3,7 @@ extends Node2D
 ## One tree, drawn standing up. Origin is the trunk base so it y-sorts
 ## correctly against characters.
 
-const SCALE := 1.4  # drawn this much bigger than the sketch below
+const SCALE := Vector2(2.4, 1.8)  # drawn this much bigger than the sketch below: an 8-10 m street tree whose crown clears heads
 
 var cell := Vector2i.ZERO
 
@@ -17,10 +17,10 @@ func _draw() -> void:
 	draw_set_transform(Vector2(6, -1), 0, Vector2(1.5, 0.45))
 	draw_circle(Vector2.ZERO, r, Color(0, 0, 0, 0.3))
 	draw_set_transform(Vector2.ZERO)
-	draw_polygon(PackedVector2Array([Vector2(-2.4, 0), Vector2(2.4, 0), Vector2(1.5, -18), Vector2(-1.5, -18)]),
+	draw_polygon(PackedVector2Array([Vector2(-1.6, 0), Vector2(1.6, 0), Vector2(1.0, -30), Vector2(-1.0, -30)]),
 			PackedColorArray([bark.darkened(0.3), bark.lightened(0.05), bark, bark.darkened(0.4)]))
 
-	var top := Vector2((h.call(3) - 0.5) * 3.0, -25.0 - h.call(4) * 4.0)
+	var top := Vector2((h.call(3) - 0.5) * 3.0, -40.0 - h.call(4) * 4.0)
 	var clumps := []
 	for i in 6:
 		var a: float = i * TAU / 6 + h.call(5) * TAU

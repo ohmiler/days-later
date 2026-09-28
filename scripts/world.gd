@@ -12,7 +12,7 @@ static var H := 240
 var zone := ""  # which zone this is (see Zones)
 var exits: Array = []  # ways out to other zones: [{id, to, to_exit, rect}]
 const CHUNK := 16
-const BTS_H := 64.0  # how high the skytrain deck floats above the road
+const BTS_H := 112.0  # how high the skytrain deck floats above the road (11 m by the proportions rule)
 const DOOR_HP := 60.0
 const WINDOW_HP := 15.0  # glass: one good hit
 const SHUTTER_HP := 300.0  # a rolling steel shutter, per section: the strongest way into a shophouse (can't be boarded)
@@ -503,7 +503,7 @@ func _add_tree(c: Vector2i) -> void:
 	var t := TreeProp.new()
 	t.cell = c
 	t.position = to_pos(c) + Vector2(0, TILE * 0.3)
-	t.scale = Vector2.ONE * TreeProp.SCALE  # Bangkok's street trees spread over the road
+	t.scale = TreeProp.SCALE  # Bangkok's street trees spread over the road
 	t.z_index = 1
 	_stream(t, t.position)
 	props[c] = t
