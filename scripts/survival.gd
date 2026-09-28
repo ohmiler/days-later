@@ -89,19 +89,35 @@ func _nearest_zombie(at: Vector2) -> float:
 ## A spot is safe inside a building whose every door and window is shut (and
 ## not smashed), with no zombie inside. Out in the street it never is.
 func spot_safe(pos: Vector2) -> bool:
+	return unsafe_because(pos) == ""
+
+
+## Why a spot isn't shut tight ("" when it is): an opening in the building's
+## outside walls left open or broken, or a zombie inside. Doors between rooms
+## don't count: the house is shut when its shell is.
+func unsafe_because(pos: Vector2) -> String:
 	var w: World = main.world
 	var b = w.building_at.get(w.to_cell(pos))
 	if b == null:
-		return false
+		return "outside"
 	for d in w.doors:
-		if w.is_built(d.id) or w.building_at.get(d.cell) != b:
+		if w.is_built(d.id) or w.building_at.get(d.cell) != b or not _on_shell(w, d.cell, b):
 			continue
 		if not d.closed or d.broken:
-			return false
+			return "window" if w.is_window(d.id) else ("shutter" if d.kind == "shutter" else "door")
 	for z: Zombie in main.zombies.values():
 		if w.building_at.get(w.to_cell(z.position)) == b:
-			return false
-	return true
+			return "zombie"
+	return ""
+
+
+## Whether a door cell is in the building's outside wall (it has a cell of
+## something else beside it).
+static func _on_shell(w: World, c: Vector2i, b) -> bool:
+	for n in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+		if w.building_at.get(c + n) != b:
+			return true
+	return false
 
 
 func can_sleep(p: Player) -> String:
@@ -131,12 +147,15 @@ func start_sleep(p: Player, bed: int) -> void:
 	p.sleep_check = 0.0
 	p.sleep_bed = bed
 	var where := "บนเตียง" if bed >= 0 else "บนพื้น"
-	if spot_safe(p.position):
+	var why := unsafe_because(p.position)
+	if why == "":
 		main._toast(p, "นอน%s · ที่นี่ปิดแน่น หลับสนิท" % where)
-	elif main.world.building_at.has(main.world.to_cell(p.position)):
-		main._toast(p, "นอน%s · ประตูหน้าต่างยังเปิดอยู่ หลับไม่สนิท" % where)
-	else:
+	elif why == "outside":
 		main._toast(p, "นอนกลางแจ้ง · อันตราย หลับไม่สนิท")
+	else:
+		var what: String = {window = "หน้าต่างบานหนึ่งยังเปิดหรือแตกอยู่", shutter = "ประตูเหล็กม้วนยังเปิดหรือพังอยู่",
+				door = "ประตูด้านนอกบานหนึ่งยังเปิดหรือพังอยู่", zombie = "ยังมีซอมบี้อยู่ในตึกนี้"}.get(why, "")
+		main._toast(p, "นอน%s · %s หลับไม่สนิท" % [where, what])
 
 
 const REEK := 90.0  # how near a rotting body keeps you from sleeping well
@@ -394,7 +413,7 @@ func _spawn_horde_zombie() -> void:
 	var p: Player = targets[randi() % targets.size()]
 	for attempt in 20:
 		var pos: Vector2 = p.position + Vector2.from_angle(randf() * TAU) * randf_range(280, 420)
-		if main.world.can_stand(pos, 5):
+		if main.world.can_stand(pos, 5) and not main.world.building_at.has(main.world.to_cell(pos)):
 			var z := main._add_zombie(main.new_zid(pos), pos)
 			z.sense(p.position)
 			return
@@ -464,8 +483,8 @@ func _spawn_zombie() -> void:
 	for attempt in 30:
 		var pos: Vector2 = p.position + Vector2.from_angle(randf() * TAU) * randf_range(320.0, main.NEAR - 60.0)
 		var c := main.world.to_cell(pos)
-		if not main.world.in_bounds(c) or main.world.is_solid(c):
-			continue
+		if not main.world.in_bounds(c) or main.world.is_solid(c) or main.world.building_at.has(c):
+			continue  # (never inside a building: a shut home stays shut)
 		var too_close := false
 		for q: Player in main.players.values():
 			if q.position.distance_to(pos) < 300:

@@ -32,6 +32,8 @@ func update(me: Player, delta: float, view_radius: float) -> void:
 	reach = view_radius
 	eye = me.position + Vector2(0, -2)
 	facing = me.aim.angle()
+	if me.riding >= 0 and me.ride_seen.length() > 12.0:
+		facing = me.ride_seen.angle()  # (riding, you watch the road, not the mouse)
 	mirror = me.has_mirror()
 	cone = CONE * me.wear_mult("view")
 

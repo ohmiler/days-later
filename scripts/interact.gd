@@ -166,6 +166,9 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 			if d.kind == "shutter":
 				if not d.broken:
 					out.append(_act("close", "ดึงประตูเหล็กลง (เสียงดัง)") if not d.closed else _act("open", "ดึงประตูเหล็กขึ้น (เสียงดัง)"))
+				else:
+					out.append(_act("repair", "ดัดประตูเหล็กกลับ (เศษเหล็ก %d · ค้อน)" % SHUTTER_SCRAP, can_fix_shutter(p),
+							"ต้องมีเศษเหล็ก %d ชิ้นกับค้อน" % SHUTTER_SCRAP, "R"))
 			elif d.broken:
 				out.append(_act("repair", "ซ่อมประตู (ไม้ 1 แผ่น)", has_wood(p), "ต้องมีไม้กระดาน", "R"))
 			else:
@@ -252,6 +255,17 @@ static func _board(p: Player, d: Dictionary) -> Dictionary:
 	var full: bool = d.boards >= World.MAX_BOARDS
 	return _act("board", "ตอกไม้ (%d/%d)" % [d.boards, World.MAX_BOARDS], has_wood(p) and not full,
 			"ตอกเต็มแล้ว" if full else "ต้องมีไม้กระดาน", "R")
+
+
+const SHUTTER_SCRAP := 2  # scrap a bent shutter section takes to hammer straight
+
+
+static func can_fix_shutter(p: Player) -> bool:
+	var scrap := 0
+	for it in p.inv:
+		if it != null and it.id == "scrap":
+			scrap += it.n
+	return scrap >= SHUTTER_SCRAP and p.inv.any(func(it): return it != null and it.id == "hammer")
 
 
 static func has_wood(p: Player) -> bool:

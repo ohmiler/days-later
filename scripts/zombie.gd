@@ -345,8 +345,8 @@ func grab(p: Player) -> void:
 ## Holding someone: face them; if they haven't got free in time, bite.
 func _hold(delta: float) -> void:
 	var p: Player = players.get(grab_peer)
-	if p == null or not p.alive() or p.grabbed_by != zid:
-		release()
+	if p == null or not p.alive() or p.grabbed_by != zid or p.position.distance_to(position) > 24.0:
+		release()  # (gone, or pulled out of reach: it can't bite what it no longer holds)
 		return
 	facing = (p.position - position).angle()
 	p.grab_t -= delta

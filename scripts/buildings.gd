@@ -18,7 +18,7 @@ class_name Buildings
 ## is the same: nothing ticks while a generator runs, the run says until when.
 
 const TANK := 60.0  # sips a shophouse's rooftop tank holds (a big building's, more: see size_k)
-const TANK_RAIN := 12.0  # sips an hour of rain puts in it
+const TANK_RAIN := 2.0  # sips an hour of rain puts in it (a shower tops a tank up; only a long rain fills one)
 const START := 24  # a tank starts with up to this many sips (what was left in it)
 const CISTERN := 30.0  # sips under a big building, for each 100 cells of it
 const PUMP := 40.0  # sips an hour the pump sends up to the roof (with power)
