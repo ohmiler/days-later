@@ -1291,6 +1291,27 @@ func _tag(tag: PromptTag, verb: String, ok: bool, more: bool, detail: String, at
 	tag.body = Rect2(me.position + Vector2(-10, -40 - me.lift), Vector2(20, 42)) if me else Rect2()
 
 
+## Buildings and trees south of `pos` whose drawing covers a body standing
+## there (a roof is drawn its height above its footprint, so it reaches over
+## the soi behind it): see-through, like the ones in front of you.
+func _fade_over(pos: Vector2) -> void:
+	var body := Rect2(pos + Vector2(-6, -28), Vector2(12, 28))
+	var c := world.to_cell(pos)
+	for dy in range(0, 4):
+		for dx in range(-1, 2):
+			var t: TreeProp = world.props.get(c + Vector2i(dx, dy))
+			if t and not faded.has(t):
+				t.modulate.a = 0.45
+				faded.append(t)
+	for k in range(1, 14):  # (the tallest roofs reach about this many cells north)
+		for dx in range(-1, 2):
+			var b = world.building_at.get(c + Vector2i(dx, k))
+			if b and is_instance_valid(b) and b != hidden_building and b.visible and not faded.has(b) \
+					and pos.y < b.position.y and b.visual_rect().intersects(body):
+				b.modulate.a = 0.3
+				faded.append(b)
+
+
 ## Anything standing in front of the local player turns see-through so you
 ## never lose your character behind a tree, a building or the skytrain.
 func _fade_trees_near(pos: Vector2) -> void:
@@ -1316,6 +1337,15 @@ func _fade_trees_near(pos: Vector2) -> void:
 				or inside.has_area() and b.position.y > inside.end.y and b.visual_rect().intersects(inside)):
 			b.modulate.a = 0.3
 			faded.append(b)
+	# Anyone your character can see, standing where a roof or a tree is drawn
+	# over them: that turns see-through too, so what you see is never hidden.
+	var me: Player = players.get(multiplayer.get_unique_id())
+	for z: Zombie in zombies.values():
+		if z.storey == 0 and z.visible and z.sight_k > 0.5:
+			_fade_over(z.position)
+	for q: Player in players.values():
+		if q != me and q.storey == 0 and not q.on_roof and q.visible and q.sight_k > 0.5:
+			_fade_over(q.position)
 	# Under a drawn zone's skytrain (drawn BTS_H up from the line it follows).
 	var lifted := pos + Vector2(0, World.BTS_H - 14)
 	for i in world.bts_path.size() - 1:

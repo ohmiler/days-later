@@ -595,6 +595,8 @@ func _engine_and_lamp(delta: float) -> void:
 		var to := 0.0 if v.dir > 0.0 else PI
 		if v.view != "side":
 			to = PI * 0.5 if v.view == "front" else -PI * 0.5
+		if ride_seen.length() > 12.0:
+			to = ride_seen.angle()  # (moving: the beam goes where the bike goes, diagonals too)
 		headlight.rotation = lerp_angle(headlight.rotation, to, minf(1.0, 10.0 * delta))
 		headlight.position = Vector2.from_angle(headlight.rotation) * 8.0 + Vector2(0, -3)
 	if DisplayServer.get_name() == "headless":

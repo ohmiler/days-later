@@ -63,6 +63,10 @@ func req_reinforce() -> void:
 
 ## Nail a board across a door or window, or repair a broken door (server).
 func _reinforce(p: Player, id: int) -> void:
+	var d0: Dictionary = main.world.doors[id]
+	if d0.kind == "shutter":
+		_fix_shutter(p, id)
+		return
 	var slot := -1
 	for i in p.inv.size():
 		if p.inv[i] != null and p.inv[i].id == "wood":
@@ -92,6 +96,32 @@ func _reinforce(p: Player, id: int) -> void:
 	main._make_noise(p.position, main.NOISE_SWING)  # hammering is loud
 	main.skills.gain(p, "craft", "board")
 	main.quests.note(p, "board")
+	main.inventory._send_inv(p)
+
+
+## Hammer a bent shutter section straight again with scrap (server): it
+## rolls down whole, as strong as new.
+func _fix_shutter(p: Player, id: int) -> void:
+	var d: Dictionary = main.world.doors[id]
+	if not d.broken:
+		return
+	if not Interact.can_fix_shutter(p):
+		main._toast(p, "ต้องมีเศษเหล็ก %d ชิ้นกับค้อน" % Interact.SHUTTER_SCRAP)
+		return
+	var need := Interact.SHUTTER_SCRAP
+	for i in p.inv.size():
+		var it = p.inv[i]
+		if need > 0 and it != null and it.id == "scrap":
+			var take: int = mini(need, it.n)
+			it.n -= take
+			need -= take
+			if it.n <= 0:
+				p.inv[i] = null
+	door_state.rpc(id, true, World.SHUTTER_HP, 0, false)
+	main._toast(p, "ดัดประตูเหล็กกลับเข้าที่แล้ว")
+	main.fx_sound.rpc("shutter", p.position)
+	main._make_noise(p.position, main.NOISE_SWING)  # hammering steel is loud
+	main.skills.gain(p, "craft", "board")
 	main.inventory._send_inv(p)
 
 

@@ -17,7 +17,7 @@ const HOTWIRE_TIME := 8.0
 const FUEL_CAN := 3.0  # litres in a jerrycan
 const HIT_SPEED := 60.0  # faster than this, a zombie in the way is knocked flat
 const SLOW_GROUND := 0.5  # grass and dirt, for bikes not built for it
-const KEY_CHANCE := 0.35  # bikes left with the key still in
+const KEY_CHANCE := 0.15  # bikes left with the key still in (few: a bike worth keeping is worth looking after)
 ## Steering: a moving bike swings round toward where you steer at so many
 ## radians a second (tight at a crawl, wide at full speed); below CRAWL it
 ## points anywhere, and steering right back the way you came brakes first.
@@ -85,8 +85,8 @@ static func step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World
 	var top: float = m.speed
 	if not m.offroad and w.get_tile(w.to_cell(p.position)) in [World.GRASS, World.DIRT]:
 		top *= SLOW_GROUND
-	if v.fuel <= 0.0 or v.hp <= 0:
-		top = 0.0
+	if v.fuel <= 0.0 or v.hp <= 0 or p.grabbed_by >= 0:
+		top = 0.0  # (dry, broken, or a zombie has hold of you: you pull up)
 	var two: bool = v.get("pillion", 0) != 0  # two up: a little slower away and at the top
 	if two:
 		top *= 0.94
