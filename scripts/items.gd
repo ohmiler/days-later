@@ -512,6 +512,7 @@ const LIQUIDS := {
 	clean = {name = "น้ำสะอาด", drink = 15.0, sick = 0.0},
 	tap = {name = "น้ำประปา", drink = 15.0, sick = 0.06},  # (straight from the pipes: Bangkok boils it)
 	canal = {name = "น้ำคลอง", drink = 15.0, sick = 0.45},
+	jar = {name = "น้ำในโอ่ง", drink = 15.0, sick = 0.12},  # (stored for weeks: boil it)
 }
 
 

@@ -136,6 +136,19 @@ func _draw() -> void:
 			if not searched:
 				draw_circle(Vector2(5, -12), 1.5, Color("e8e2d4"))  # a stack of plates
 				draw_circle(Vector2(5, -13), 1.5, Color("f0ece4"))
+		"fridge" when data.table == "home":
+			# A family's two-door fridge: solid doors, a pastel or white body,
+			# magnets and a water bottle on top. Searched: the door left ajar.
+			var body: Color = [Color("e8e6e0"), Color("dce8e4"), Color("e8dce0"), Color("d8dce8"), Color("c8ccd0")][rng.randi() % 5]
+			_box(Rect2(-7, -21, 14, 21), body)
+			draw_rect(Rect2(-6.5, -14.2, 13, 0.6), body.darkened(0.25))  # freezer above, fridge below
+			draw_rect(Rect2(4.2, -19.5, 0.9, 4), body.darkened(0.35))  # handles
+			draw_rect(Rect2(4.2, -12.5, 0.9, 6), body.darkened(0.35))
+			for i in 3:
+				draw_rect(Rect2(-5 + i * 2.6 + rng.randf(), -11 + rng.randf() * 4, 1.4, 1.4), Color.from_hsv(rng.randf(), 0.55, 0.85))
+			draw_rect(Rect2(-4.5, -24, 2, 3), Color(0.75, 0.85, 0.9, 0.9))  # a water bottle on top
+			if searched:
+				draw_rect(Rect2(-6.5, -13.6, 2.2, 12.5), Color("2e3234"))  # the door hangs open
 		"fridge":
 			_box(Rect2(-7, -21, 14, 21), Color("d8dcdc"))
 			draw_rect(Rect2(-5.5, -19, 11, 15), Color(0.6, 0.8, 0.85, 0.8) if not searched else Color("5a6a6e"))

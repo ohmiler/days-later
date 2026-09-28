@@ -34,28 +34,32 @@ const TALL_SIGNS := ["ร้านทอง", "ร้านขายยา", "�
 const GRAFFITI := ["ช่วยด้วย", "มีคนรอด", "อย่าเข้า", "หนีไปวัด", "ติดเชื้อ", "SOS", "ไม่มีของแล้ว"]
 
 
+## How tall a building is drawn (px up from its footprint to the roof).
+static func height_of(rec: Dictionary) -> float:
+	match rec.kind:
+		"condo":
+			return rec.floors * 11.0 + 8.0
+		"temple":
+			return 56.0
+		"chedi":
+			return 0.0
+		"sala":
+			return 28.0
+		"store":
+			return GROUND_H + 8.0
+		"hospital", "flats", "office", "mall":
+			return GROUND_H + (rec.floors - 1) * FLOOR_H + 6.0
+		"market":
+			return GROUND_H + 4.0
+	return GROUND_H + (rec.floors - 1) * FLOOR_H + 4.0
+
+
 func setup(rec: Dictionary) -> void:
 	data = rec
 	var r: Rect2i = rec.rect
 	w = r.size.x * World.TILE
 	d = r.size.y * World.TILE
-	match rec.kind:
-		"condo":
-			h = rec.floors * 11.0 + 8.0
-		"temple":
-			h = 56.0
-		"chedi":
-			h = 0.0
-		"sala":
-			h = 28.0
-		"store":
-			h = GROUND_H + 8.0
-		"hospital", "flats", "office", "mall":
-			h = GROUND_H + (rec.floors - 1) * FLOOR_H + 6.0
-		"market":
-			h = GROUND_H + 4.0
-		_:
-			h = GROUND_H + (rec.floors - 1) * FLOOR_H + 4.0
+	h = height_of(rec)
 	position = Vector2(r.position.x, r.end.y) * World.TILE
 	glow = Node2D.new()
 	var mat := CanvasItemMaterial.new()
@@ -164,7 +168,7 @@ func _flat_roof(col: Color) -> void:
 	var roof := Rect2(0, -h - d, w, d)
 	if rng.randf() < 0.35:
 		# Corrugated metal roof, often rusty.
-		var metal := Color("8a8e90") if rng.randf() < 0.5 else Color("8a5a3e")
+		var metal := Color("a2a6a8") if rng.randf() < 0.5 else Color("9a6444")
 		c.draw_rect(roof, metal)
 		for x in range(0, int(w), 3):
 			c.draw_line(Vector2(x, -h - d), Vector2(x, -h), metal.darkened(0.18), 1.0)
@@ -172,7 +176,7 @@ func _flat_roof(col: Color) -> void:
 			c.draw_circle(Vector2(rng.randf() * w, -h - rng.randf() * d), rng.randf_range(3, 7), Color(0.45, 0.22, 0.1, 0.3))
 	else:
 		# Bare concrete in a few shades, or painted with green or red waterproofing.
-		var tones := [Color("6e6a63"), Color("7a746a"), Color("64625c"), Color("827a6c"), Color("5e7258"), Color("8a5a4a")]
+		var tones := [Color("948e82"), Color("a09a8c"), Color("8a8a80"), Color("9c9484"), Color("7a9068"), Color("a86a58")]  # (lighter and warmer than the ground below)
 		c.draw_rect(roof, tones[extra.randi() % tones.size()])
 		for i in 4:  # water stains and patch repairs
 			c.draw_circle(Vector2(rng.randf() * w, -h - rng.randf() * d), rng.randf_range(3, 9), Color(0, 0, 0, 0.1))

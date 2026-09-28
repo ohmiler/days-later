@@ -1027,14 +1027,46 @@ func _draw_chunk(node: Node2D, area: Rect2i) -> void:
 	mc.commit(node)
 
 
+const SMOOTH := [ROAD, SOI, SIDEWALK, GRASS, DIRT, PLAZA]  # ground drawn with smooth mottling (see _draw_tile)
+
+
+## A soi cell with grass on three sides or more (a lawn's leftover paving).
+func _mostly_grass(c: Vector2i) -> bool:
+	var n := 0
+	for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+		if get_tile(c + d) in [GRASS, TREE]:
+			n += 1
+	return n >= 3
+
+
+## Beside the pavement or a wall: where a drain would be.
+func _by_kerb(c: Vector2i) -> bool:
+	for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+		if get_tile(c + d) in [SIDEWALK, BUILDING, WALL]:
+			return true
+	return false
+
+
 func _draw_tile(ci: MeshCanvas, x: int, y: int) -> void:
 	var c := Vector2i(x, y)
 	var t := tiles[y * W + x]
 	var r := Rect2(x * TILE, y * TILE, TILE, TILE)
 	var g := GRASS if t == TREE else t
+	if g == SOI and _mostly_grass(c):
+		g = GRASS  # (a stray paving cell in a lawn: worn grass, not a grey square)
 	var base: Color = COLORS[g]
-	base = base.lightened(tint.get_noise_2d(x, y) * (0.12 if g == GRASS else 0.05) + (hash01(x, y, 0) - 0.5) * 0.03)
-	ci.draw_rect(r, base)
+	var amp := 0.12 if g == GRASS else 0.05
+	base = base.lightened(tint.get_noise_2d(x, y) * amp)
+	if g in SMOOTH:
+		# Open ground: each corner takes the mottling at that corner, so the
+		# colour flows across cells instead of stepping from square to square.
+		var cols := PackedColorArray()
+		for k in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1)]:
+			cols.append(COLORS[g].lightened(tint.get_noise_2d(x + k.x, y + k.y) * amp))
+		ci.draw_primitive(PackedVector2Array([r.position, r.position + Vector2(TILE, 0), r.end, r.position + Vector2(0, TILE)]),
+				cols, PackedVector2Array())
+	else:
+		ci.draw_rect(r, base)
 	match g:
 		GRASS:
 			for i in 3:
@@ -1109,8 +1141,12 @@ func _draw_tile(ci: MeshCanvas, x: int, y: int) -> void:
 				_puddle(ci, r, x, y)
 			if hash01(x, y, 23) < 0.18:
 				_tuft(ci, r.position + Vector2(hash01(x, y, 24), hash01(x, y, 25)) * TILE, x + y * 7)
-			if hash01(x, y, 11) < 0.03:
-				ci.draw_rect(Rect2(r.position + Vector2(4, 5), Vector2(8, 5)), Color("2e2c2a"))  # drain
+			if hash01(x, y, 11) < 0.08 and _by_kerb(c):
+				# A drain grate by the kerb (where the water runs): a frame and slots.
+				var gr := Rect2(r.position + Vector2(4, 5), Vector2(8, 5))
+				ci.draw_rect(gr, base.darkened(0.2))
+				for i in 3:
+					ci.draw_rect(Rect2(gr.position + Vector2(1.2 + i * 2.2, 1), Vector2(1.2, 3)), base.darkened(0.45))
 		PLAZA:
 			ci.draw_rect(r, base.darkened(0.08), false, 0.5)
 			if hash01(x, y, 26) < 0.12:
@@ -1167,6 +1203,18 @@ func _puddle(ci: MeshCanvas, r: Rect2, x: int, y: int) -> void:
 
 func _draw_markings(node: Node2D) -> void:
 	var ci := MeshCanvas.new()  # (one batch for the whole city's paint)
+	# The afternoon sun is low in the west, like the trees' and the cars'
+	# shadows: every building throws one east, longer the taller it is. It lies
+	# on the ground, so only open ground east of a row (a soi) shows it.
+	for rec in buildings:
+		var bh := BuildingProp.height_of(rec)
+		if bh <= 0.0:
+			continue
+		var r: Rect2i = rec.rect
+		var len := clampf(bh * 0.35, 8.0, 40.0)
+		var x0 := float(r.end.x * TILE)
+		ci.draw_rect(Rect2(x0, r.position.y * TILE, len, r.size.y * TILE), Color(0, 0, 0, 0.16))
+		ci.draw_rect(Rect2(x0, r.position.y * TILE, minf(3.0, len), r.size.y * TILE), Color(0, 0, 0, 0.1))  # darker at the wall
 	var white := Color(0.85, 0.83, 0.78, 0.8)
 	var yellow := Color(0.85, 0.68, 0.2, 0.85)
 	for rd in roads:
