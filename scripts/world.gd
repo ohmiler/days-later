@@ -854,7 +854,7 @@ func _read_boxes() -> void:
 		var x := int(sp.pos.x / TILE)
 		var last := int(sp.pos.y / TILE) - 1
 		var top := last
-		var most: int = CityGen.VEHICLE_CELLS.get(sp.kind, 2) + 2
+		var most: int = CityGen.VEHICLE_CELLS.get(sp.kind, 2) + 10  # (end-on vehicles run to their real length)
 		while top - 1 >= last - most + 1 and blocked.has(Vector2i(x, top - 1)):
 			top -= 1
 		var box := Rect2(x * TILE + shift.x, top * TILE, TILE - 2.0 * shift.x, (last + 1 - top) * TILE)

@@ -9,10 +9,20 @@ static var _glow_tex: Texture2D
 ## longer than a person is tall (see CityGen._size_vehicles for what they block).
 const VEHICLE_SCALE := 1.6
 const VEHICLES := ["car", "taxi", "tuktuk", "wreck", "army", "van", "pickup", "songthaew", "bus"]  # drawn bigger (a motorbike is drawn to size)
+const POLE_H := 104.0  # a 10 m concrete pole by the proportions rule (16 px a metre up to 3 m, 8 above)
+## Each kind's drawing stretched to its real length and height on top of
+## VEHICLE_SCALE (docs/reviews/2026-09-28/3-scale.md): a sedan 4.5 m long and
+## 1.4 m high, a pickup 5.3 x 1.8, a tuk-tuk 3 m, an army truck 7.5 x 3.
+const CAR_S := Vector2(1.45, 0.85)  # car, taxi, wreck side-on
+const CAR_END_S := Vector2(1.0, 1.5)  # the same seen end-on (its length runs up the screen)
+const PICKUP_S := Vector2(1.6, 1.2)  # pickup, songthaew side-on
+const PICKUP_END := 1.36  # ...and how much longer end-on
+const TUK_S := Vector2(1.875, 0.95)
+const ARMY_S := Vector2(1.6, 2.5)
 const CLIMB := ["car", "taxi", "wreck", "army", "van", "pickup", "songthaew", "bus"]  # vehicles you can climb up on (not a tuk-tuk's canvas roof)
 ## Roof heights and lengths (drawing units, before VEHICLE_SCALE) of the Thai
 ## traffic: [roof height side-on, roof height end-on, length]. See roof_spot.
-const BODY := {van = [19.0, 21.0, 34.0], pickup = [15.0, 16.0, 33.0], songthaew = [18.0, 19.0, 33.0], bus = [30.0, 30.0, 92.0]}
+const BODY := {van = [23.0, 23.0, 54.0], pickup = [15.0, 16.0, 33.0], songthaew = [19.0, 19.0, 33.0], bus = [31.0, 31.0, 120.0]}
 
 
 ## On a car's roof: where you stand (on the ground, just in front of it, so
@@ -20,21 +30,22 @@ const BODY := {van = [19.0, 21.0, 34.0], pickup = [15.0, 16.0, 33.0], songthaew 
 ## (_car_side, _car_end, _army) at VEHICLE_SCALE.
 static func roof_spot(rec: Dictionary) -> Array:
 	var k := VEHICLE_SCALE
+	var s := stretch_of(rec)
 	var pos: Vector2 = rec.pos + draw_shift(rec)
 	match rec.kind:
 		"army":
-			return [pos + Vector2(18 * k, 0.5), 12.0 * k]
+			return [pos + Vector2(18 * k * s.x, 0.5), 12.0 * k * s.y]
 		"wreck":
 			var low: float = 0.65 if rec.get("pose", "") == "flipped" else 1.0
 			if rec.get("horizontal", true):
-				return [pos + Vector2(15.5 * k, 0.5), 15.0 * k * low]
-			return [pos + Vector2(8 * k, 0.5), 18.0 * k * low]
+				return [pos + Vector2(15.5 * k * s.x, 0.5), 15.0 * k * s.y * low]
+			return [pos + Vector2(8 * k, 0.5), 18.0 * k * s.y * low]
 		"pickup", "songthaew":
 			if rec.get("horizontal", true):
 				# Side-on: in the pickup's bed (below the cab), up on the songthaew's canopy.
-				return [pos + Vector2(10.5 * k, 0.5), (7.5 if rec.kind == "pickup" else 18.0) * k]
+				return [pos + Vector2(10.5 * k * s.x, 0.5), (9.0 if rec.kind == "pickup" else BODY.songthaew[0]) * k * s.y]
 			var b: Array = BODY[rec.kind]
-			return [pos + Vector2(8 * k, 0.5), b[1] * k + (b[2] - 32.0) * 0.3 * k]
+			return [pos + Vector2(8 * k, 0.5), b[1] * k + (b[2] * PICKUP_END - 32.0) * 0.3 * k]
 		_:
 			if BODY.has(rec.kind):
 				var b: Array = BODY[rec.kind]
@@ -42,8 +53,23 @@ static func roof_spot(rec: Dictionary) -> Array:
 					return [pos + Vector2(b[2] * 0.5 * k, 0.5), b[0] * k]
 				return [pos + Vector2(8 * k, 0.5), b[1] * k + (b[2] - 32.0) * 0.3 * k]
 			if rec.get("horizontal", true):
-				return [pos + Vector2(15.5 * k, 0.5), 16.0 * k]
-			return [pos + Vector2(8 * k, 0.5), 18.5 * k]
+				return [pos + Vector2(15.5 * k * s.x, 0.5), 16.0 * k * s.y]
+			return [pos + Vector2(8 * k, 0.5), 18.5 * k * s.y]
+
+
+## How a kind's drawing is stretched to its real size (see CAR_S...).
+static func stretch_of(rec: Dictionary) -> Vector2:
+	var side: bool = rec.get("horizontal", true)
+	match rec.kind:
+		"car", "taxi", "wreck":
+			return CAR_S if side else CAR_END_S
+		"pickup", "songthaew":
+			return PICKUP_S if side else Vector2.ONE
+		"tuktuk":
+			return TUK_S
+		"army":
+			return ARMY_S
+	return Vector2.ONE
 
 
 ## Where you can walk up on a roof: a box of ground positions around
@@ -52,6 +78,7 @@ static func roof_spot(rec: Dictionary) -> Array:
 ## you can't walk off the edge: getting down is a jump (Actions.jump_off_car).
 static func roof_area(rec: Dictionary) -> Rect2:
 	var k := VEHICLE_SCALE
+	var s := stretch_of(rec)
 	var spot: Vector2 = roof_spot(rec)[0]
 	var side: bool = rec.get("horizontal", true) or rec.kind == "army"
 	var along := 5.0  # half the walkable length, drawing units
@@ -69,8 +96,8 @@ static func roof_area(rec: Dictionary) -> Rect2:
 	elif not side:
 		deep = 9.0
 	if side:
-		return Rect2(spot + Vector2(-along * k, -deep * k), Vector2(along * 2.0 * k, deep * k))
-	return Rect2(spot + Vector2(-3.5 * k, -deep * k), Vector2(7.0 * k, deep * k))
+		return Rect2(spot + Vector2(-along * k * s.x, -deep * k), Vector2(along * 2.0 * k * s.x, deep * k))
+	return Rect2(spot + Vector2(-3.5 * k, -deep * k * s.y), Vector2(7.0 * k, deep * k * s.y))
 
 
 static func roof_clamp(rec: Dictionary, pos: Vector2) -> Vector2:
@@ -81,13 +108,14 @@ static func roof_clamp(rec: Dictionary, pos: Vector2) -> Vector2:
 ## The middle of a vehicle, as drawn: to tell how near someone is to it.
 static func middle(rec: Dictionary) -> Vector2:
 	var k := VEHICLE_SCALE
+	var s := stretch_of(rec)
 	var pos: Vector2 = rec.pos + draw_shift(rec)
 	if rec.kind == "army":
-		return pos + Vector2(24 * k, -5 * k)
+		return pos + Vector2(24 * k * s.x, -5 * k * s.y)
 	if BODY.has(rec.kind):
 		var len_: float = BODY[rec.kind][2]
 		return pos + (Vector2(len_ * 0.5 * k, -6 * k) if rec.get("horizontal", true) else Vector2(8 * k, -len_ * 0.45 * k))
-	return pos + (Vector2(16 * k, -6 * k) if rec.get("horizontal", true) else Vector2(8 * k, -15 * k))
+	return pos + (Vector2(16 * k * s.x, -6 * k * s.y) if rec.get("horizontal", true) else Vector2(8 * k, -15 * k * s.y))
 
 
 ## A vehicle running up the screen is drawn a cell wide at VEHICLE_SCALE:
@@ -202,6 +230,21 @@ func _paint() -> void:
 var _xf := Transform2D.IDENTITY  # the transform a whole prop is drawn under (a wreck turned askew)
 
 
+## A local stretch about the ground point, on top of _xf.
+func _stretch(S: Vector2) -> void:
+	c.draw_set_transform_matrix(_xf * Transform2D(0, S, 0, Vector2.ZERO))
+
+
+## A round wheel at a stretched spot: drawn with _xf only.
+func _wheel(at: Vector2, S: Vector2, r: float, col: Color, hub := 0.0, hub_col := Color("6a6a6a"), y_fixed := NAN) -> void:
+	c.draw_set_transform_matrix(_xf)
+	var p := Vector2(at.x * S.x, at.y * S.y if is_nan(y_fixed) else y_fixed)
+	c.draw_circle(p, r, col)
+	if hub > 0.0:
+		c.draw_circle(p, hub, hub_col)
+	_stretch(S)
+
+
 func _shadow(size: Vector2, offset := Vector2.ZERO) -> void:
 	if _xf.determinant() < 0.0:
 		return  # an upside-down wreck: its own scorch mark is shadow enough
@@ -213,21 +256,21 @@ func _shadow(size: Vector2, offset := Vector2.ZERO) -> void:
 func _pole() -> void:
 	var concrete := Color("9a968e")
 	_shadow(Vector2(4, 1.5))
-	c.draw_polygon(PackedVector2Array([Vector2(-1.5, 0), Vector2(1.5, 0), Vector2(1.0, -47), Vector2(-1.0, -47)]),
+	c.draw_polygon(PackedVector2Array([Vector2(-2.2, 0), Vector2(2.2, 0), Vector2(1.4, -POLE_H), Vector2(-1.4, -POLE_H)]),
 			PackedColorArray([concrete.darkened(0.3), concrete.darkened(0.1), concrete, concrete.lightened(0.1)]))
-	c.draw_rect(Rect2(-6, -44, 12, 1.4), Color("5a5850"))  # cross-arm
-	for x in [-5.0, -1.5, 2.0, 5.0]:
-		c.draw_circle(Vector2(x, -45), 0.7, Color("c8c8c0"))  # insulators
-	c.draw_set_transform(Vector2(0.5, -38), 0, Vector2(1, 0.6))
+	c.draw_rect(Rect2(-17, -(POLE_H - 3), 34, 1.6), Color("5a5850"))  # cross-arm
+	for x in [-15.0, -5.0, 5.0, 15.0]:
+		c.draw_circle(Vector2(x, -(POLE_H - 2)), 0.7, Color("c8c8c0"))  # insulators
+	c.draw_set_transform(Vector2(0.5, -72), 0, Vector2(1, 0.6))
 	c.draw_circle(Vector2.ZERO, 3.2, Color("1c1c1c"))  # tangle of cables
 	c.draw_set_transform(Vector2.ZERO)
 	if data.seed % 5 == 0:
-		c.draw_rect(Rect2(1.5, -34, 5, 7), Color("6e7470"))  # transformer
-		c.draw_rect(Rect2(1.5, -34, 5, 7), Color("4a504c"), false, 0.5)
+		c.draw_rect(Rect2(1.5, -84, 7, 10), Color("6e7470"))  # transformer
+		c.draw_rect(Rect2(1.5, -84, 7, 10), Color("4a504c"), false, 0.5)
 	var lamp: Vector2 = data.lamp
 	if lamp != Vector2.ZERO:
-		var head := lamp + Vector2(0, -40)
-		c.draw_line(Vector2(0, -40), head, Color("5a5850"), 1.0)
+		var head := lamp + Vector2(0, -88)
+		c.draw_line(Vector2(0, -88), head, Color("5a5850"), 1.0)
 		c.draw_rect(Rect2(head + Vector2(-2.5, -0.5), Vector2(5, 2)), Color("3a3a36"))
 		c.draw_rect(Rect2(head + Vector2(-2, 1.2), Vector2(4, 0.8)), Color("e8d8b0"))
 
@@ -237,7 +280,9 @@ func _car_side(burnt := false) -> void:
 	if burnt:
 		col = Color("3a302a")
 	var taxi: bool = data.kind == "taxi"
-	_shadow(Vector2(17, 3), Vector2(16, -1))
+	var S := CAR_S
+	_shadow(Vector2(17 * S.x, 3), Vector2(16 * S.x, -1))
+	_stretch(S)
 	var body := PackedVector2Array([Vector2(1, -3), Vector2(31, -3), Vector2(31, -8), Vector2(26, -10), Vector2(3, -10), Vector2(1, -8)])
 	c.draw_polygon(body, PackedColorArray([col.darkened(0.3), col.darkened(0.3), col, col.lightened(0.1), col.lightened(0.1), col]))
 	var cabin := PackedVector2Array([Vector2(7, -10), Vector2(24, -10), Vector2(21, -16), Vector2(10, -16)])
@@ -250,19 +295,19 @@ func _car_side(burnt := false) -> void:
 		c.draw_rect(Rect2(13, -19, 5, 2), Color("e8d040"))
 		if col == Color("3a8a4a"):
 			c.draw_rect(Rect2(3, -10, 24, 3), Color("e8d040"))  # green-and-yellow cab
-	c.draw_circle(Vector2(7, -3), 2.8, Color("161616"))
-	c.draw_circle(Vector2(25, -3), 2.8, Color("161616"))
-	c.draw_circle(Vector2(7, -3), 1.1, Color("6a6a6a"))
-	c.draw_circle(Vector2(25, -3), 1.1, Color("6a6a6a"))
+	_wheel(Vector2(7, -3), S, 2.8, Color("161616"), 1.1)
+	_wheel(Vector2(25, -3), S, 2.8, Color("161616"), 1.1)
 	c.draw_rect(Rect2(30, -8, 1.5, 2), Color("e8e0c0"))  # headlight
 	c.draw_rect(Rect2(0.5, -8, 1.5, 2), Color("a82a20"))  # tail light
 	if data.seed % 4 == 0:
 		c.draw_line(Vector2(17, -14), Vector2(20, -11), Color("c8ccd0"), 0.5)  # smashed window
+	c.draw_set_transform_matrix(_xf)
 
 
 func _car_end() -> void:
 	var col: Color = data.color
-	_shadow(Vector2(9, 5), Vector2(8, -3))
+	_shadow(Vector2(9, 5 * CAR_END_S.y), Vector2(8, -3 * CAR_END_S.y))
+	_stretch(CAR_END_S)
 	c.draw_rect(Rect2(1, -30, 14, 26), col)  # bonnet + roof seen from above
 	c.draw_rect(Rect2(2.5, -24, 11, 11), col.lightened(0.12))
 	c.draw_rect(Rect2(2.5, -13, 11, 3), Color("2a323a"))  # windscreen
@@ -274,6 +319,7 @@ func _car_end() -> void:
 	c.draw_rect(Rect2(15, -9, 1, 4), Color("161616"))
 	if data.kind == "taxi":
 		c.draw_rect(Rect2(6, -20, 4, 2), Color("e8d040"))
+	c.draw_set_transform_matrix(_xf)
 
 
 ## The Thai traffic side-on (facing right): a minivan, a pickup, a songthaew
@@ -283,7 +329,9 @@ func _thai_side() -> void:
 	var kind: String = data.kind
 	var L: float = BODY[kind][2]
 	var H: float = BODY[kind][0]
-	_shadow(Vector2(L * 0.53, 3), Vector2(L * 0.5, -1))
+	var S := PICKUP_S if kind in ["pickup", "songthaew"] else Vector2.ONE
+	_shadow(Vector2(L * S.x * 0.53, 3), Vector2(L * S.x * 0.5, -1))
+	_stretch(S)
 	var glass := Color("2a323a")
 	match kind:
 		"bus":
@@ -294,13 +342,13 @@ func _thai_side() -> void:
 			for x in range(6, int(L) - 8, 9):
 				c.draw_rect(Rect2(x, -H + 5, 7, 9), glass)  # a row of windows
 			c.draw_rect(Rect2(L - 7, -H + 4, 6, 17), glass)  # the driver's window
-			c.draw_rect(Rect2(L - 16, -H + 5, 6, 22), glass.darkened(0.2))  # front door
-			c.draw_rect(Rect2(28, -H + 5, 6, 22), glass.darkened(0.2))  # back door
+			c.draw_rect(Rect2(L - 20, -H + 5, 10, 22), glass.darkened(0.2))  # front door
+			c.draw_rect(Rect2(34, -H + 5, 10, 22), glass.darkened(0.2))  # back door
 			c.draw_rect(Rect2(L - 14, -H - 3, 10, 3), Color("2a2a2a"))  # route number box
 			c.draw_rect(Rect2(L - 13, -H - 2.5, 8, 2), Color("e8a030"))
-			for x in [14.0, L - 20.0]:
-				c.draw_circle(Vector2(x, -3), 3.2, Color("161616"))
-				c.draw_circle(Vector2(x, -3), 1.2, Color("6a6a6a"))
+			for x in [18.0, L - 24.0]:
+				c.draw_circle(Vector2(x, -5), 5.0, Color("161616"))
+				c.draw_circle(Vector2(x, -5), 1.9, Color("6a6a6a"))
 		"van":
 			c.draw_colored_polygon(PackedVector2Array([Vector2(1, -3), Vector2(L, -3), Vector2(L, -10), Vector2(L - 5, -H), Vector2(2, -H), Vector2(1, -H + 2)]), col)
 			c.draw_rect(Rect2(4, -H + 3, L - 11, 6), glass)  # the long side windows
@@ -321,13 +369,13 @@ func _thai_side() -> void:
 				c.draw_rect(Rect2(2, -12, 17, 1.5), Color("7a5a3a"))  # a bench
 				c.draw_rect(Rect2(1, -H + 2, 20, 1.2), Color("e8d040"))  # its route stripe
 			for x in [7.0, L - 7.0]:
-				c.draw_circle(Vector2(x, -3), 2.8, Color("161616"))
-				c.draw_circle(Vector2(x, -3), 1.1, Color("6a6a6a"))
+				_wheel(Vector2(x, -3), S, 3.6, Color("161616"), 1.4, Color("6a6a6a"), -3.6)
 	c.draw_rect(Rect2(L - 1, -8, 1.5, 2), Color("e8e0c0"))
 	c.draw_rect(Rect2(0.5, -8, 1.5, 2), Color("a82a20"))
 	if data.get("stand", false):
 		c.draw_rect(Rect2(L * 0.3, -H - 5, L * 0.4, 4), Color("f0ece4"))  # the destination card in the window
 		c.draw_rect(Rect2(L * 0.3, -H - 5, L * 0.4, 4), Color("c83a2e"), false, 0.5)
+	c.draw_set_transform_matrix(_xf)
 
 
 ## The same, seen from behind or in front (running up and down the screen):
@@ -335,7 +383,7 @@ func _thai_side() -> void:
 func _thai_end() -> void:
 	var col: Color = data.color
 	var kind: String = data.kind
-	var L: float = BODY[kind][2] * 0.85
+	var L: float = BODY[kind][2] * (PICKUP_END if kind in ["pickup", "songthaew"] else 0.85)
 	_shadow(Vector2(9, 5), Vector2(8, -3))
 	c.draw_rect(Rect2(1, -L, 14, L - 4), col)
 	match kind:
@@ -360,18 +408,20 @@ func _thai_end() -> void:
 ## A bus shelter: a bench, a roof on two posts, the route board.
 func _busstop() -> void:
 	_shadow(Vector2(10, 3), Vector2(0, -1))
-	c.draw_rect(Rect2(-10, -8, 20, 2), Color("8a8e92"))  # bench
+	c.draw_rect(Rect2(-10, -6, 20, 2), Color("8a8e92"))  # bench
 	for x in [-10.0, 9.0]:
-		c.draw_rect(Rect2(x, -24, 1.2, 24), Color("6a6e72"))
-	c.draw_rect(Rect2(-12, -26, 24, 3), Color("2a5aa8"))  # roof
-	c.draw_rect(Rect2(-7, -21, 8, 9), Color("e8e4dc"))  # the board of route numbers
+		c.draw_rect(Rect2(x, -40, 1.2, 40), Color("6a6e72"))
+	c.draw_rect(Rect2(-12, -43, 24, 3), Color("2a5aa8"))  # roof
+	c.draw_rect(Rect2(-7, -30, 8, 9), Color("e8e4dc"))  # the board of route numbers
 	for i in 3:
-		c.draw_rect(Rect2(-6, -20 + i * 3, 6, 1.2), Color("c83a2e") if i % 2 else Color("2a5aa8"))
+		c.draw_rect(Rect2(-6, -29 + i * 3, 6, 1.2), Color("c83a2e") if i % 2 else Color("2a5aa8"))
 
 
 func _tuktuk() -> void:
 	var col: Color = data.color
-	_shadow(Vector2(9, 2.5), Vector2(8, -1))
+	var S := TUK_S
+	_shadow(Vector2(9 * S.x, 2.5), Vector2(8 * S.x, -1))
+	_stretch(S)
 	c.draw_rect(Rect2(1, -8, 14, 5), col)
 	c.draw_rect(Rect2(1, -8, 14, 1), col.lightened(0.2))
 	c.draw_rect(Rect2(8, -12, 6, 4), Color("8a2a24"))  # passenger bench
@@ -381,7 +431,8 @@ func _tuktuk() -> void:
 	for i in 8:
 		c.draw_line(Vector2(0.5 + i * 2, -17), Vector2(0.5 + i * 2, -16), Color("d8c040"), 0.6)  # fringe
 	for x in [3.5, 13.0]:
-		c.draw_circle(Vector2(x, -2.5), 2.2, Color("161616"))
+		_wheel(Vector2(x, -2.5), S, 2.2, Color("161616"))
+	c.draw_set_transform_matrix(_xf)
 
 
 ## A parked motorbike: see BikeArt. `view`/`dir` are where it was left facing.
@@ -439,10 +490,11 @@ func _wreck() -> void:
 	var burnt: bool = data.pose == "burnt"
 	var flip: bool = data.pose == "flipped"
 	var side: bool = data.horizontal
-	var mid := Vector2(16, -8) if side else Vector2(8, -15)
+	var WS: Vector2 = CAR_S if side else CAR_END_S
+	var mid := Vector2(16 * WS.x, -8 * WS.y) if side else Vector2(8, -15 * WS.y)
 	# Scorch or oil under it.
 	c.draw_set_transform(Vector2(mid.x, -3), 0, Vector2(1, 0.45))
-	c.draw_circle(Vector2.ZERO, 17.0 if side else 12.0, Color(0.04, 0.03, 0.02, 0.5 if burnt else 0.22))
+	c.draw_circle(Vector2.ZERO, 17.0 * WS.x if side else 12.0, Color(0.04, 0.03, 0.02, 0.5 if burnt else 0.22))
 	# Turned about its middle; a flipped one mirrored top to bottom as well.
 	var xf := Transform2D(ang, mid) * Transform2D(0, Vector2(1, -1 if flip else 1), 0, Vector2.ZERO) * Transform2D(0, -mid)
 	_xf = xf
@@ -455,6 +507,7 @@ func _wreck() -> void:
 	else:
 		_car_end()
 	data.color = keep
+	_stretch(WS)
 	if flip:
 		c.draw_rect(Rect2(3, -3, 26, 2), Color("2a2622") if side else Color("2a2622"))  # the underside
 	elif side and data.seed % 3 == 0:
@@ -671,16 +724,18 @@ func _monument() -> void:
 func _bts_stairs() -> void:
 	var concrete := Color("a8a49c")
 	_shadow(Vector2(9, 3), Vector2(0, -1))
-	for i in 8:
+	for i in int((World.BTS_H - 16.0) / 5.5):
 		c.draw_rect(Rect2(-8, -3 - i * 5.5, 16, 3.5), concrete.darkened(i * 0.03))
-	c.draw_rect(Rect2(-9, -46, 18, 3), Color("5a7a8a"))  # its roof
-	c.draw_line(Vector2(-8, -2), Vector2(-8, -44), Color("7a7a76"), 1.0)
-	c.draw_line(Vector2(8, -2), Vector2(8, -44), Color("7a7a76"), 1.0)
+	c.draw_rect(Rect2(-9, -(World.BTS_H - 12.0), 18, 3), Color("5a7a8a"))  # its roof
+	c.draw_line(Vector2(-8, -2), Vector2(-8, -(World.BTS_H - 14.0)), Color("7a7a76"), 1.0)
+	c.draw_line(Vector2(8, -2), Vector2(8, -(World.BTS_H - 14.0)), Color("7a7a76"), 1.0)
 
 
 func _army() -> void:
 	var green := Color("4a5a3a")
-	_shadow(Vector2(25, 3.5), Vector2(24, -1))
+	var S := ARMY_S
+	_shadow(Vector2(25 * S.x, 3.5), Vector2(24 * S.x, -1))
+	_stretch(S)
 	c.draw_rect(Rect2(2, -12, 32, 9), green)  # canvas back
 	c.draw_rect(Rect2(2, -12, 32, 2), green.lightened(0.12))
 	for x in [10.0, 18.0, 26.0]:
@@ -688,8 +743,8 @@ func _army() -> void:
 	c.draw_rect(Rect2(34, -10, 12, 7), green.darkened(0.08))  # cab
 	c.draw_rect(Rect2(38, -9, 6, 3), Color("2a323a"))
 	c.draw_rect(Rect2(1, -4, 46, 2), Color("2a2a26"))
-	for x in [8.0, 16.0, 40.0]:
-		c.draw_circle(Vector2(x, -2.5), 3.0, Color("161616"))
-		c.draw_circle(Vector2(x, -2.5), 1.1, Color("5a5a52"))
 	c.draw_rect(Rect2(20, -9, 6, 3), Color("e8e4d0"))  # a sign taped on: "evacuation"
 	c.draw_line(Vector2(21, -7.5), Vector2(25, -7.5), Color("c83a2e"), 0.6)
+	for x in [8.0, 16.0, 40.0]:
+		_wheel(Vector2(x, -2.5), S, 5.5, Color("161616"), 2.0, Color("5a5a52"), -5.5)
+	c.draw_set_transform_matrix(_xf)
