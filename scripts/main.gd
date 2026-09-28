@@ -134,6 +134,7 @@ var play_zoom := Vector2(4, 4)  # zoom to go back to after the death close-up
 
 func _ready() -> void:
 	randomize()
+	Proportions.use(Proportions.BODY_STYLE)  # (the body's proportions: see Proportions)
 	Items.chill = func(b: int, from: float, to: float) -> float: return Buildings.power_between(self, b, from, to)  # (fridges)
 	combat = _module(Combat.new(), "Combat")
 	inventory = _module(Inventory.new(), "Inventory")

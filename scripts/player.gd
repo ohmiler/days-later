@@ -1083,7 +1083,7 @@ func _draw_leap() -> void:
 ## A silent kill, side-on (facing +x, the zombie just ahead): reach in, a
 ## hand over its mouth, the blade raised and driven in, then down with it as
 ## it's lowered to the ground. [time 0..1, pose] keyframes.
-const STAB_KEYS := [
+static var STAB_KEYS := [  # (static var, not const: Rig.HIP_Y is live now; built once with the default)
 	[0.0, {seat = Vector2(0, Rig.HIP_Y + 2.0), hands = [Vector2(3.0, -14.0), Vector2(2.0, -12.0)], feet = [Vector2(-3.0, 0.0), Vector2(1.5, 0.0)], lean = 0.1}],
 	[0.25, {seat = Vector2(0.8, Rig.HIP_Y + 0.6), hands = [Vector2(9.5, -19.0), Vector2(4.0, -24.0)], feet = [Vector2(-2.5, 0.0), Vector2(3.0, 0.0)], lean = 0.12}],
 	[0.45, {seat = Vector2(1.0, Rig.HIP_Y + 0.6), hands = [Vector2(9.5, -19.0), Vector2(8.5, -20.5)], feet = [Vector2(-2.5, 0.0), Vector2(3.0, 0.0)], lean = 0.18}],

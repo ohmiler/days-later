@@ -30,12 +30,37 @@ static func supine(head_up: bool, breath := 0.0, closed := true) -> Dictionary:
 		r.hip.append(Vector2(s * 2.2, -13.5))
 		r.knee.append(Vector2(s * 2.2, -8.2))
 		r.foot.append(Vector2(s * 2.2, -1.7))
+	if Proportions.on:
+		_fit(r)
 	return r
+
+
+## (Proportions) The same body on the new proportions, lying along -y from
+## the soles: legs x L (the knee by the shin), the torso x T, the arms x A
+## about the shoulders, the head x its scale; widths by the knobs.
+static func _fit(r: Dictionary) -> void:
+	var P := Proportions
+	var f := -1.7
+	var hip := f + (-13.5 - f) * P.L
+	var neck := hip + ((r.neck as Vector2).y + 13.5) * P.T
+	var sh0: Array = r.sh.duplicate()
+	for i in 2:
+		r.foot[i] = Vector2(r.foot[i].x * P.leg_x, f)
+		r.knee[i] = Vector2(r.knee[i].x * P.leg_x, f + (-8.2 - f) * P.KN)
+		r.hip[i] = Vector2(r.hip[i].x * P.leg_x, hip)
+		var sh := Vector2((sh0[i] as Vector2).x * P.W, neck + 1.2)
+		r.sh[i] = sh
+		r.el[i] = sh + ((r.el[i] as Vector2) - (sh0[i] as Vector2)) * P.A
+		r.hand[i] = sh + ((r.hand[i] as Vector2) - (sh0[i] as Vector2)) * P.A
+	r.waist = Vector2(0, hip)
+	r.head = Vector2(0, neck - 3.6 * P.head_s)
+	r.neck = Vector2(0, neck)
 
 
 ## Paint `r` with look `lk` (as Look takes it: colours, build, wear) at `lift`
 ## off the ground, `squash` as wide (turning over from side-on).
 static func draw(ci, r: Dictionary, lk: Dictionary, lift := 0.0, squash := 1.0) -> void:
+	ci = Proportions.canvas(ci)  # (the head scales about its centre; the rest is placed by supine)
 	var dl := Look._dress(lk, false)
 	var flip: bool = r.mode == "supine" and not r.head_up
 	ci.draw_set_transform(Vector2(0, -lift), 0, Vector2(lk.get("build", 1.0) * squash, -1.0 if flip else 1.0))
@@ -67,8 +92,8 @@ static func _legs(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 		var h: Vector2 = r.hip[i]
 		var k: Vector2 = r.knee[i]
 		var f: Vector2 = r.foot[i]
-		Look._limb(ci, h, k, 3.2, 2.9, pants)
-		Look._limb(ci, k, f, 2.9, 2.5, shin)
+		Look._limb(ci, h, k, 3.2 * Proportions.leg_w, 2.9 * Proportions.leg_w, pants)
+		Look._limb(ci, k, f, 2.9 * Proportions.leg_w, 2.5 * Proportions.leg_w, shin)
 		Clothes.leg_marks(ci, h, k, f, dl, false)
 		# The soles, the tread across them.
 		Look._rect(ci, Rect2(f.x - 1.8, f.y - 0.8, 3.6, 3.0 + boot), shoe)
@@ -77,7 +102,7 @@ static func _legs(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 	Clothes.top(ci, "knee", r, lk)
 	var w: Vector2 = r.waist
 	var dy := -1.0
-	var g: float = Look._girth
+	var g: float = Look._girth * Proportions.wx
 	Look._poly(ci, PackedVector2Array([w + Vector2(-3.7 * g, 0), w + Vector2(3.7 * g, 0), w + Vector2(3.6 * g, 2.6 * dy), w + Vector2(-3.6 * g, 2.6 * dy)]),
 			(dl.pants as Color).darkened(0.06))  # the seat, as the hips join the legs standing
 	Look._rect(ci, Rect2(w.x - 3.75 * g, w.y - 0.6, 7.5 * g, 1.2), (dl.pants as Color).darkened(0.35))  # belt
@@ -92,7 +117,7 @@ static func _back(ci, r: Dictionary, dl: Dictionary, lk: Dictionary) -> void:
 	var w: Vector2 = r.waist
 	var g: float = Look._girth
 	var dn := 1.0 if n.y > w.y else -1.0  # (which way the shoulders lie from the waist)
-	var sw := 4.4 * g
+	var sw := 4.4 * g * Proportions.wx
 	Look._poly(ci, PackedVector2Array([w + Vector2(-sw * 0.85, 0), w + Vector2(sw * 0.85, 0), n + Vector2(sw, -0.8 * dn), n + Vector2(sw - 1.2, 0.8 * dn),
 			n + Vector2(-sw + 1.2, 0.8 * dn), n + Vector2(-sw, -0.8 * dn)]), PackedColorArray([bot, bot, shirt, top, top, shirt]))
 	Look._poly(ci, PackedVector2Array([w + Vector2(sw * 0.3, 0), w + Vector2(sw * 0.85, 0), n + Vector2(sw, -0.8 * dn), n + Vector2(sw * 0.35, 0.4 * dn)]),

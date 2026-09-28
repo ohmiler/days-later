@@ -123,7 +123,16 @@ static func _draw(ci, layer: String, shape: String, p: Dictionary, r: Dictionary
 	match [shape, layer]:
 		["hoodie", "behind_head"], ["hood", "behind_head"]:
 			if view != Look.BACK:
-				Look._dot(ci, Vector2(-0.6 if view == Look.SIDE else 0.0, -20.6), 3.4, _hood_col(shape, p, lk))  # hood, behind the head
+				if Proportions.on:
+					# (Behind the head, sized with it and moved to where the head now is.)
+					Proportions.mode = Proportions.HEAD
+					Proportions.hc = Proportions.C_HEAD
+					Proportions.shift = Look.HEAD - Proportions.C_HEAD
+					Look._dot(ci, Vector2(-0.6 if view == Look.SIDE else 0.0, -20.6), 3.4, _hood_col(shape, p, lk))
+					Proportions.shift = Vector2.ZERO
+					Proportions.mode = Proportions.OFF
+				else:
+					Look._dot(ci, Vector2(-0.6 if view == Look.SIDE else 0.0, -20.6), 3.4, _hood_col(shape, p, lk))  # hood, behind the head
 		["hoodie", "back_head"], ["hood", "back_head"]:
 			if view == Look.BACK:
 				var hc: Color = (lk.shirt as Color) if shape == "hoodie" else (p.col as Color)
@@ -155,12 +164,13 @@ static func _draw(ci, layer: String, shape: String, p: Dictionary, r: Dictionary
 				var k: Vector2 = leg.knee
 				var a := k.lerp(leg.foot, 0.15)
 				var b := k.lerp(leg.foot, 0.75)
-				Look._limb(ci, a, b, 3.0, 2.6, (p.col as Color).darkened(0.2 if leg.far else 0.0))
+				Look._limb(ci, a, b, 3.0 * Proportions.leg_w, 2.6 * Proportions.leg_w, (p.col as Color).darkened(0.2 if leg.far else 0.0))
 		["kneepads", "knee"]:
 			for leg in r.legs:
 				var k: Vector2 = leg.knee
-				Look._rect(ci, Rect2(k + Vector2(-1.6, -1.2), Vector2(3.2, 2.2)), (p.col as Color).darkened(0.2 if leg.far else 0.0))
-				Look._rect(ci, Rect2(k + Vector2(-1.2, -1.0), Vector2(2.4, 0.6)), (p.col as Color).lightened(0.25))
+				var lw := Proportions.leg_w
+				Look._rect(ci, Rect2(k + Vector2(-1.6 * lw, -1.2), Vector2(3.2 * lw, 2.2)), (p.col as Color).darkened(0.2 if leg.far else 0.0))
+				Look._rect(ci, Rect2(k + Vector2(-1.2 * lw, -1.0), Vector2(2.4 * lw, 0.6)), (p.col as Color).lightened(0.25))
 		["whistle", "neck"]:
 			if view != Look.BACK:
 				var lan: Color = p.get("col2", Color("c83a2e"))
@@ -226,7 +236,10 @@ static func _draw(ci, layer: String, shape: String, p: Dictionary, r: Dictionary
 					var a := -PI * 0.5 + (i - 2.5) * 0.45
 					Look._dot(ci, Vector2(0, -15.0) + Vector2.from_angle(a) * Vector2(w, 5.4), 0.8, col.darkened(0.35))
 		["mascot", "back_head"], ["dino", "back_head"]:
+			var was: int = Proportions.mode
+			Proportions.mode = Proportions.OFF  # (a costume's head keeps its size, over the wearer's)
 			_costume_head(ci, view, r.head, shape, p)
+			Proportions.mode = was
 		["dino", "back_side"]:
 			if view != Look.FRONT:  # the tail behind
 				Look._poly(ci, PackedVector2Array([Vector2(-3.0, -12.0), Vector2(-9.5, -5.0), Vector2(-8.5, -3.8), Vector2(-1.0, -9.5)]), (p.col as Color).darkened(0.1))
@@ -482,17 +495,17 @@ static func arm_guard(ci, elbow: Vector2, hand: Vector2, g: Dictionary, sh := Ve
 		if p.get("shape", "") == "armband" and sh != Vector2.INF:
 			# A pra jiad: cloth knotted round the upper arm, the tails hanging.
 			var at := sh.lerp(elbow, 0.55)
-			var n := (elbow - sh).orthogonal().normalized()
+			var n := (elbow - sh).orthogonal().normalized() * Proportions.limb_w
 			Look._line(ci, at - n * 1.6, at + n * 1.6, p.col, 1.0)
 			Look._line(ci, at + n * 1.4, at + n * 1.4 + (elbow - sh).normalized() * 1.8, (p.col as Color).darkened(0.15), 0.5)
 		elif p.get("shape", "") == "armguards":
 			var col: Color = p.col
 			var a := elbow.lerp(hand, 0.12)
 			var b := elbow.lerp(hand, 0.78)
-			Look._limb(ci, a, b, 3.0, 2.7, col)
+			Look._limb(ci, a, b, 3.0 * Proportions.limb_w, 2.7 * Proportions.limb_w, col)
 			for t in [0.3, 0.6]:
 				var m := a.lerp(b, t)
-				var n := (b - a).orthogonal().normalized() * 1.4
+				var n := (b - a).orthogonal().normalized() * 1.4 * Proportions.limb_w
 				Look._line(ci, m - n, m + n, Color("8a9098"), 0.5)  # tape
 
 
@@ -502,10 +515,11 @@ static func glove(ci, hand: Vector2, fist: bool, g: Dictionary) -> void:
 		if p.get("shape", "") == "gloves":
 			var col: Color = p.col
 			var big: bool = p.get("big", false)  # boxing gloves
-			Look._dot(ci, hand, (2.5 if big else (1.7 if fist else 1.45)), col)
-			Look._dot(ci, hand + Vector2(-0.4, -0.4) * (1.6 if big else 1.0), 0.9 if big else 0.6, col.lightened(0.2))
+			var k := Proportions.limb_w
+			Look._dot(ci, hand, (2.5 if big else (1.7 if fist else 1.45)) * k, col)
+			Look._dot(ci, hand + Vector2(-0.4, -0.4) * (1.6 if big else 1.0) * k, (0.9 if big else 0.6) * k, col.lightened(0.2))
 			if big:
-				Look._dot(ci, hand + Vector2(0.9, 1.0), 0.8, Color("f0ece4"))  # the cuff
+				Look._dot(ci, hand + Vector2(0.9, 1.0) * k, 0.8 * k, Color("f0ece4"))  # the cuff
 
 
 # --- Body pieces (moved here from Look unchanged) -----------------------------------
@@ -776,7 +790,10 @@ static func _top(ci, layer: String, shape: String, p: Dictionary, r: Dictionary,
 	match [shape, layer]:
 		["hoodie", "neck"], ["hood", "neck"]:
 			var hood := ((lk.shirt as Color) if shape == "hoodie" else col).darkened(0.18)
+			Proportions.mode = Proportions.HEAD  # (sized with the head)
+			Proportions.hc = hc
 			Look._dot(ci, hc + Vector2(0, -1.6), 4.3, hood)  # behind the head
+			Proportions.mode = Proportions.OFF
 		["scarf", "neck"]:
 			Look._rect(ci, Rect2(n.x - 3.4, n.y - 1.2, 6.8, 2.4), col)
 			Look._rect(ci, Rect2(n.x - 3.4, n.y - 1.2, 6.8, 0.7), col.lightened(0.15))
