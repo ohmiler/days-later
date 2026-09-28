@@ -76,7 +76,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 		attack = Look.NONE
 		weapon = {}
 		var fk: Dictionary = FALLS.get(st.get("fall_kind", "normal"), FALLS.normal)
-		sink = fk.sink * clampf(fall / fk.buckle, 0, 1)
+		sink = fk.sink * clampf(fall / fk.buckle, 0, 1) * Proportions.L
 		var u := clampf((fall - fk.hold) / (1.0 - fk.hold), 0, 1)
 		tip = u * u
 		var bounce := sin(clampf((u - 0.85) / 0.15, 0, 1) * PI) * 0.08
@@ -90,9 +90,9 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 		run = 1.0  # (the legs run; the rest of it is hunched, see below)
 	if not moving:
 		run = 0.0
-	var bob := absf(s) * lerpf(1.0, RUN.bob, run)  # running: up off the ground between strides
+	var bob := absf(s) * lerpf(1.0, RUN.bob, run) * Proportions.L  # running: up off the ground between strides
 	if zombie and moving:
-		bob += maxf(0.0, sin(phase * 0.5)) * 0.8 * vary.get("limp", 1.0)  # limp
+		bob += maxf(0.0, sin(phase * 0.5)) * 0.8 * vary.get("limp", 1.0) * Proportions.L  # limp
 
 	var r := {view = view, sx = sx, girth = girth, base = base, tip = tip, fall_dir = fall_dir,
 			zombie = zombie, closed = fall >= 1.0, hips = Vector2.ZERO, shadow = st.get("shadow", true)}
@@ -117,7 +117,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 		var drag := -1
 		if vary.get("limp", 1.0) > 1.1:
 			drag = 1 if vary.get("arm_y", 0.0) > 0.0 else 0
-		walk = {stride = 3.0, drag = drag}
+		walk = {stride = 3.0 * Proportions.L, drag = drag}
 	walk.run = run
 	walk.c = c
 	r.legs = _legs(view, s, angle, sx, attack, ext, walk)
@@ -137,7 +137,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	var roll := 0.0
 	if not zombie:
 		tilt += RUN.lean * run  # running: leaning into it
-		crouch += RUN.sink * run
+		crouch += RUN.sink * run * Proportions.L
 	var pant: float = st.get("pant", 0.0)  # out of breath: the shoulders heave
 	if pant > 0.0 and fall <= 0.0:
 		bob += (sin(st.get("breath", 0.0) * 4.5) * 0.5 + 0.5) * 0.7 * pant
@@ -157,7 +157,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 		match breed:
 			"runner":  # hunched low and forward, like it's about to pounce
 				tilt = 0.3
-				crouch += 1.2
+				crouch += 1.2 * Proportions.L
 			"fat":  # rolls from side to side as it walks
 				if moving:
 					roll = sin(phase * 0.5) * 0.1
@@ -198,7 +198,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 		arms[i].idx = i  # 0 = left (far side-on), 1 = right: lets Look leave off a missing arm
 	r.arms_back = arms.filter(func(a): return a.behind)
 	r.arms_front = arms.filter(func(a): return not a.behind)
-	r.head = Look.HEAD + (vary.get("tilt", Vector2(0.7, 0.4)) if zombie else Vector2.ZERO)  # zombies tilt their head
+	r.head = Look.HEAD + (vary.get("tilt", Vector2(0.7, 0.4)) * Proportions.head_s if zombie else Vector2.ZERO)  # zombies tilt their head
 	if zombie and fall <= 0.0:
 		r.head += st.get("hit", Vector2.ZERO)  # snaps back when struck
 		if bite >= 0.6:
@@ -213,16 +213,16 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 # Every limb is two bones of fixed length. Poses say where a hand or foot should
 # go; _reach bends the elbow or knee to get it there, so nothing ever stretches.
 
-const HIP_Y := -10.0  # where the legs join the body (feet at 0)
+static var HIP_Y := -10.0  # where the legs join the body (feet at 0) (live: Proportions.apply sets it)
 ## Running, as far as it differs from walking: how high the body bounces, how
 ## far it leans in and sinks, the stride, how high a heel kicks up behind
 ## (side-on) and a knee comes up (front/back), how far the fists pump.
 const RUN := {bob = 2.0, lean = 0.2, sink = 0.7, stride = 5.0, heel = 6.0, knee = 4.2, pump = 3.4}
-const THIGH := 5.2
-const SHIN := 5.2
-const UPPER_ARM := 4.4
-const FOREARM := 4.2
-const ARM := UPPER_ARM + FOREARM
+static var THIGH := 5.2
+static var SHIN := 5.2
+static var UPPER_ARM := 4.4
+static var FOREARM := 4.2
+static var ARM := UPPER_ARM + FOREARM
 
 
 ## Where the middle joint of a two-part limb goes for its end to reach `target`
@@ -272,7 +272,7 @@ static func _elbow_pref(view: int, i: int) -> Vector2:
 
 ## How far an elbow can stick out, as seen from this view (see _reach_arm).
 static func _elbow_bend(view: int) -> float:
-	return INF if view == Look.SIDE else 1.2
+	return INF if view == Look.SIDE else 1.2 * Proportions.A
 
 
 ## A leg from `hip` to `foot`, the knee bending toward `pref` (forward, side-on).
@@ -295,7 +295,7 @@ static func _rising(r: Dictionary, u: float, girth: float, zombie: bool) -> Dict
 	var b := smoothstep(0.0, 1.0, clampf((u - 0.4) / 0.4, 0, 1))  # legs under it
 	var c := smoothstep(0.0, 1.0, clampf((u - 0.8) / 0.2, 0, 1))  # standing
 	var turn := lie * (1.0 - b)
-	var sink := 4.5 * b * (1.0 - c)  # how low the hips are, crouched
+	var sink := 4.5 * b * (1.0 - c) * Proportions.L  # how low the hips are, crouched
 	r.base = Transform2D(turn, Vector2.ZERO)
 	r.tip = 1.0 - b
 	r.torso = -lie * a if b <= 0.0 else -turn  # sitting up, then kept upright
@@ -323,7 +323,7 @@ static func _rising(r: Dictionary, u: float, girth: float, zombie: bool) -> Dict
 		arms.append(_reach_arm(shs[i], hand, Vector2(-0.4, 1.0), i == 0, extra))
 	r.arms_back = arms.filter(func(x): return x.behind)
 	r.arms_front = arms.filter(func(x): return not x.behind)
-	r.head = Look.HEAD + (Vector2(0.7, 0.4) if zombie else Vector2.ZERO)
+	r.head = Look.HEAD + (Vector2(0.7, 0.4) * Proportions.head_s if zombie else Vector2.ZERO)
 	r.front_kick = {}
 	return r
 
@@ -347,7 +347,7 @@ static func _anchored(r: Dictionary, an: Dictionary, view: int, lean := 0.0) -> 
 	var pivot := Vector2(0, HIP_Y)  # (the upper body turns about the hips: see Look.draw_rig)
 	var holds := []
 	for i in 2:
-		holds.append((hands[i] if i < hands.size() else up + shs[i] + Vector2(0, 8)) - up)
+		holds.append((hands[i] if i < hands.size() else up + shs[i] + Vector2(0, 8) * Proportions.A) - up)
 	if side:
 		# Lean forward as far as it takes for the hands to reach the bars (a real
 		# rider does), and if that's not enough sit further forward on the seat;
@@ -381,13 +381,13 @@ static func _anchored(r: Dictionary, an: Dictionary, view: int, lean := 0.0) -> 
 	# Legs: from each hip down to its foothold, knees forward (side-on) or out.
 	r.legs = []
 	for i in 2:
-		var hip := up + (Vector2(-0.3 + 0.6 * i, HIP_Y) if side else Vector2(-1.7 + 3.4 * i, HIP_Y))
+		var hip := up + (Vector2(-0.3 + 0.6 * i, HIP_Y) if side else Vector2((-1.7 + 3.4 * i) * Proportions.leg_x, HIP_Y))
 		var foot: Vector2 = feet[i] if i < feet.size() else hip + Vector2(0, -HIP_Y)
 		var pref := Vector2.RIGHT if side else Vector2(-1.0 if i == 0 else 1.0, 0)
 		r.legs.append(_leg(hip, foot, side and i == 0, pref, {type = "limb", shoe = "rect", e = 0.0}))
 	r.arms_back = arms.filter(func(a): return a.behind)
 	r.arms_front = arms.filter(func(a): return not a.behind)
-	r.head = Look.HEAD + an.get("head", Vector2.ZERO)  # (moved in the body's own frame: back and down = looking up)
+	r.head = Look.HEAD + an.get("head", Vector2.ZERO) * Proportions.head_s  # (moved in the body's own frame: back and down = looking up)
 	r.front_kick = {}
 	return r
 
@@ -411,9 +411,10 @@ static func local_dir(angle: float, sx: float) -> Vector2:
 ## body; from the front or back they sit at its edges, so a broader build has
 ## them further apart.
 static func shoulders(view: int, girth := 1.0) -> Array:
+	var d := Proportions.dsh()
 	if view == Look.SIDE:
-		return [Vector2(-0.6, -18.6), Vector2(0.6, -18.3)]
-	return [Vector2(-4.0 * girth, -18.6), Vector2(4.0 * girth, -18.6)]
+		return [Vector2(-0.6, -18.6 + d), Vector2(0.6, -18.3 + d)]
+	return [Vector2(-Proportions.sh_x * girth, -18.6 + d), Vector2(Proportions.sh_x * girth, -18.6 + d)]
 
 
 # --- Legs ------------------------------------------------------------------------
@@ -427,7 +428,7 @@ static func shoulders(view: int, girth := 1.0) -> Array:
 static func _legs(view: int, s: float, angle: float, sx: float, attack: int, ext: float, walk := {}) -> Array:
 	if attack == Look.KICK:
 		return _kick_legs(view, angle, sx, ext)
-	var stride: float = walk.get("stride", 4.0)
+	var stride: float = walk.get("stride", 4.0 * Proportions.L)
 	var drag: int = walk.get("drag", -1)
 	var run: float = walk.get("run", 0.0)
 	var c: float = walk.get("c", 0.0)
@@ -441,24 +442,27 @@ static func _legs(view: int, s: float, angle: float, sx: float, attack: int, ext
 			var sw := s if i == 1 else -s
 			var cw := c if i == 1 else -c  # > 0: this foot is on its way forward
 			var hip := Vector2(-0.3 + 0.6 * i, HIP_Y)
-			var foot := hip + Vector2(sw * stride, 10.0 - maxf(0.0, sw) * 1.5)
+			var foot := hip + Vector2(sw * stride, -HIP_Y - maxf(0.0, sw) * 1.5 * Proportions.L)
 			if i == drag:
-				foot = hip + Vector2(sw * stride * 0.5 - 0.8, 10.0)
+				foot = hip + Vector2(sw * stride * 0.5 - 0.8 * Proportions.L, -HIP_Y)
 			if run > 0.0:
-				var up := maxf(0.0, (cw - sw) * 0.7) * RUN.heel
-				foot = foot.lerp(hip + Vector2(sw * RUN.stride, 10.0 - up), run)
+				var up := maxf(0.0, (cw - sw) * 0.7) * RUN.heel * Proportions.L
+				foot = foot.lerp(hip + Vector2(sw * RUN.stride * Proportions.L, -HIP_Y - up), run)
 			legs.append(_leg(hip, foot, i == 0))
 		return legs
 	# From the front or back: the knee comes up higher with each running stride.
-	var lift := lerpf(2.2, RUN.knee, run)
+	var lift := lerpf(2.2, RUN.knee, run) * Proportions.L
 	return [_rect_leg(-3.1, 0.0 if drag == 0 else maxf(0.0, s) * lift), _rect_leg(0.3, 0.0 if drag == 1 else maxf(0.0, -s) * lift)]
 
 
 ## A front/back leg: a column from the hip down, its foot lifted by `lift`.
 static func _rect_leg(x: float, lift: float, far := false) -> Dictionary:
 	var c := x + 1.4
+	# (Proportions: the column's centre spread by leg_x, its width by leg_w.)
+	x = x + c * (Proportions.leg_x - 1.0) - 1.4 * (Proportions.leg_w - 1.0)
+	c = c + c * (Proportions.leg_x - 1.0)
 	return {type = "rect", x = x, lift = lift, far = far,
-			hip = Vector2(c, HIP_Y - 0.5), knee = Vector2(c, -5.6 - lift * 0.5), foot = Vector2(c, -lift)}
+			hip = Vector2(c, HIP_Y - 0.5), knee = Vector2(c, -5.6 * Proportions.KN - lift * 0.5), foot = Vector2(c, -lift)}
 
 
 static func _kick_legs(view: int, angle: float, sx: float, t: float) -> Array:
@@ -470,17 +474,20 @@ static func _kick_legs(view: int, angle: float, sx: float, t: float) -> Array:
 		# Standing leg braces back a little as the weight shifts. The kicking foot
 		# chambers up by the knee, then snaps out; the knee follows it.
 		var hip := Vector2(0.6, HIP_Y)
-		var foot := (hip + Vector2(0, 10)).lerp(hip + Vector2(4.0, 3.5), c).lerp(hip + Vector2(12.5, -1.0 + d.y * 5.0), e)
-		return [_leg(Vector2(-0.3, HIP_Y), Vector2(-1.8 * c, 0), true),
+		var L := Proportions.L
+		var foot := (hip + Vector2(0, 10) * L).lerp(hip + Vector2(4.0, 3.5) * L, c).lerp(hip + Vector2(12.5, -1.0 + d.y * 5.0) * L, e)
+		return [_leg(Vector2(-0.3, HIP_Y), Vector2(-1.8 * c * L, 0), true),
 				_leg(hip, foot, false, Vector2(1.0, -1.0), {type = "limb", shoe = "side_kick", e = e})]
 	if view == Look.FRONT:
 		return [_rect_leg(-3.1, 0.0, true)]  # the kicking leg is drawn over the body later
 	# Kicking away from the camera: the leg drives up the screen, mostly behind the body.
-	var hip := Vector2(1.7, HIP_Y)
+	var hip := Vector2(1.7 * Proportions.leg_x, HIP_Y)
+	var L := Proportions.L
+	var TH := Proportions.TH  # (the knee: a thigh from the hip)
 	return [_rect_leg(-3.1, 0.0, true),
 			{type = "limb", hip = hip, far = false, shoe = "rect", e = e,
-			knee = (hip + Vector2(0.3, 5)).lerp(hip + Vector2(0.8, 1.0), c).lerp(hip + Vector2(0.6 + d.x * 1.5, 2.0), e),
-			foot = (hip + Vector2(0, 10)).lerp(hip + Vector2(0.6, 5.0), c).lerp(hip + Vector2(2.0 + d.x * 3.5, -2.0), e)}]
+			knee = (hip + Vector2(0.3, 5) * TH).lerp(hip + Vector2(0.8, 1.0) * TH, c).lerp(hip + Vector2(0.6 + d.x * 1.5, 2.0) * TH, e),
+			foot = (hip + Vector2(0, 10) * L).lerp(hip + Vector2(0.6, 5.0) * L, c).lerp(hip + Vector2(2.0 + d.x * 3.5, -2.0) * L, e)}]
 
 
 ## Front kick toward the camera: the knee rises in front of the belly, then the
@@ -490,10 +497,12 @@ static func _front_kick(angle: float, sx: float, t: float) -> Dictionary:
 	var c := k.x
 	var e := k.y
 	var d := local_dir(angle, sx)
-	var hip := Vector2(1.7, HIP_Y - 0.5)
+	var hip := Vector2(1.7 * Proportions.leg_x, HIP_Y - 0.5)
+	var L := Proportions.L
+	var TH := Proportions.TH
 	return {hip = hip, e = e,
-			knee = (hip + Vector2(0.3, 5)).lerp(hip + Vector2(0.8, -3.5), c).lerp(hip + Vector2(0.6 + d.x * 1.5, -1.0), e),
-			foot = (hip + Vector2(0, 10)).lerp(hip + Vector2(0.6, 2.5), c).lerp(hip + Vector2(d.x * 3.5, 3.0), e)}
+			knee = (hip + Vector2(0.3, 5) * TH).lerp(hip + Vector2(0.8, -3.5) * TH, c).lerp(hip + Vector2(0.6 + d.x * 1.5, -1.0) * TH, e),
+			foot = (hip + Vector2(0, 10) * L).lerp(hip + Vector2(0.6, 2.5) * L, c).lerp(hip + Vector2(d.x * 3.5, 3.0) * L, e)}
 
 
 # --- Arms ------------------------------------------------------------------------
@@ -518,10 +527,10 @@ static func _idle_arms(view: int, s: float, girth := 1.0, run := 0.0, claw := fa
 		for i in 2:
 			var behind := i == 0
 			var sw := s if behind else -s
-			var hand: Vector2 = shs[i] + Vector2(sw * 4.2 + 0.6, 8.2)
-			hand = hand.lerp(shs[i] + Vector2(sw * RUN.pump + 0.5, 6.2 - maxf(0.0, sw) * 2.6), run)
+			var hand: Vector2 = shs[i] + Vector2(sw * 4.2 + 0.6, 8.2) * Proportions.A
+			hand = hand.lerp(shs[i] + Vector2(sw * RUN.pump + 0.5, 6.2 - maxf(0.0, sw) * 2.6) * Proportions.A, run)
 			if claw:
-				hand += Vector2(maxf(0.0, sw) * 2.4, -maxf(0.0, sw) * 0.8)  # the leading hand reaches for you
+				hand += Vector2(maxf(0.0, sw) * 2.4, -maxf(0.0, sw) * 0.8) * Proportions.A  # the leading hand reaches for you
 			var pref := _elbow_pref(view, i).lerp(Vector2(-1.0, 0.5), run)  # (the elbow goes back, not out)
 			var extra := {dim = 0.25 if behind else 0.0}
 			extra.merge(fist)
@@ -529,8 +538,8 @@ static func _idle_arms(view: int, s: float, girth := 1.0, run := 0.0, claw := fa
 		return out
 	for i in 2:
 		var side := -1.0 if i == 0 else 1.0
-		var hand: Vector2 = shs[i] + Vector2(1.0 * side, 7.7 + s * side * 1.3)
-		hand = hand.lerp(shs[i] + Vector2(-0.4 * side, 5.6 + s * side * 2.4), run)  # (bent toward the camera: shorter)
+		var hand: Vector2 = shs[i] + Vector2(1.0 * side * Proportions.W, (7.7 + s * side * 1.3) * Proportions.A)  # (out from the shoulder by its spread, down by the arm)
+		hand = hand.lerp(shs[i] + Vector2(-0.4 * side, 5.6 + s * side * 2.4) * Proportions.A, run)  # (bent toward the camera: shorter)
 		out.append(_reach_arm(shs[i], hand, _elbow_pref(view, i), false, fist.duplicate(), _elbow_bend(view)))
 	return out
 
@@ -542,8 +551,8 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 	var d := local_dir(angle, sx)
 	var side := d.orthogonal().normalized()
 	var sh := shoulders(view, girth)
-	var chin := Vector2(0, -19.5) + d * 3.0
-	var guard := [chin + side * 2.4, chin - side * 2.4 + d * 1.2]
+	var chin := Vector2(0, Proportions.ay(-19.5)) + d * 3.0 * Proportions.A
+	var guard := [chin + side * 2.4 * Proportions.A, chin - side * 2.4 * Proportions.A + d * 1.2 * Proportions.A]
 	var reach := [Look.PUNCH_L, Look.PUNCH_R]
 	var out := []
 	var grip: String = weapon.get("grip", "swing")
@@ -559,7 +568,7 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 			# hang down to it in a V instead of folding across the chest.
 			var pivot: Vector2 = sh[1]
 			if two_hands:  # (a long gun from the chest, not dropped to the belly)
-				pivot = (sh[0] + sh[1]) * 0.5 + (Vector2.ZERO if view == Look.SIDE or grip == "rifle" else Vector2(0, 3.0))
+				pivot = (sh[0] + sh[1]) * 0.5 + (Vector2.ZERO if view == Look.SIDE or grip == "rifle" else Vector2(0, 3.0 * Proportions.A))
 			var main_arm := _weapon_arm(d, sh[1], Look.SWING if attack == Look.SWING else Look.NONE, ext, weapon, behind, dim,
 					_elbow_pref(view, 1), _elbow_bend(view), pivot, aiming)
 			if two_hands:
@@ -584,9 +593,9 @@ static func _fist_arms(view: int, angle: float, sx: float, attack: int, ext: flo
 		if attack == reach[i]:
 			# The shoulder turns forward into the punch, adding to the arm's reach
 			# without the whole body sliding off its hips.
-			from += Vector2(d.x, d.y * 0.5) * 1.8 * ext
+			from += Vector2(d.x, d.y * 0.5) * 1.8 * ext * Proportions.A
 			# Straight out along the aim; foreshortened when punching toward or away from the camera.
-			fist = fist.lerp(from + Vector2(d.x * 13.0, d.y * 6.0) + Vector2(0, 2.0 * absf(d.y)), ext)
+			fist = fist.lerp(from + Vector2(d.x * 13.0, d.y * 6.0) * Proportions.A + Vector2(0, 2.0 * absf(d.y) * Proportions.A), ext)
 		out.append(_reach_arm(from, fist, _elbow_pref(view, i), behind, {fist = true, dim = dim}, _elbow_bend(view)))
 	return out
 
@@ -661,24 +670,24 @@ static func _weapon_arm(d: Vector2, sh: Vector2, attack: int, t: float, weapon: 
 		# A gun: raised along the aim when aiming, else held low and forward.
 		if aiming:
 			dv = d.normalized()
-			hand = at + Vector2(d.x, d.y * 0.8) * (7.5 if grip == "pistol" else 5.0) + Vector2(0, 1.0)
+			hand = at + Vector2(d.x, d.y * 0.8) * ((7.5 if grip == "pistol" else 5.0) * Proportions.A) + Vector2(0, 1.0 * Proportions.A)
 		else:
 			dv = (Vector2(d.x, d.y * 0.6) + Vector2(0, 0.9)).normalized()
-			hand = at + Vector2(d.x * 2.0, 5.5)
+			hand = at + Vector2(d.x * 2.0 * Proportions.A, 5.5 * Proportions.A)
 	elif grip == "stab":
 		# Blade held low and forward, point toward the target; the thrust drives straight out.
 		k = stab_reach(t) if attack == Look.SWING else 0.0
 		dv = Vector2.from_angle(base + 0.35 * (1.0 - maxf(k, 0.0)))
-		hand = sh + Vector2(d.x, d.y * 0.8) * (4.0 + 4.5 * k) + Vector2(0, 3.0 - 1.5 * maxf(k, 0.0))
+		hand = sh + Vector2(d.x, d.y * 0.8) * ((4.0 + 4.5 * k) * Proportions.A) + Vector2(0, (3.0 - 1.5 * maxf(k, 0.0)) * Proportions.A)
 	else:
 		var g: Array = GRIPS.get(grip, GRIPS.swing)
 		var a := base + (grip_angle(grip, t) if attack == Look.SWING else (g[0] as float))
 		dv = Vector2.from_angle(a)
 		dv = Vector2(dv.x, dv.y * (1.0 if grip != "sweep" else 0.7)).normalized()
-		hand = at + Vector2(dv.x, dv.y * (g[4] as float)) * (g[3] as float) + Vector2(0, 1.0)
+		hand = at + Vector2(dv.x, dv.y * (g[4] as float)) * ((g[3] as float) * Proportions.A) + Vector2(0, 1.0 * Proportions.A)
 		if attack == Look.SWING and t > 0.3 and t < 0.62:
 			# Motion trail along the arc the weapon tip just travelled.
-			var reach: float = (g[3] as float) + weapon.len
+			var reach: float = (g[3] as float) * Proportions.A + weapon.len
 			for i in 7:
 				var ak := lerpf(base + (g[1] as float), a, i / 6.0)
 				trail.append(at + Vector2(cos(ak), sin(ak) * (g[4] as float)) * reach)
@@ -704,17 +713,19 @@ static func _zombie_arms(view: int, phase: float, girth: float, breed := "normal
 		grab = -0.4 * clampf(bite / 0.6, 0, 1) if bite < 0.6 else sin(clampf((bite - 0.6) / 0.4, 0, 1) * PI)
 	var howl := sin(clampf(scream, 0, 1) * PI)
 	var shs := shoulders(view, girth)
+	var A := Proportions.A
+	var W := Proportions.W
 	match view:
 		Look.SIDE:
 			var out := []
 			for i in 2:
 				var behind := i == 0
-				var sh: Vector2 = shs[i] + Vector2(0.6, 0.9)  # slumped forward
-				var hand := Vector2(10.0, sh.y + 0.5 + arm_y + (sway if behind else -sway))
+				var sh: Vector2 = shs[i] + Vector2(0.6, 0.9) * A  # slumped forward
+				var hand := Vector2(10.0 * A, sh.y + 0.5 * A + arm_y * A + (sway if behind else -sway) * A)
 				if breed == "fat" or droop == i:
-					hand = Vector2(2.2, -10.8 + (sway if behind else -sway) * 0.4)
-				hand += Vector2(3.0 * grab, -1.5 * maxf(grab, 0.0))
-				hand = hand.lerp(Vector2(-3.0, -12.5), howl)
+					hand = Vector2(2.2 * A, Proportions.ay(-10.8) + (sway if behind else -sway) * 0.4 * A)
+				hand += Vector2(3.0 * grab, -1.5 * maxf(grab, 0.0)) * A
+				hand = hand.lerp(Vector2(-3.0 * A, Proportions.ay(-12.5)), howl)
 				var extra := z.duplicate()
 				extra.dim = 0.25 if behind else 0.0
 				out.append(_reach_arm(sh, hand, Vector2(0, 1), behind, extra))
@@ -725,13 +736,13 @@ static func _zombie_arms(view: int, phase: float, girth: float, breed := "normal
 				var s := -1.0 if i == 0 else 1.0
 				# Reaching toward the camera: foreshortened, hands big and low.
 				var sh: Vector2 = shs[i]
-				var hand := Vector2(2.8 * s * girth, -12.3 + sway * s + arm_y * 0.5)
+				var hand := Vector2(2.8 * s * girth * W, Proportions.ay(-12.3) + sway * s * A + arm_y * 0.5 * A)
 				var big := true
 				if breed == "fat" or droop == i:
-					hand = Vector2(5.2 * s * girth, -11.0)
+					hand = Vector2(5.2 * s * girth * W, Proportions.ay(-11.0))
 					big = false
-				hand += Vector2(1.6 * s * grab, 1.8 * maxf(grab, 0.0))
-				hand = hand.lerp(Vector2(6.5 * s * girth, -12.0), howl)
+				hand += Vector2(1.6 * s * grab, 1.8 * maxf(grab, 0.0)) * A
+				hand = hand.lerp(Vector2(6.5 * s * girth * W, Proportions.ay(-12.0)), howl)
 				var extra := z.duplicate()
 				extra.big_hand = big and howl < 0.5
 				out.append(_reach_arm(sh, hand, Vector2(s, 0.2), false, extra, _elbow_bend(view)))
@@ -743,13 +754,13 @@ static func _zombie_arms(view: int, phase: float, girth: float, breed := "normal
 			for i in 2:
 				var s := -1.0 if i == 0 else 1.0
 				var sh: Vector2 = shs[i]
-				var hand := Vector2(5.0 * s * girth, -20.4 + sway * s * 0.4 + arm_y * 0.3)
+				var hand := Vector2(5.0 * s * girth * W, Proportions.ay(-20.4) + sway * s * 0.4 * A + arm_y * 0.3 * A)
 				var behind := true
 				if breed == "fat" or droop == i:
-					hand = Vector2(5.2 * s * girth, -11.0)
+					hand = Vector2(5.2 * s * girth * W, Proportions.ay(-11.0))
 					behind = false
-				hand += Vector2(2.0 * s * grab, -0.8 * maxf(grab, 0.0))
-				hand = hand.lerp(Vector2(6.5 * s * girth, -12.0), howl)  # thrown back to howl: toward the camera
+				hand += Vector2(2.0 * s * grab, -0.8 * maxf(grab, 0.0)) * A
+				hand = hand.lerp(Vector2(6.5 * s * girth * W, Proportions.ay(-12.0)), howl)  # thrown back to howl: toward the camera
 				if howl > 0.5:
 					behind = false
 				out.append(_reach_arm(sh, hand, Vector2(s, 0.2), behind, z.duplicate(), _elbow_bend(view)))
@@ -837,7 +848,7 @@ static func blend(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
 			for j in ["hip", "knee", "foot"]:
 				leg[j] = (a.legs[i][j] as Vector2).lerp(b.legs[i][j], k)
 			if leg.type == "rect":  # (a column is drawn from x and lift)
-				leg.x = (leg.hip as Vector2).x - 1.4
+				leg.x = (leg.hip as Vector2).x - 1.4 * Proportions.leg_w
 				leg.lift = -(leg.foot as Vector2).y
 			legs.append(leg)
 		out.legs = legs

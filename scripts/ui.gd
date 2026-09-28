@@ -925,11 +925,11 @@ func _build_creator() -> void:
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_child(col)
-	var names := {skin = "สีผิว", style = "ทรงผม", hair = "สีผม", shirt = "เสื้อ", pants = "กางเกง", build = "รูปร่าง"}
+	var names := {skin = "สีผิว", style = "ทรงผม", hair = "สีผม", shirt = "เสื้อ", pants = "กางเกง", build = "รูปร่าง", tall = "ส่วนสูง"}
 	var sizes := {skin = Look.SKINS.size(), style = Look.HAIR_STYLES.size(), hair = Look.HAIRS.size(),
-			shirt = Look.SHIRTS.size(), pants = Look.PANTS.size(), build = Look.BUILDS.size()}
+			shirt = Look.SHIRTS.size(), pants = Look.PANTS.size(), build = Look.BUILDS.size(), tall = Look.HEIGHTS.size()}
 	var values := {}
-	for key in ["skin", "style", "hair", "shirt", "pants", "build"]:
+	for key in ["skin", "style", "hair", "shirt", "pants", "build", "tall"]:
 		var line := HBoxContainer.new()
 		line.add_theme_constant_override("separation", int(UiTheme.SPACE_2))
 		col.add_child(line)
@@ -946,7 +946,7 @@ func _build_creator() -> void:
 		for b: Button in [prev, next]:
 			var step := -1 if b == prev else 1
 			b.pressed.connect(func():
-				appearance[key] = posmod(appearance[key] + step, sizes[key])
+				appearance[key] = posmod(appearance.get(key, 0) + step, sizes[key])
 				_refresh_creator(values))
 		line.add_child(prev)
 		line.add_child(val)
@@ -966,13 +966,15 @@ func _build_creator() -> void:
 
 func _refresh_creator(values: Dictionary, save := true) -> void:
 	for key in values:
-		var v: int = appearance[key]
+		var v: int = appearance.get(key, 0)
 		var text := "%d / %d" % [v + 1, {skin = Look.SKINS.size(), hair = Look.HAIRS.size(),
 				shirt = Look.SHIRTS.size(), pants = Look.PANTS.size()}.get(key, 1)]
 		if key == "style":
 			text = Look.HAIR_STYLE_NAMES[v]
 		elif key == "build":
 			text = Look.BUILD_NAMES[v]
+		elif key == "tall":
+			text = "%d ซม." % roundi(Look.HEIGHTS[v] * 100.0)
 		values[key].text = text
 	preview.look = Look.look_of(appearance)
 	preview.queue_redraw()

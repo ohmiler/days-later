@@ -8,6 +8,24 @@ func _aim_at(pos: Vector2) -> void:
 
 func run() -> void:
 	await host(9301)
+	# Somewhere open: the spawn is random around the zone's spawn cell, and
+	# now and then lands beside a compound wall that would stand between us.
+	var ww: World = main.world
+	var at := ww.to_cell(me.position)
+	for r in 60:
+		var found := false
+		for c in [at + Vector2i(r, 0), at + Vector2i(-r, 0), at + Vector2i(0, r), at + Vector2i(0, -r)]:
+			var open := true
+			for dy in range(-2, 3):
+				for dx in range(-4, 5):
+					if ww.get_tile(c + Vector2i(dx, dy)) != World.ROAD:
+						open = false
+			if open:
+				me.position = ww.to_pos(c)
+				found = true
+				break
+		if found:
+			break
 	var home := me.position
 
 	# A punch lands on the zombie in front.

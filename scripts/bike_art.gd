@@ -36,6 +36,8 @@ const BIKE_COLORS := {
 ## Where a rider's hips, hands and feet go on each model, facing +x from the
 ## bike's ground point (see Rig anchors). Sports bikes put the feet back and
 ## the bars low; trail bikes sit tall.
+static var fix := false  # (scratch: see rider_anchors)
+
 const BIKE_SEATS := {
 	wave = {seat = Vector2(-7, -15.5), bars = Vector2(7.5, -20.5), pegs = Vector2(0, -9.5)},
 	click = {seat = Vector2(-7, -16), bars = Vector2(8, -22), pegs = Vector2(0.5, -10.5)},
@@ -104,13 +106,18 @@ static func extra_of(seed_val: int) -> int:
 ## side-on faces +x), for Rig.build.
 static func rider_anchors(model: String, view := "side") -> Dictionary:
 	var b: Dictionary = BIKE_SEATS.get(model, BIKE_SEATS.wave)
+	if fix and Proportions.on:
+		# (Scratch mock: long legs put their feet forward on the floorboard, not under the seat.)
+		b = b.duplicate()
+		b.pegs = b.pegs + Vector2(3.5 * (Proportions.L - 1.0) / 0.5, 1.0)
+	var fx := 3.2 * (Proportions.leg_x if fix and Proportions.on else 1.0)
 	if view == "side":
 		return {seat = b.seat, hands = [b.bars + Vector2(-0.8, 0.3), b.bars], feet = [b.pegs + Vector2(-0.6, 0), b.pegs]}
 	var e: Dictionary = ENDS.get(model, ENDS.wave)
 	var k := DEPTH if view == "front" else -DEPTH
 	var at := func(p: Vector2, x: float) -> Vector2: return Vector2(x, p.y + p.x * k)
 	return {seat = at.call(b.seat, 0.0), hands = [at.call(b.bars, -e.bars), at.call(b.bars, e.bars)],
-			feet = [at.call(b.pegs, -3.2), at.call(b.pegs, 3.2)]}
+			feet = [at.call(b.pegs, -fx), at.call(b.pegs, fx)]}
 
 
 ## Where someone riding on the back sits: behind the rider on the pillion seat,

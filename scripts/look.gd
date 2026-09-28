@@ -15,9 +15,14 @@ const HAIR_STYLES := ["short", "long", "ponytail", "buzz", "bald"]
 const HAIR_STYLE_NAMES := ["สั้น", "ยาว", "มัดหาง", "เกรียน", "โล้น"]
 const BUILDS := [0.9, 1.0, 1.12]
 const BUILD_NAMES := ["ผอม", "กลาง", "ท้วม"]
+## How tall a survivor is, in metres (Thai adults: about 1.60 for women and 1.70
+## for men). The first is what older saves come back as. The body is drawn at
+## FULL_HEIGHT and scaled from the feet by height / FULL_HEIGHT.
+const HEIGHTS := [1.70, 1.75, 1.55, 1.60, 1.65]
+const FULL_HEIGHT := 1.8  # what the drawn body (29 px) stands for by the proportions rule
 ## What a survivor looks like, as palette indices: small enough to save and to
 ## send in every snapshot as one int (see pack/unpack).
-const APPEARANCE_KEYS := ["skin", "hair", "style", "shirt", "pants", "build"]
+const APPEARANCE_KEYS := ["tall", "skin", "hair", "style", "shirt", "pants", "build"]  # ("tall" first: codes packed before it came read as its first value)
 
 ## Parts a body can lose (lk.missing bits): left arm, right arm, head.
 const LOST_ARM_L := 1
@@ -28,8 +33,8 @@ const BLOOD := Color("7a0e0a")
 const BLOOD_DARK := Color("3e0605")
 const OLD_BLOOD := Color("5a2c1c")  # dried a day or more: brown
 
-const CHEST := Vector2(0, -15)  # where guns and flashlights sit
-const HEAD := Vector2(0, -24)
+static var CHEST := Vector2(0, -15)  # where guns and flashlights sit (live: Proportions.apply)
+static var HEAD := Vector2(0, -24)  # (live: Proportions.apply)
 
 enum { FRONT, BACK, SIDE }
 enum { NONE, PUNCH_L, PUNCH_R, KICK, SWING, SWING_L }  # attack poses (SWING_L: the weapon in the left hand)
@@ -68,7 +73,7 @@ static func pick_view(angle: float, prev: Array) -> Array:
 
 
 static func _sizes() -> Array:
-	return [SKINS.size(), HAIRS.size(), HAIR_STYLES.size(), SHIRTS.size(), PANTS.size(), BUILDS.size()]
+	return [HEIGHTS.size(), SKINS.size(), HAIRS.size(), HAIR_STYLES.size(), SHIRTS.size(), PANTS.size(), BUILDS.size()]
 
 
 static func appearance_count() -> int:
@@ -107,7 +112,8 @@ static func unpack(code: int) -> Dictionary:
 ## The drawing look (colours and shapes) for an appearance.
 static func look_of(app: Dictionary) -> Dictionary:
 	return {skin = SKINS[app.skin], hair = HAIRS[app.hair], hair_style = HAIR_STYLES[app.style],
-			shirt = SHIRTS[app.shirt], pants = PANTS[app.pants], build = BUILDS[app.build]}
+			shirt = SHIRTS[app.shirt], pants = PANTS[app.pants], build = BUILDS[app.build],
+			tall = HEIGHTS[app.get("tall", 0)] / FULL_HEIGHT}
 
 
 ## Old-style entry point, kept so existing callers work: packs the arguments into
@@ -139,6 +145,23 @@ static func draw_eased(ci, st: Dictionary, lk: Dictionary, mem: Dictionary) -> v
 ## Paint a rig in layers, back to front: shadow, legs, far arms, torso, head,
 ## near arms (with whatever they hold), and a leg kicking at the camera.
 static func draw_rig(ci, r: Dictionary, lk: Dictionary) -> void:
+	# How tall this one is (Look.HEIGHTS): the whole figure scaled from the feet.
+	var tall: float = lk.get("tall", 1.0)
+	if tall == 1.0:
+		_draw_rig(ci, r, lk)
+		return
+	var keep := body_xf
+	body_xf = body_xf * Transform2D(0.0, Vector2(tall, tall), 0.0, Vector2.ZERO)
+	_draw_rig(ci, r, lk)
+	body_xf = keep
+
+
+static func _draw_rig(ci, r: Dictionary, lk: Dictionary) -> void:
+	# (Proportions: with its knobs on, draw through the warp proxy; each part
+	# below says how its points map: OFF for limbs drawn from the rig's joints,
+	# BODY for the hand-drawn torso and clothes, HEAD for the head.)
+	ci = Proportions.canvas(ci)
+	Proportions.side = r.view == SIDE
 	_base = r.base
 	_torso_xf = Transform2D.IDENTITY
 	if r.get("torso", 0.0) != 0.0:
@@ -163,17 +186,27 @@ static func draw_rig(ci, r: Dictionary, lk: Dictionary) -> void:
 			_leg_stump(ci, r.legs[i], lk)
 		else:
 			_draw_leg(ci, r.legs[i], lk)
-	_rect(ci, Rect2(Vector2(-3.3, -11.5) + r.get("hips", Vector2.ZERO), Vector2(6.6, 2.6)), pants.darkened(0.06))  # hips join the legs to the body
+	if Proportions.on:
+		Proportions.mode = Proportions.BODY
+		Proportions.shift = r.get("hips", Vector2.ZERO)  # (the rig's offset, already in the new body's space)
+		_rect(ci, Rect2(Vector2(-3.3, -11.5), Vector2(6.6, 2.6)), pants.darkened(0.06))
+		Proportions.shift = Vector2.ZERO
+		Proportions.mode = Proportions.OFF
+	else:
+		_rect(ci, Rect2(Vector2(-3.3, -11.5) + r.get("hips", Vector2.ZERO), Vector2(6.6, 2.6)), pants.darkened(0.06))  # hips join the legs to the body
 
 	Clothes.draw_layer(ci, "knee", r, lk)  # (worn things are drawn by Clothes at each layer)
 
 	_xf(ci, r.upper, Vector2(sx, 1), true)
+	Proportions.mode = Proportions.BODY
 	Clothes.draw_layer(ci, "back_side", r, lk)  # behind everything, on the far side of the body
 	Clothes.draw_layer(ci, "coat", r, lk)
+	Proportions.mode = Proportions.OFF
 	var missing: int = lk.get("missing", 0)
 	for a in r.arms_back:
 		_draw_arm_or_stump(ci, a, lk, missing)
 	Clothes.draw_layer(ci, "behind_head", r, lk)
+	Proportions.mode = Proportions.BODY
 	_torso(ci, r.view, lk.shirt, pants, r.zombie)
 	var tw := (3.0 if r.view == SIDE else 4.4) * _girth
 	Clothes.shirt_marks(ci, [Vector2(-tw + 0.8, -19.7), Vector2(tw - 0.8, -19.7), Vector2(tw * 0.85, -10.4), Vector2(-tw * 0.85, -10.4)],
@@ -190,14 +223,20 @@ static func draw_rig(ci, r: Dictionary, lk: Dictionary) -> void:
 				lk.get("mouth", 0.0), true, lk.get("gore", -1) >= 0 and int(lk.gore) % 2 == 0 and not low_gore, wear.get("face", {}),
 				lk.get("eye", Color(0, 0, 0, 0)))
 		if lk.get("crushed", false) and not low_gore:
+			Proportions.mode = Proportions.HEAD
+			Proportions.hc = r.head
 			_crushed(ci, r.head)
+	Proportions.mode = Proportions.BODY
 	if not missing & LOST_HEAD:
 		Clothes.draw_layer(ci, "neck", r, lk)  # wrapped up under the chin, over the collar
 	Clothes.draw_layer(ci, "back_head", r, lk)
+	Proportions.mode = Proportions.OFF
 	for a in r.arms_front:
 		_draw_arm_or_stump(ci, a, lk, missing)
 	if lk.get("spurt", 0.0) > 0.0 and not low_gore:
+		Proportions.mode = Proportions.BODY
 		_spurt(ci, r, missing, lk.spurt, lk.get("spurt_seed", 0))
+		Proportions.mode = Proportions.OFF
 	if not r.front_kick.is_empty():
 		_xf(ci, Vector2.ZERO, Vector2(sx, 1))
 		_front_kick_leg(ci, r.front_kick, lk)
@@ -276,9 +315,9 @@ static func _draw_leg(ci, leg: Dictionary, lk: Dictionary) -> void:
 		"rect":
 			_leg_rect(ci, leg.x, leg.lift, col, shoe, shin, boot)
 			if lk.get("heels", false):
-				_rect(ci, Rect2(leg.x + 0.4, -leg.lift - 0.1, 0.7, 0.9), shoe.darkened(0.3))  # the heel
-			var lx: float = leg.x + 1.4
-			Clothes.leg_marks(ci, Vector2(lx, -10.5), Vector2(lx, -5.5), Vector2(lx, -leg.lift - 2.0), lk, leg.far)
+				_rect(ci, Rect2(leg.x + 0.4 * Proportions.leg_w, -leg.lift - 0.1, 0.7, 0.9), shoe.darkened(0.3))  # the heel
+			var lx: float = leg.x + 1.4 * Proportions.leg_w
+			Clothes.leg_marks(ci, Vector2(lx, Rig.HIP_Y - 0.5), Vector2(lx, -5.5 * Proportions.KN), Vector2(lx, -leg.lift - 2.0), lk, leg.far)
 		"line":
 			_leg_line(ci, leg.hip, leg.knee, leg.foot, col, shoe, shin, boot)
 			if lk.get("heels", false):
@@ -287,8 +326,9 @@ static func _draw_leg(ci, leg: Dictionary, lk: Dictionary) -> void:
 		"limb":
 			var side: bool = leg.shoe == "side_kick"
 			var w := [3.1, 2.8, 2.4] if side else [3.2, 2.9, 2.5]
-			_limb(ci, leg.hip, leg.knee, w[0], w[1], col)
-			_limb(ci, leg.knee, leg.foot, w[1], w[2], shin)
+			var lw := Proportions.leg_w
+			_limb(ci, leg.hip, leg.knee, w[0] * lw, w[1] * lw, col)
+			_limb(ci, leg.knee, leg.foot, w[1] * lw, w[2] * lw, shin)
 			Clothes.leg_marks(ci, leg.hip, leg.knee, leg.foot, lk, leg.far)
 			var foot: Vector2 = leg.foot
 			var e: float = leg.e
@@ -322,8 +362,8 @@ static func _front_kick_leg(ci, k: Dictionary, lk: Dictionary) -> void:
 	var foot: Vector2 = k.foot
 	var e: float = k.e
 	var lit := (lk.pants as Color).lightened(0.06)  # nearer the camera, catches more light
-	_limb(ci, k.hip, k.knee, 3.3, 3.1, lit)
-	_limb(ci, k.knee, foot, 3.1, 2.7, (lk.skin as Color) if lk.get("shorts", false) else lit)
+	_limb(ci, k.hip, k.knee, 3.3 * Proportions.leg_w, 3.1 * Proportions.leg_w, lit)
+	_limb(ci, k.knee, foot, 3.1 * Proportions.leg_w, 2.7 * Proportions.leg_w, (lk.skin as Color) if lk.get("shorts", false) else lit)
 	var size := Vector2(3.2, 2.0) + Vector2(2.0, 2.6) * e
 	var sole := Rect2(foot - Vector2(size.x * 0.5, size.y * 0.5), size)
 	_rect(ci, sole, shoe)
@@ -334,17 +374,20 @@ static func _front_kick_leg(ci, k: Dictionary, lk: Dictionary) -> void:
 
 ## Front/back leg: straight down, lifted by `lift` mid-stride.
 static func _leg_rect(ci, x: float, up: float, pants: Color, shoe: Color, shin: Color, boot: float) -> void:
-	_rect(ci, Rect2(x, -10.5, 2.8, 10.5 - up - 1.7), shin)
+	var lw := Proportions.leg_k(_girth)
+	x += 1.4 * (Proportions.leg_w - lw)  # (a thicker leg grows both ways about its middle)
+	var top := Rig.HIP_Y - 0.5
+	_rect(ci, Rect2(x, top, 2.8 * lw, -top - up - 1.7), shin)
 	if shin != pants:
-		_rect(ci, Rect2(x - 0.1, -10.5, 3.0, 5.0 - up * 0.5), pants)  # shorts end above the knee
-	_rect(ci, Rect2(x - 0.3, -up - 1.9 - boot, 3.4, 1.9 + boot), shoe)
+		_rect(ci, Rect2(x - 0.1 * lw, top, 3.0 * lw, -5.5 * Proportions.KN - top - up * 0.5), pants)  # shorts end above the knee
+	_rect(ci, Rect2(x - 0.3 * lw, -up - 1.9 - boot, 3.4 * lw, 1.9 + boot), shoe)
 
 
 ## Side leg from hip to knee to foot; the shoe points forward.
 static func _leg_line(ci, hip: Vector2, knee: Vector2, foot: Vector2, pants: Color, shoe: Color, shin: Color,
 		boot: float) -> void:
-	_line(ci, knee, foot + Vector2(0, -1.4), shin, 2.6 if shin == pants else 2.2)
-	_line(ci, hip, knee, pants, 2.9)
+	_line(ci, knee, foot + Vector2(0, -1.4), shin, (2.6 if shin == pants else 2.2) * Proportions.leg_k(_girth))
+	_line(ci, hip, knee, pants, 2.9 * Proportions.leg_k(_girth))
 	_rect(ci, Rect2(foot + Vector2(-1.3, -1.9 - boot), Vector2(3.8 - boot * 0.6, 1.9 + boot)), shoe)
 	if boot > 0.0:
 		_rect(ci, Rect2(foot + Vector2(-1.3, -1.9), Vector2(3.8, 1.9)), shoe)
@@ -459,23 +502,24 @@ static func _arm(ci, sh: Vector2, elbow: Vector2, hand: Vector2, sleeve: Color, 
 		fist := false, long := false) -> void:
 	var line := skin.darkened(0.45)
 	var cuff := sh.lerp(elbow, 0.75)
-	_limb(ci, sh, elbow, 3.6, 3.0, line)
-	_limb(ci, elbow, hand, 3.0, 2.6, line)
-	_dot(ci, hand, 2.1 if fist else 1.8, line)
+	var k := Proportions.limb_w  # (arm thickness)
+	_limb(ci, sh, elbow, 3.6 * k, 3.0 * k, line)
+	_limb(ci, elbow, hand, 3.0 * k, 2.6 * k, line)
+	_dot(ci, hand, (2.1 if fist else 1.8) * k, line)
 	if long:
 		# Sleeve all the way down to the wrist.
-		_limb(ci, elbow, elbow.lerp(hand, 0.8), 2.5, 2.2, sleeve.darkened(0.08))
-		_limb(ci, sh, elbow, 3.0, 2.6, sleeve)
+		_limb(ci, elbow, elbow.lerp(hand, 0.8), 2.5 * k, 2.2 * k, sleeve.darkened(0.08))
+		_limb(ci, sh, elbow, 3.0 * k, 2.6 * k, sleeve)
 	else:
-		_limb(ci, elbow, hand, 2.2, 1.8, skin)  # forearm
-		_limb(ci, cuff, elbow, 2.3, 2.2, skin.darkened(0.05))
+		_limb(ci, elbow, hand, 2.2 * k, 1.8 * k, skin)  # forearm
+		_limb(ci, cuff, elbow, 2.3 * k, 2.2 * k, skin.darkened(0.05))
 		if sleeve.a > 0.01:
-			_limb(ci, sh, cuff, 3.0, 2.8, sleeve)  # sleeve
+			_limb(ci, sh, cuff, 3.0 * k, 2.8 * k, sleeve)  # sleeve
 		else:
-			_limb(ci, sh, cuff, 2.5, 2.3, skin.darkened(0.05))  # no sleeves: the upper arm bare
-	_dot(ci, hand, 1.5 if fist else 1.2, skin)
+			_limb(ci, sh, cuff, 2.5 * k, 2.3 * k, skin.darkened(0.05))  # no sleeves: the upper arm bare
+	_dot(ci, hand, (1.5 if fist else 1.2) * k, skin)
 	if fist:
-		_dot(ci, hand + Vector2(-0.4, -0.4), 0.6, skin.lightened(0.15))  # knuckle highlight
+		_dot(ci, hand + Vector2(-0.4, -0.4) * k, 0.6 * k, skin.lightened(0.15))  # knuckle highlight
 
 
 ## One arm from the rig, plus anything held in its hand.
@@ -490,7 +534,7 @@ static func _draw_arm(ci, a: Dictionary, lk: Dictionary) -> void:
 		_polyline(ci, held.trail, Color(1, 1, 1, 0.35), 1.6)
 	_arm(ci, a.sh, a.elbow, a.hand, sleeve, skin, a.fist, lk.get("long_sleeves", false))
 	if a.big_hand:
-		_dot(ci, a.hand, 1.7, skin)
+		_dot(ci, a.hand, 1.7 * Proportions.limb_w, skin)
 	var guards: Dictionary = lk.get("wear", {}).get("arms", {})
 	if not guards.is_empty():
 		Clothes.arm_guard(ci, a.elbow, a.hand, guards, a.sh)
@@ -499,7 +543,7 @@ static func _draw_arm(ci, a: Dictionary, lk: Dictionary) -> void:
 		Clothes.glove(ci, a.hand, a.fist, gloves)
 	if not held.is_empty():
 		_draw_weapon(ci, a.hand, held.dir, held.draw)
-		_dot(ci, a.hand, 1.5, skin if gloves.is_empty() else (gloves.col as Color))  # fingers wrap over the handle
+		_dot(ci, a.hand, 1.5 * Proportions.limb_w, skin if gloves.is_empty() else (gloves.col as Color))  # fingers wrap over the handle
 
 
 ## Shirt with rounded shoulders, lit from the top-left.
@@ -534,8 +578,8 @@ static func _draw_arm_or_stump(ci, a: Dictionary, lk: Dictionary, missing: int) 
 	var sh: Vector2 = a.sh
 	var end: Vector2 = sh.lerp(a.elbow, 0.38)
 	var sleeve: Color = (lk.shirt as Color).darkened(0.1 + a.dim)
-	_limb(ci, sh, end, 3.4, 3.0, (lk.skin as Color).darkened(0.5))
-	_limb(ci, sh, end, 3.0, 2.6, sleeve)
+	_limb(ci, sh, end, 3.4 * Proportions.limb_w, 3.0 * Proportions.limb_w, (lk.skin as Color).darkened(0.5))
+	_limb(ci, sh, end, 3.0 * Proportions.limb_w, 2.6 * Proportions.limb_w, sleeve)
 	_dot(ci, end, 1.3, (lk.skin as Color).darkened(0.35) if low_gore else BLOOD)
 	if not a.behind and not low_gore:
 		_dot(ci, end, 0.5, Color("d8d0c0"))  # bone
@@ -548,7 +592,7 @@ static func _leg_stump(ci, leg: Dictionary, lk: Dictionary) -> void:
 	var hip: Vector2 = leg.get("hip", Vector2(leg.get("x", 0.0) + 1.5, Rig.HIP_Y))
 	var knee: Vector2 = leg.get("knee", hip + Vector2(0, 5))
 	var end := hip.lerp(knee, 0.55)
-	_limb(ci, hip, end, 3.1, 2.9, col)
+	_limb(ci, hip, end, 3.1 * Proportions.leg_w, 2.9 * Proportions.leg_w, col)
 	_dot(ci, end, 1.4, (lk.skin as Color).darkened(0.35) if low_gore else BLOOD)
 	if not low_gore:
 		_dot(ci, end, 0.55, Color("d8d0c0"))  # bone
@@ -622,7 +666,18 @@ static func _head(ci, view: int, c: Vector2, skin: Color, hair: Color, style: St
 		zombie: bool, closed := false, hat := {}, mouth := 0.0, neck := true, drip := false, face := {},
 		eye_col := Color(0, 0, 0, 0)) -> void:
 	if neck:
-		_rect(ci, Rect2(-1.2, -21, 2.4, 2), skin.darkened(0.25))  # neck
+		if Proportions.on:
+			# (Today's neck, 1 above to 1 below the collar, where the new body puts
+			# the collar; its top is hidden under the head. Its width: neck_w.)
+			Proportions.mode = Proportions.OFF
+			var top := Proportions.map_y(-21.0)
+			var bot := Proportions.map_y(-19.0)
+			_rect(ci, Rect2(-Proportions.neck_w * 0.5, top, Proportions.neck_w, bot - top), skin.darkened(0.25))
+		else:
+			_rect(ci, Rect2(-1.2, -21, 2.4, 2), skin.darkened(0.25))  # neck
+	Proportions.mode = Proportions.HEAD  # (everything on the head scales about its centre)
+	Proportions.hc = c
+	var ek := Proportions.eye_k
 	_dot(ci, c, 4.2, skin.darkened(0.18))
 	_dot(ci, c + Vector2(-0.4, -0.4), 3.7, skin)
 	var eye := Color("dcd8bc") if zombie else Color("1c1612")  # a dead eye: milky, no pupil
@@ -650,10 +705,10 @@ static func _head(ci, view: int, c: Vector2, skin: Color, hair: Color, style: St
 				_rect(ci, Rect2(c.x - 2.3, c.y - 0.7, 1.6, 0.45), hair.darkened(0.2))  # brows
 				_rect(ci, Rect2(c.x + 0.7, c.y - 0.7, 1.6, 0.45), hair.darkened(0.2))
 			if zombie and not closed:
-				_dot(ci, c + Vector2(-1.5, 0.4), 1.0, skin.darkened(0.42))  # sunken sockets
-				_dot(ci, c + Vector2(1.5, 0.4), 1.0, skin.darkened(0.42))
-			_dot(ci, c + Vector2(-1.5, 0.4), 0.75 if zombie else 0.6, eye)
-			_dot(ci, c + Vector2(1.5, 0.4), 0.75 if zombie else 0.6, eye)
+				_dot(ci, c + Vector2(-1.5, 0.4), 1.0 * ek, skin.darkened(0.42))  # sunken sockets
+				_dot(ci, c + Vector2(1.5, 0.4), 1.0 * ek, skin.darkened(0.42))
+			_dot(ci, c + Vector2(-1.5, 0.4), (0.75 if zombie else 0.6) * ek, eye)
+			_dot(ci, c + Vector2(1.5, 0.4), (0.75 if zombie else 0.6) * ek, eye)
 			_rect(ci, Rect2(c.x - 0.4, c.y + 0.8, 0.8, 1.0), skin.darkened(0.15))  # nose
 			if zombie:
 				_rect(ci, Rect2(c.x - 1.1 - mouth * 0.3, c.y + 2.2, 2.2 + mouth * 0.6, 1.0 + mouth * 1.4), Color("3a1a16"))
@@ -690,8 +745,8 @@ static func _head(ci, view: int, c: Vector2, skin: Color, hair: Color, style: St
 			if not zombie:
 				_rect(ci, Rect2(c.x + 1.6, c.y - 0.9, 1.6, 0.45), hair.darkened(0.2))  # brow
 			if zombie and not closed:
-				_dot(ci, c + Vector2(2.4, 0.3), 0.9, skin.darkened(0.42))  # sunken socket
-			_dot(ci, c + Vector2(2.4, 0.3), 0.7 if zombie else 0.55, eye)
+				_dot(ci, c + Vector2(2.4, 0.3), 0.9 * ek, skin.darkened(0.42))  # sunken socket
+			_dot(ci, c + Vector2(2.4, 0.3), (0.7 if zombie else 0.55) * ek, eye)
 			_dot(ci, c + Vector2(4.0, 1.0), 0.75, skin)  # nose
 			_rect(ci, Rect2(c.x + 2.3, c.y + 2.3, 1.3 + mouth * 0.4, 0.45 + mouth * 1.3), Color("3a1a16") if zombie else dark)
 			if zombie and drip:
@@ -700,6 +755,7 @@ static func _head(ci, view: int, c: Vector2, skin: Color, hair: Color, style: St
 		Clothes.face(ci, view, c, face)
 	if not hat.is_empty():
 		Clothes.hat(ci, view, c, hat)
+	Proportions.mode = Proportions.OFF
 
 
 static func _arc(c: Vector2, r: float, a0: float, a1: float) -> PackedVector2Array:

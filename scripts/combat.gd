@@ -12,8 +12,8 @@ const MELEE_SLACK := 3.0
 ## Where a blow or a shot lands on a zombie, by how high on its drawn body
 ## (feet at 0, the top of the head at -31): head, body or legs. What you hit
 ## with and where decides the damage and how it dies (death_style).
-const HEAD_Y := -23.0  # above this: the head
-const LEGS_Y := -9.0  # below this: the legs
+const HEAD_Y := -23.0  # above this: the head (today's body: see Proportions.head_line)
+const LEGS_Y := -9.0  # below this: the legs (see Proportions.legs_line)
 const ZONE_DMG := {head = 1.8, body = 1.0, legs = 0.7}
 const GUN_HEAD := 2.0  # a shot to the head (instead of ZONE_DMG.head)
 const LEG_KNOCK := 0.35  # a blunt blow to the legs: the chance it goes down
@@ -385,7 +385,8 @@ func fx_bump(zid: int, dir: Vector2) -> void:
 static func zone_at(dy: float, z = null) -> String:
 	if z is Zombie and (z.flags & 2 or z.crawler()):
 		return "body"
-	return "head" if dy < HEAD_Y else ("legs" if dy > LEGS_Y else "body")
+	var k: float = z.height if z is Zombie else 1.0  # (a tall one's head is higher up)
+	return "head" if dy < Proportions.head_line() * k else ("legs" if dy > Proportions.legs_line() * k else "body")
 
 
 ## How it dies: what hit it (`how`: a weapon's draw kind, "gun", "kick",
