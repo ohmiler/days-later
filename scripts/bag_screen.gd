@@ -638,7 +638,10 @@ func _draw_card(head: Font, body: Font) -> void:
 	draw_string(head, Vector2(102, CARD_Y + 22), Items.display_name(it.id), HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_HEADING, UiTheme.TEXT)
 	if rarity != "common":
 		var nw := head.get_string_size(Items.display_name(it.id), HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_HEADING).x
-		draw_string(UiTheme.medium(), Vector2(110 + nw, CARD_Y + 21), Items.RARITY_NAMES[rarity], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL,
+		var rtext: String = Items.RARITY_NAMES[rarity]
+		if Items.tier(it.id) >= Items.TIERS:
+			rtext += " · เจอแค่ใน" + Items.TIER_NAMES[Items.TIERS]
+		draw_string(UiTheme.medium(), Vector2(110 + nw, CARD_Y + 21), rtext, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL,
 				Items.RARITY_COLORS[rarity])
 	# The numbers, each with a small mark for what it is.
 	var stats := []  # [mark, text]
