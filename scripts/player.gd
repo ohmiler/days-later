@@ -526,6 +526,9 @@ func in_long_bed() -> bool:
 ## then its near part. Mid-turn, both squash thin as the view changes over,
 ## so it reads as the bike swinging round; in a bend they lean in.
 func _draw_riding(v: Dictionary) -> void:
+	if Vehicles.is_car(v):
+		CarArt.draw(self, v.dir, CarArt.spec_of(v), Vector2.ZERO, Vehicles.headlight_on(v, world))
+		return  # (whoever is in it can't be seen)
 	var view: String = v.view
 	var dir: float = v.dir
 	var squash := 1.0
@@ -596,9 +599,11 @@ func _engine_and_lamp(delta: float) -> void:
 	headlight.visible = headlight.energy > 0.01
 	if v != null:
 		var to := 0.0 if v.dir > 0.0 else PI
-		if v.view != "side":
+		if v.view == "car":
+			to = v.dir
+		elif v.view != "side":
 			to = PI * 0.5 if v.view == "front" else -PI * 0.5
-		if ride_seen.length() > 12.0:
+		if ride_seen.length() > 12.0 and v.view != "car":
 			to = ride_seen.angle()  # (moving: the beam goes where the bike goes, diagonals too)
 		headlight.rotation = lerp_angle(headlight.rotation, to, minf(1.0, 10.0 * delta))
 		headlight.position = Vector2.from_angle(headlight.rotation) * 8.0 + Vector2(0, -3)
@@ -636,7 +641,7 @@ func _ride_look(delta: float) -> void:
 		ride_seen = Vector2.ZERO
 		return
 	var v: Dictionary = world.vehicles[riding]
-	var now := [v.view, v.dir]
+	var now := [v.view, v.dir] if v.view != "car" else ["car", 0.0]
 	if now != _shown_view:
 		if not _shown_view.is_empty():
 			turn_from = _shown_view

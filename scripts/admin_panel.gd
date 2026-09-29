@@ -131,6 +131,7 @@ func _build() -> void:
 				["+1 วัน", func(): command_requested.emit(&"req_skip", [24.0])]])
 			var m := get_parent().get_parent() if get_parent() else null
 			y = _row(y, "อากาศ", [["ฝนตก/หยุด", func(): command_requested.emit(&"req_toggle", ["rain"]), m is Main and m.raining]])
+			y = _row(y, "ยานพาหนะ", [["รถเก๋ง (ทดลองขับ)", func(): command_requested.emit(&"req_car", [])]])
 			y = _row(y, "วาร์ปไป", BigPlans.KINDS.keys().map(func(k): return [BIG_NAMES.get(k, k), func(): command_requested.emit(&"req_goto", [k])]))
 
 

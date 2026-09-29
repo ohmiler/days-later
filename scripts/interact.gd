@@ -90,7 +90,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 			title = "ประตูเหล็กถูกงัด · มุดผ่านได้" if d.kind == "shutter" else "ประตูพัง"
 		out.append({kind = "window" if win else "door", id = door, pos = w.to_pos(d.cell), title = title})
 	for v in w.vehicles:
-		if (v.rider == 0 or v.pillion == 0) and v.rider != p.peer_id and p.position.distance_to(v.pos) < Vehicles.REACH:
+		if (v.rider == 0 or v.pillion == 0) and v.rider != p.peer_id and p.position.distance_to(v.pos) < Vehicles.reach_of(v):
 			out.append({kind = "vehicle", id = v.id, pos = v.pos + Vector2(0, -8), title = Vehicles.title_of(v)})
 	var here: BuildingProp = w.building_at.get(w.to_cell(p.position))
 	_things(w, p, out)
