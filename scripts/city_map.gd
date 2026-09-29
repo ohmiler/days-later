@@ -24,6 +24,7 @@ var fog: Image  # one pixel per tile: 0 unseen, 1 seen
 var pins: Array = []  # [cell]
 var me: Player
 var others: Array = []  # [pos, name]
+var camps: Array = []  # [cell, name]: refugee camps (Camp.map_marks)
 var bosses: Array = []  # [cell, name, game hours till it's back (0: there now)] (Bosses.map_marks)
 var seed_key := 0
 var _dirty := false
@@ -220,6 +221,14 @@ func _draw() -> void:
 		var at := c + Vector2(-w - 10.0 if e.id == "east" else 10.0, 4.0)
 		draw_string_outline(f, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, 3, Color(0, 0, 0, 0.8))
 		draw_string(f, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("e8f0e0"))
+	# The refugee camps: a green cross, known to everyone.
+	for cp in camps:
+		var c: Vector2 = origin + (Vector2(cp[0]) + Vector2(0.5, 0.5)) * px
+		draw_circle(c, 9.0, UiTheme.OK)
+		draw_arc(c, 9.0, 0, TAU, 20, UiTheme.INK, 1.5)
+		draw_rect(Rect2(c - Vector2(1.5, 5.5), Vector2(3, 11)), UiTheme.INK)
+		draw_rect(Rect2(c - Vector2(5.5, 1.5), Vector2(11, 3)), UiTheme.INK)
+		UiTheme.over_world(self, c + Vector2(13, 5), "ค่ายผู้อพยพ · " + cp[1], f, UiTheme.SIZE_LABEL, UiTheme.OK)
 	# The bosses' lairs: known by word of mouth, seen or not.
 	for b in bosses:
 		var c: Vector2 = origin + (Vector2(b[0]) + Vector2(0.5, 0.5)) * px
@@ -250,7 +259,7 @@ func _draw() -> void:
 	draw_line(Vector2(1, ly), Vector2(sz.x - 1, ly), UiTheme.BORDER)
 	var x := P
 	for item in [[Color("b8452a"), "วัด"], [Color("3a72b8"), "มินิมาร์ท"], [Color("8e949a"), "คอนโด"], [Color("1e6a3a"), "ทางไปย่านอื่น"],
-			[UiTheme.ACCENT, "คุณ"], [UiTheme.INFO, "คนอื่น"], [UiTheme.DANGER, "บอส"], [UiTheme.DANGER_DEEP, "หมุด"], [Color(0.03, 0.03, 0.03), "ยังไม่เคยไป"]]:
+			[UiTheme.ACCENT, "คุณ"], [UiTheme.INFO, "คนอื่น"], [UiTheme.OK, "ค่าย"], [UiTheme.DANGER, "บอส"], [UiTheme.DANGER_DEEP, "หมุด"], [Color(0.03, 0.03, 0.03), "ยังไม่เคยไป"]]:
 		var cy := ly + LEGEND / 2
 		draw_style_box(UiTheme.rbox(item[0], 2, UiTheme.BORDER_STRONG), Rect2(x, cy - 5, 10, 10))
 		draw_string(UiTheme.medium(), Vector2(x + 16, cy + 5), item[1], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)

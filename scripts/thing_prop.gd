@@ -15,11 +15,18 @@ func refresh() -> void:
 		_radio_sound(thing.state.on)
 	# Only something moving needs a look every frame (there are hundreds of stoves).
 	set_process((thing.kind == "radio" and thing.state.on) or (thing.kind == "stove" and not thing.state.pot.is_empty())
-			or (thing.kind == "generator" and thing.state.on))
+			or (thing.kind == "generator" and thing.state.on) or thing.kind == "volunteer")
 
 
 func _ready() -> void:
 	refresh()
+
+
+## The camp volunteer: someone ordinary, in a hi-vis vest.
+func _volunteer_look() -> Dictionary:
+	var lk := Look.look_of(Look.unpack(4242 + thing.id * 13))
+	lk.wear = Items.wear_draw({over = "hivis", body = "tshirt#3", legs = "jeans", head = "cap#1"})
+	return lk
 
 
 func _process(delta: float) -> void:
@@ -29,6 +36,10 @@ func _process(delta: float) -> void:
 	elif thing.kind == "stove" and not thing.state.pot.is_empty():
 		_t += delta
 		queue_redraw()  # the flame, the steam
+	elif thing.kind == "volunteer":
+		_t += delta
+		if Engine.get_process_frames() % 4 == 0:
+			queue_redraw()  # (breathing: no need for every frame)
 	elif thing.kind == "generator" and thing.state.on:
 		_t += delta
 		queue_redraw()  # it shakes, it smokes (till the fuel runs out)
@@ -139,6 +150,34 @@ func _draw() -> void:
 				for i in 2:
 					var k := fmod(_t * 0.6 + i * 0.5, 1.0)
 					draw_circle(Vector2(0.5 + sin(_t * 2.0 + i) * 1.5, -18 - k * 10.0), 1.5 + k * 2.0, Color(1, 1, 1, 0.3 * (1.0 - k)))
+		"volunteer":
+			# A folding table with the camp's supplies on it, and the volunteer
+			# behind it in a hi-vis vest, facing the gate.
+			draw_set_transform(Vector2(0, -1 - lift), 0, Vector2(1, 0.35))
+			draw_circle(Vector2.ZERO, 12.0, Color(0, 0, 0, 0.3))
+			draw_set_transform(Vector2(0, -lift))
+			Look.draw(self, {view = [Look.FRONT, false], breath = sin(_t * 1.6) * 0.5}, _volunteer_look())
+			draw_rect(Rect2(-11, -11, 22, 3), Color("d8d0bc"))  # the table top
+			draw_rect(Rect2(-11, -8, 22, 1.5), Color("b8b09c"))
+			draw_line(Vector2(-9, -8), Vector2(-9, 0), Color("5a5a5a"), 0.8)
+			draw_line(Vector2(9, -8), Vector2(9, 0), Color("5a5a5a"), 0.8)
+			for i in 3:
+				draw_rect(Rect2(-9 + i * 3, -15, 2, 4), Color("5aa8d8"))  # bottles of water
+			draw_rect(Rect2(2, -14, 6, 3), Color("e8e4dc"))  # bandages in a box
+			draw_rect(Rect2(3.5, -13.5, 3, 0.8), Color("c83a2e"))
+		"board":
+			# The camp's notice board: plywood on two posts, notes pinned all over.
+			draw_set_transform(Vector2(0, -1 - lift), 0, Vector2(1, 0.35))
+			draw_circle(Vector2.ZERO, 9.0, Color(0, 0, 0, 0.3))
+			draw_set_transform(Vector2(0, -lift))
+			draw_rect(Rect2(-8, -20, 1.5, 20), Color("6a4a30"))
+			draw_rect(Rect2(6.5, -20, 1.5, 20), Color("6a4a30"))
+			draw_rect(Rect2(-10, -30, 20, 14), Color("b8925a"))
+			draw_rect(Rect2(-10, -30, 20, 1.5), Color("d0aa70"))
+			var notes := [Rect2(-8, -28, 5, 4), Rect2(-2, -29, 4, 5), Rect2(3, -27, 5, 4), Rect2(-7, -22, 6, 4), Rect2(1, -21, 5, 4)]
+			for i in notes.size():
+				draw_rect(notes[i], [Color("f0ece0"), Color("f2e27a"), Color("e8e4dc"), Color("f4c8c0"), Color("f0ece0")][i])
+				draw_circle(notes[i].position + Vector2(notes[i].size.x * 0.5, 0.6), 0.5, Color("c8302a"))
 		"vending":
 			draw_set_transform(Vector2(0, -1 - lift), 0, Vector2(1, 0.35))
 			draw_circle(Vector2.ZERO, 8.0, Color(0, 0, 0, 0.3))

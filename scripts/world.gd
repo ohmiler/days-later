@@ -84,6 +84,7 @@ var bts_station := Vector2(-1, -1)  # ...and the rows (pixels, from..to) its sta
 var circle := {}  # a drawn zone's roundabout: {at (cell), r, island}
 var medians: Array = []  # raised islands down the middle of wide streets (Rect2i)
 var blocks: Array = []  # a drawn zone's blocks: [{rect, use, name}]
+var camps: Array = []  # refugee camps, inside a temple's wall: [{rect (cells), name}] (see Camp)
 var spawn_cell := Vector2i(W / 2, H / 2)
 
 var chunks := {}
@@ -903,6 +904,21 @@ func is_roof(c: Vector2i) -> bool:
 func roof_height(pos: Vector2) -> float:
 	var b: BuildingProp = building_at.get(to_cell(pos))
 	return b.h if b and (b.data.kind in ["shop", "store"] or b.data.get("big", false)) else 0.0
+
+
+## The refugee camp `pos` is in (`margin`: cells round its wall count too), or {}.
+func camp_at(pos: Vector2, margin := 0) -> Dictionary:
+	if not Camp.safe_on:
+		return {}
+	var c := to_cell(pos)
+	for camp in camps:
+		if camp.rect.grow(margin).has_point(c):
+			return camp
+	return {}
+
+
+func in_camp(pos: Vector2, margin := 0) -> bool:
+	return not camp_at(pos, margin).is_empty()
 
 
 func spawn_point() -> Vector2:

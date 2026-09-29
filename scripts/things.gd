@@ -34,6 +34,11 @@ const DEFS := {
 	# left, worked out from the seed). It doesn't fill again by itself: it is
 	# a home's reserve once the rooftop tank is empty. (The decor draws it.)
 	"jar": {name = "โอ่งน้ำ", state = {water = -1}, solid = false},
+	# The refugee camp's (Camp): the volunteer at the table by the gate, who
+	# gives newcomers what they need to start; the notice board with the
+	# day's jobs.
+	"volunteer": {name = "อาสาประจำค่าย", state = {}, solid = true},
+	"board": {name = "บอร์ดประกาศของค่าย", state = {}, solid = true},
 }
 const JAR_LEFT := [4, 30]  # sips a jar was left with, the least and the most
 const BOIL_HOURS := 0.5  # game hours to boil a pot of water
@@ -74,6 +79,10 @@ func actions_for(p: Player, id: int) -> Array:
 			var room := _room_for(p, "jar")
 			return [_act("drink", "ดื่มน้ำในโอ่ง (ไม่ได้ต้ม)", sips >= 1 and p.thirst < 98.0, "โอ่งแห้งแล้ว" if sips < 1 else "ยังไม่กระหาย"),
 					_act("fill", "ตักน้ำในโอ่งใส่ขวด/หม้อ", sips >= 1 and room, "โอ่งแห้งแล้ว" if sips < 1 else "ไม่มีขวดหรือหม้อที่ว่าง")]
+		"volunteer":
+			return [_act("talk", "คุยกับอาสา")]
+		"board":
+			return [_act("jobs", "ดูงานประจำวัน")]
 		"generator":
 			var left := gen_fuel(th, main.now())
 			var can := Crafting.count_in(p.inv, "fuelcan") > 0
@@ -199,6 +208,14 @@ func act(p: Player, id: int, verb: String) -> void:
 	var fn := "_do_%s_%s" % [th.kind, verb]
 	if has_method(fn):
 		call(fn, p, th)
+
+
+func _do_volunteer_talk(p: Player, _th: Dictionary) -> void:
+	main.camp.talk(p)
+
+
+func _do_board_jobs(p: Player, _th: Dictionary) -> void:
+	main.camp.jobs(p)
 
 
 func _do_tap_drink(p: Player, th: Dictionary) -> void:
@@ -517,6 +534,16 @@ static func place_jars(w: World) -> void:
 	for d in w.decor:
 		if d.kind == "jar" and not d.get("outside", false):
 			_add(w, "jar", d.cell, d.get("storey", 0))
+
+
+## The camp's volunteer and notice board, just inside the gate facing the
+## street (after everything else: new things go after the old ones).
+static func place_camp(w: World) -> void:
+	for camp in w.camps:
+		var r: Rect2i = camp.rect
+		var c := r.get_center()
+		_add(w, "volunteer", Vector2i(c.x - 4, r.end.y - 14))
+		_add(w, "board", Vector2i(c.x + 4, r.end.y - 14))
 
 
 static func _add(w: World, kind: String, c: Vector2i, storey := 0) -> void:

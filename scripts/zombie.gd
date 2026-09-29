@@ -152,6 +152,8 @@ func server_tick(delta: float) -> void:
 	if shamming:
 		_sham_tick()
 		return
+	if target != null and world.in_camp(target.position):
+		target = null  # (they got inside the camp's wall: out of reach)
 	if dummy:
 		flags = 2 if down_t > 0.0 else 0
 		down_t -= delta
@@ -500,7 +502,10 @@ func sense(pos: Vector2, look := 9.0) -> void:
 func _move(dir: Vector2, delta: float) -> void:
 	var t0 := Time.get_ticks_usec() if Main.profiling else 0
 	var sp := speed * (CRAWL_SPEED if crawler() else 1.0)
+	var was := position
 	position = world.slide(position, dir * sp * (1.0 if storey > 0 else world.slow_at(position)) * delta, RADIUS, false, false, storey)
+	if storey == 0 and world.in_camp(position) and not world.in_camp(was):
+		position = was  # (the camp's gates are held: see Camp)
 	if Main.profiling:
 		_prof("move", t0)
 
@@ -531,8 +536,8 @@ func _nearest_player() -> Player:
 	var best: Player = null
 	var best_d := INF
 	for p: Player in players.values():
-		if not p.alive() or p.on_roof or p.storey != storey:
-			continue
+		if not p.alive() or p.on_roof or p.storey != storey or world.in_camp(p.position):
+			continue  # (inside the camp's wall: out of reach, see Camp)
 		if storey > 0 and world.building_at.get(world.to_cell(p.position)) != world.building_at.get(world.to_cell(position)):
 			continue  # upstairs, only the one building
 		var d := position.distance_to(p.position)

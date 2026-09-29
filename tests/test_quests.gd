@@ -11,7 +11,7 @@ func _tick() -> void:
 
 func run() -> void:
 	check(Quests.problems().is_empty(), "the quest table is sound " + str(Quests.problems()))
-	check(Quests.first_id() == "intro_supplies", "the first quest is the start")
+	check(Quests.first_id() == "intro_camp", "the first quest is the start: the refugee camp's volunteer")
 
 	SaveGame.wipe()
 	await host(9547)
@@ -21,7 +21,11 @@ func run() -> void:
 	me.worn.erase("hand_l")
 	me.refresh_wear()
 	_tick()
-	check(me.quests.active.has("intro_supplies"), "a new survivor gets the first quest")
+	check(me.quests.active.has("intro_camp"), "a new survivor gets the first quest")
+	main.quests.note(me, "talk", {kind = "volunteer"})  # (what the volunteer does: see test_camp)
+	_tick()
+	check(me.quests.active.has("intro_supplies"), "then finding food and water")
+	me.inv.fill(null)  # (the volunteer's water and bandages)
 
 	# Carrying food and water: done; the reward; the next one starts.
 	main.inventory._give(me, "snack")
@@ -55,6 +59,9 @@ func run() -> void:
 	_tick()
 	check(me.quests.done.has("intro_night"), "alive at dawn: the start is done")
 	_tick()
+	check(not me.quests.active.keys().any(func(id): return Quests.DEFS[id].get("daily", false)), "the day's tasks wait at the camp's notice board")
+	main.quests.hand_out_daily(me)
+	_tick()
 	var daily: Array = me.quests.active.keys().filter(func(id): return Quests.DEFS[id].get("daily", false))
 	check(daily.size() == Quests.DAILY_COUNT, "then two everyday tasks (%s)" % str(daily))
 
@@ -71,6 +78,7 @@ func run() -> void:
 	_tick()
 	check(me.quests.day == had, "a new game day keeps today's tasks")
 	Quests.day_shift += 1
+	main.quests.hand_out_daily(me)
 	_tick()
 	check(me.quests.day == Quests.real_day(), "a new real day hands out the day's tasks")
 	Quests.day_shift = 0
