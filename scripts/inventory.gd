@@ -537,6 +537,32 @@ func fill_containers(p: Player, what: String, sips: int) -> int:
 	return poured
 
 
+## `p` bandages `q`'s worst open wound (first aid's treat_other), with a
+## bandage from `p`'s bag.
+func treat_other(p: Player, q: Player) -> void:
+	if q == null or not q.alive() or not Skills.has(p, "treat_other"):
+		return
+	var slot := -1
+	for id in ["bandage", "firstaid"]:
+		for k in p.inv.size():
+			if slot < 0 and p.inv[k] != null and p.inv[k].id == id:
+				slot = k
+	if slot < 0:
+		return
+	if not Body.bandage(q, -1, p):
+		main._toast(p, "%s ไม่มีแผลที่ต้องพัน" % q.pname)
+		return
+	p.inv[slot].n -= 1
+	if p.inv[slot].n <= 0:
+		p.inv[slot] = null
+	q.bleeding = q.wounds.any(func(w): return w.bleeding and not w.bandaged)
+	_send_inv(p)
+	main.skills.gain(p, "medic", "treat", 2.0)  # (looking after someone else teaches more)
+	main.fx_sound.rpc("rustle", q.position)
+	main._toast(p, "พันแผลให้ %s แล้ว" % q.pname)
+	main._toast(q, "%s พันแผลให้คุณ" % p.pname)
+
+
 ## Bandage one particular wound (from the body screen), with a bandage from the bag.
 @rpc("any_peer", "call_remote", "reliable")
 func req_treat(i: int) -> void:

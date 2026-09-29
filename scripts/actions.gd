@@ -277,6 +277,8 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 		main.things.act(p, t.id, verb)
 		return
 	match verb:
+		"treat_other":
+			main.inventory.treat_other(p, main.players.get(t.id))
 		"up", "down":
 			# Ground floor -> each floor above this stairwell reaches -> roof, and back down.
 			var from_storey := p.storey
@@ -395,7 +397,7 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 		"pillion":
 			main.vehicles.mount_pillion(p, t.id)
 		"hotwire":
-			main.crafting._start(p, {kind = "hotwire", id = t.id}, Vehicles.HOTWIRE_TIME)
+			main.crafting._start(p, {kind = "hotwire", id = t.id}, Vehicles.HOTWIRE_TIME * (0.5 if Skills.has(p, "fast_hotwire") else 1.0))
 			main._make_noise(p.position, main.NOISE_SEARCH)
 			main._toast(p, "กำลังต่อสายตรง · ยืนนิ่งๆ")
 		"refuel":

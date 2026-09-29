@@ -42,6 +42,7 @@ func run() -> void:
 	for i in 3:
 		main.inventory._give(me, "nails")
 	main.inventory._give(me, "plank")
+	me.skills.craft = Skills.xp_for(5)  # (a nail bat is a craft 5 recipe: see test_unlocks)
 	c.req_craft("nailbat_plank")
 	me.move = Vector2.RIGHT
 	simulate(0.3)

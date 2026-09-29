@@ -41,7 +41,7 @@ func run() -> void:
 	check(absf(Skills.mult(me, "swing_cd") - (1.0 - 0.004 * 49)) < 0.001, "combat 50: swings %.0f%% sooner" % ((1.0 - Skills.mult(me, "swing_cd")) * 100))
 	check(Skills.mult(me, "heal") == 1.0, "and nothing else changes")
 	me.skills.endurance = Skills.xp_for(50)
-	check(me.carry_limit() > Items.CARRY * 1.15 and me.carry_limit() < Items.CARRY * 1.3, "endurance 50: carry a little more (%.1f kg)" % me.carry_limit())
+	check(me.carry_limit() > Items.CARRY * 1.15 and me.carry_limit() < Items.CARRY * 1.3 + Player.MORE_CARRY, "endurance 50: carry a little more (%.1f kg)" % me.carry_limit())
 
 	# Creeping past one that hasn't seen you teaches sneaking.
 	me.skills.stealth = 0.0

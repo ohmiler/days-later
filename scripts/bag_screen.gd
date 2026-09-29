@@ -933,7 +933,7 @@ func _draw_skills(head: Font, body: Font) -> void:
 		var unlocks: Dictionary = d.get("unlocks", {})
 		for k in unlocks:
 			if int(k) > lvl and (next == "" or int(k) < int(next.get_slice(":", 0))):
-				next = "%s:%s" % [k, unlocks[k]]
+				next = "%s:%s" % [k, unlocks[k][1]]
 		var sub := "เลเวลสูงสุดแล้ว" if lvl >= Skills.MAX_LEVEL else ("อีก %d EXP" % ceili(Skills.xp_for(lvl + 1) - xp))
 		if next != "":
 			sub += " · Lv %s: %s" % [next.get_slice(":", 0), next.get_slice(":", 1)]
@@ -978,7 +978,8 @@ func _draw_recipes(head: Font, body: Font) -> void:
 		var rr := _recipe_rect(i)
 		if rr.end.y > CARD_Y - 32:
 			break
-		var ok := Crafting.can_make(inv, ids[i])
+		var locked := Crafting.locked_why(me, ids[i]) if me else ""
+		var ok := Crafting.can_make(inv, ids[i]) and locked == ""
 		var lit: bool = hover == ["recipe", ids[i]]
 		draw_style_box(UiTheme.rbox(UiTheme.SURFACE_300 if lit else UiTheme.SURFACE_200, UiTheme.RADIUS_SM,
 				UiTheme.ACCENT if lit and ok else (UiTheme.BORDER_STRONG if lit else UiTheme.BORDER)), rr)
@@ -989,7 +990,7 @@ func _draw_recipes(head: Font, body: Font) -> void:
 		var fit := rr.size.x - 44
 		draw_string(head, rr.position + Vector2(38, 15), _fit(Crafting.recipe_name(ids[i]), head, UiTheme.SIZE_BODY - 1, fit), HORIZONTAL_ALIGNMENT_LEFT,
 				-1, UiTheme.SIZE_BODY - 1, UiTheme.TEXT if ok else UiTheme.TEXT_MUTED)
-		draw_string(body, rr.position + Vector2(38, 30), _fit(_recipe_line(ids[i]), body, UiTheme.SIZE_CAPTION, fit), HORIZONTAL_ALIGNMENT_LEFT, -1,
+		draw_string(body, rr.position + Vector2(38, 30), _fit(locked if locked != "" else _recipe_line(ids[i]), body, UiTheme.SIZE_CAPTION, fit), HORIZONTAL_ALIGNMENT_LEFT, -1,
 				UiTheme.SIZE_CAPTION, UiTheme.OK if ok else UiTheme.TEXT_FAINT)
 
 

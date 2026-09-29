@@ -23,6 +23,9 @@ const LEG_SEVER := 0.4  # a blade to the legs: the chance it takes one off (it c
 ## back of the head: dead at once, and not a sound. Behind = its back to you
 ## this much (the cos of the angle between where it faces and where you are).
 const BACKSTAB := -0.1
+const BACKSTAB_SIDE := 0.45  # with stealth's side_stab: from the side will do
+const HEAD_AIM := 3.0  # px lower the head reaches, with combat's head_aim
+const KICK_DOWN := 0.15  # more chance a kick puts one down, with combat's kick_down
 const STAB_TIME := 0.8  # the silent kill, played out: a hand over its mouth, the blade in, lowered down
 const STAB_GAP := 9.0  # how far behind it you end up standing
 ## Deaths that go down toward whoever did it, not away.
@@ -279,7 +282,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		if Rect2(z.position + Vector2(-8, -31 - z.lift), Vector2(16, 35)).has_point(cursor):
 			if picked == null or v.length() < (picked.position - p.position).length():
 				picked = z
-				zone = zone_at(cursor.y - z.position.y + z.lift, z)
+				zone = zone_at(cursor.y - z.position.y + z.lift - (HEAD_AIM if Skills.has(p, "head_aim") else 0.0), z)
 		# In front of you, or so close it is pressed against you.
 		var facing := v.normalized().dot(dir)
 		if facing > 0.3 or (v.length() < 12.0 and facing > -0.3):
@@ -331,7 +334,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		if kind == Look.KICK:
 			_knock_on(z, dir, hits)
 		# A good kick can put it on the ground (not the fat ones); a blade can take an arm.
-		if kind == Look.KICK and z.kind != "fat" and randf() < (0.5 if z.kind == "runner" else 0.3):
+		if kind == Look.KICK and z.kind != "fat" and randf() < (0.5 if z.kind == "runner" else 0.3) + (KICK_DOWN if Skills.has(p, "kick_down") else 0.0):
 			z.knock_down()
 		elif where == "legs" and not Items.has_tag(how, "blade") and z.kind != "fat" and z.down_t <= 0.0 and randf() < LEG_KNOCK:
 			z.knock_down()  # its legs taken out from under it
@@ -408,18 +411,26 @@ func backstab(p: Player, z: Zombie, wid: String) -> bool:
 ## What every screen can tell (the knife mark over its head, see Main): the
 ## server also checks it isn't after you.
 static func can_backstab(p: Player, z: Zombie, wid: String) -> bool:
-	if not p.sneak or wid == "" or not Items.def(wid).get("silent", false) or p.storey != z.storey or z.is_boss():
+	if not p.sneak or not silent_in(p, wid) or p.storey != z.storey or z.is_boss():
 		return false
 	if z.state == 2 or z.flags & 2 or z.crawler():
 		return false
 	var to_me := (p.position - z.position).normalized()
-	return Vector2.from_angle(z.facing).dot(to_me) < BACKSTAB
+	return Vector2.from_angle(z.facing).dot(to_me) < (BACKSTAB_SIDE if Skills.has(p, "side_stab") else BACKSTAB)
+
+
+## Whether `p` can kill silently with `wid`: a blade made for it (`silent`),
+## or, with stealth's blunt_silent, anything blunt.
+static func silent_in(p: Player, wid: String) -> bool:
+	if wid == "":
+		return false
+	return Items.def(wid).get("silent", false) or (Items.has_tag(wid, "blunt") and Skills.has(p, "blunt_silent"))
 
 
 ## The zombie a blow starting now would kill silently (see backstab): in
 ## reach, the one under the cursor or else the nearest in front. null: none.
 func _backstab_target(p: Player, kind: int, wid: String) -> Zombie:
-	if kind == Look.KICK or not p.sneak or not Items.def(wid).get("silent", false):
+	if kind == Look.KICK or not p.sneak or not silent_in(p, wid):
 		return null
 	var reach: float = Items.def(wid).get("range", 0.0) + Zombie.RADIUS + MELEE_SLACK
 	var cursor := p.position + Look.CHEST + p.aim
@@ -655,7 +666,7 @@ func fire(p: Player, hand: String) -> void:
 		ends.append(from + dir * length)
 		if hit:
 			hit_any = true
-			var where := zone_at(hit_dy, hit)
+			var where := zone_at(hit_dy - (HEAD_AIM if Skills.has(p, "head_aim") else 0.0), hit)
 			var dmg: float = d.dmg * (1.0 if length < d.range * 0.5 else 0.6)  # (pellets lose their bite far out)
 			dmg *= (GUN_HEAD if where == "head" else ZONE_DMG[where]) * hit.armour_k(where)
 			hit.hp -= dmg

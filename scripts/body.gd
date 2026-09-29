@@ -178,13 +178,19 @@ static func worst_open(p: Player) -> int:
 
 
 ## Put a bandage on wound `i` (or the worst open one with -1). Returns whether it went on.
-static func bandage(p: Player, i := -1) -> bool:
+const STITCHED := 2.0  # a wound bandaged by someone with first aid's stitch heals this much faster
+
+
+## `by`: who did it (themselves if null): with first aid's stitch, it's sewn up too.
+static func bandage(p: Player, i := -1, by: Player = null) -> bool:
 	if i < 0:
 		i = worst_open(p)
 	if i < 0 or i >= p.wounds.size() or p.wounds[i].bandaged or p.wounds[i].kind in ["sprain", "bruise"]:
 		return false
 	p.wounds[i].bandaged = true
 	p.wounds[i].bleeding = false
+	if Skills.has(by if by else p, "stitch"):
+		p.wounds[i].stitched = true
 	p.body_dirty = true
 	return true
 
@@ -198,7 +204,7 @@ static func tick(p: Player, delta: float) -> String:
 		var k: Dictionary = KINDS[w.kind]
 		var need: float = k.heal if w.bandaged else k.bare
 		if need > 0.0:
-			w.t += delta * speed
+			w.t += delta * speed * (STITCHED if w.bandaged and w.get("stitched", false) else 1.0)
 			if w.t >= need:
 				p.wounds.erase(w)
 				p.body_dirty = true
