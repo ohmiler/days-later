@@ -219,7 +219,7 @@ func _spawn_zombie() -> void:
 		skin = SKINS[rng.randi() % SKINS.size()], hair_style = ["short", "long", "fringe", "bald"][rng.randi() % 4],
 		shirt = {kind = ["tee", "shirt", "long", "tank"][rng.randi() % 4], col = SHIRTS[rng.randi() % SHIRTS.size()], col2 = Color("e8e4dc"), pattern = [0, 0, 1, 2, 3][rng.randi() % 5]},
 		pants = {kind = ["long", "long", "shorts", "knee"][rng.randi() % 4], col = PANTS[rng.randi() % PANTS.size()]},
-		grime = rng.randf_range(0.4, 0.9), blood = rng.randf_range(0.2, 1.0), torn = rng.randf_range(0.05, 0.25), seed = rng.randi() % 1000,
+		detail = "low", grime = rng.randf_range(0.4, 0.9), blood = rng.randf_range(0.2, 1.0), torn = rng.randf_range(0.05, 0.25), seed = rng.randi() % 1000,
 	}
 	var sk: Skeleton3D = Person.new().build(params)
 	var n := Node3D.new()

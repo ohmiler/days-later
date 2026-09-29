@@ -4,8 +4,11 @@ extends RefCounted
 ## over the same body (so they always fit) and a simple face. Metres, Y up,
 ## facing +Z. build() returns a Skeleton3D ready to pose (see Pose).
 
-const RING_STEP := 0.022  # metres between rings along a limb
-const SEGS := 16  # points around a ring
+## Detail: metres between rings along a limb, and points around a ring.
+## "low" is for the crowd (about a quarter of the triangles, mitten hands).
+const DETAIL := {high = [0.022, 16], low = [0.045, 9]}
+var ring_step := 0.022
+var segs := 16
 
 const CLOTH := preload("res://tests/look3d/cloth.gdshader")
 
@@ -19,7 +22,7 @@ const DEFAULTS := {
 	skin = Color("c8906a"), hair = Color("1a1614"), hair_style = "short",
 	shirt = {kind = "tee", col = Color("3a6aa8"), col2 = Color("e8e4dc"), pattern = 0},
 	pants = {kind = "long", col = Color("2a3a5a")},
-	shoes = Color("2a2622"), vest = null,
+	shoes = Color("2a2622"), vest = null, detail = "high",
 	zombie = false, grime = 0.0, blood = 0.0, torn = 0.0, seed = 1,
 }
 
@@ -28,6 +31,8 @@ func build(params: Dictionary) -> Skeleton3D:
 	p = DEFAULTS.duplicate()
 	p.merge(params, true)
 	k = p.height / 1.70
+	ring_step = DETAIL[p.detail][0]
+	segs = DETAIL[p.detail][1]
 	skel = Skeleton3D.new()
 	_bones()
 	var body := SurfaceTool.new()
@@ -109,7 +114,7 @@ func loft(st: SurfaceTool, pts: Array, prof: Callable, s0 := 0.0, s1 := 1.0, inf
 	var total: float = lens[-1]
 	var a := s0 * total
 	var b := s1 * total
-	var n := maxi(9, int((b - a) / RING_STEP) + 1)
+	var n := maxi(9 if p.detail == "high" else 4, int((b - a) / ring_step) + 1)
 	var rings := []
 	for r in n:
 		var s := lerpf(a, b, float(r) / (n - 1))
@@ -121,13 +126,28 @@ func loft(st: SurfaceTool, pts: Array, prof: Callable, s0 := 0.0, s1 := 1.0, inf
 		var c := _cap(rings[0], -1.0)
 		c.reverse()
 		rings = c + rings
+	# Each ring's points once, with its bones.
+	var pts_of := []
+	for r: Dictionary in rings:
+		var bi := PackedInt32Array([0, 0, 0, 0])
+		var bw := PackedFloat32Array([0, 0, 0, 0])
+		var nb := 0
+		for name in r.w:
+			if nb < 4 and r.w[name] > 0.0:
+				bi[nb] = bones[name]
+				bw[nb] = r.w[name]
+				nb += 1
+		r.bi = bi
+		r.bw = bw
+		var ring := []
+		for i in segs:
+			ring.append(_point(r, i, sq))
+		pts_of.append(ring)
 	for r in range(rings.size() - 1):
-		var r0: Dictionary = rings[r]
-		var r1: Dictionary = rings[r + 1]
-		for i in SEGS:
-			var j := (i + 1) % SEGS
-			_tri(st, r0, i, r1, i, r1, j, keep)
-			_tri(st, r0, i, r1, j, r0, j, keep)
+		for i in segs:
+			var j := (i + 1) % segs
+			_tri(st, pts_of[r][i], rings[r], pts_of[r + 1][i], rings[r + 1], pts_of[r + 1][j], rings[r + 1], keep)
+			_tri(st, pts_of[r][i], rings[r], pts_of[r + 1][j], rings[r + 1], pts_of[r][j], rings[r], keep)
 
 
 func _at(pts: Array, lens: Array, s: float) -> Array:
@@ -173,7 +193,7 @@ func _cap(r: Dictionary, dir: float) -> Array:
 
 
 func _point(r: Dictionary, i: int, sq := 2.0) -> Array:
-	var th := TAU * i / SEGS
+	var th := TAU * i / segs
 	var cx := cos(th)
 	var sz := sin(th)
 	var ex := 2.0 / sq
@@ -181,13 +201,10 @@ func _point(r: Dictionary, i: int, sq := 2.0) -> Array:
 	var z := signf(sz) * pow(absf(sz), ex)
 	var pos: Vector3 = r.c + r.side * x * r.rx + r.front * z * r.rz
 	var nrm: Vector3 = (r.side * cx / maxf(r.rx, 0.001) + r.front * sz / maxf(r.rz, 0.001)).normalized()
-	return [pos, nrm, Vector2(float(i) / SEGS, r.v)]
+	return [pos, nrm, Vector2(float(i) / segs, r.v)]
 
 
-func _tri(st: SurfaceTool, ra: Dictionary, ia: int, rb: Dictionary, ib: int, rc: Dictionary, ic: int, keep: Callable) -> void:
-	var a := _point(ra, ia)
-	var b := _point(rb, ib)
-	var c := _point(rc, ic)
+func _tri(st: SurfaceTool, a: Array, ra: Dictionary, b: Array, rb: Dictionary, c: Array, rc: Dictionary, keep: Callable) -> void:
 	if keep.is_valid() and not keep.call((a[0] + b[0] + c[0]) / 3.0):
 		return
 	var out: Vector3 = a[1] + b[1] + c[1]
@@ -198,16 +215,8 @@ func _tri(st: SurfaceTool, ra: Dictionary, ia: int, rb: Dictionary, ib: int, rc:
 	for e in list:
 		var v: Array = e[0]
 		var r: Dictionary = e[1]
-		var bi := PackedInt32Array([0, 0, 0, 0])
-		var bw := PackedFloat32Array([0, 0, 0, 0])
-		var n := 0
-		for name in r.w:
-			if n < 4 and r.w[name] > 0.0:
-				bi[n] = bones[name]
-				bw[n] = r.w[name]
-				n += 1
-		st.set_bones(bi)
-		st.set_weights(bw)
+		st.set_bones(r.bi)
+		st.set_weights(r.bw)
 		st.set_normal(v[1])
 		st.set_uv(v[2])
 		st.add_vertex(v[0])
@@ -311,6 +320,10 @@ func _hand(st: SurfaceTool, s: String) -> void:
 	var f2 := _j("fing2" + s)
 	var th := _j("thumb" + s)
 	var w := 0.9 if p.female else 1.0
+	if p.detail == "low":
+		loft(st, [[h + Vector3(0, 0.01, 0), "hand" + s], [f1, "hand" + s], [f2, "fing1" + s], [f2 + Vector3(0, -0.035, 0), "fing2" + s]], func(t, _y):
+			return Vector3(0.015 * w, lerpf(0.038, 0.03, t) * w, 0.0), 0.0, 1.0, 0.0, true, true, Vector3(0, 0, 1), 3.0)
+		return
 	loft(st, [[h + Vector3(0, 0.01, 0), "hand" + s], [f1 + Vector3(0, 0.004, 0), "hand" + s]], func(t, _y):
 		return Vector3(0.015 * w, lerpf(0.036, 0.042, t) * w, 0.0), 0.0, 1.0, 0.0, true, true, Vector3(0, 0, 1), 3.0)
 	for i in 4:
