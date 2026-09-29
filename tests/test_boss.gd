@@ -96,6 +96,17 @@ func run() -> void:
 	check(not main.zombies.has(z.zid), "it dies")
 	check(count(me, "armyknife") == 1, "and you get its army knife, your own (%s)" % bag(me))
 	check(me.skills.get("combat", 0.0) >= xp0 + 400.0, "and the experience")
+	# Its price: only a skilled hand can mend it.
+	var knife: Dictionary = me.inv[me.inv.find(me.inv.filter(func(it): return it != null and it.id == "armyknife")[0])]
+	knife.hp = 10
+	me.inv[1] = Items.make("scrap")
+	me.skills.craft = 0.0
+	main.crafting.req_repair(["inv", me.inv.find(knife)])
+	check(me.craft.is_empty(), "a new hand can't mend the army knife")
+	me.skills.craft = Skills.xp_for(20)
+	main.crafting.req_repair(["inv", me.inv.find(knife)])
+	check(not me.craft.is_empty(), "craft level 20 can (with scrap)")
+	me.craft = {}
 	check(main.world_state.state("building", rec.id).has("boss_sergeant"), "the hospital remembers when its boss died")
 	marks = main.bosses.map_marks()
 	check(marks[0][2] > 47.0, "the map says it's dead, back in %.0f game hours" % marks[0][2])

@@ -127,6 +127,10 @@ func req_repair(ref: Array) -> void:
 	var mat := repair_with(it)
 	if mat == "":
 		return
+	var lv := int(Items.def(it.id).get("repair_lv", 0))
+	if Skills.level(p, "craft") < lv:
+		main._toast(p, "ต้องมีฝีมือช่าง Lv %d ถึงซ่อม%sได้ (ตอนนี้ Lv %d)" % [lv, Items.display_name(it.id), Skills.level(p, "craft")])
+		return
 	if count_in(p.inv, mat) < 1:
 		main._toast(p, "ต้องใช้%sซ่อม" % Items.display_name(mat))
 		return
