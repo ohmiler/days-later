@@ -24,6 +24,7 @@ var fog: Image  # one pixel per tile: 0 unseen, 1 seen
 var pins: Array = []  # [cell]
 var me: Player
 var others: Array = []  # [pos, name]
+var bosses: Array = []  # [cell, name, game hours till it's back (0: there now)] (Bosses.map_marks)
 var seed_key := 0
 var _dirty := false
 var _save_t := 0.0
@@ -219,6 +220,16 @@ func _draw() -> void:
 		var at := c + Vector2(-w - 10.0 if e.id == "east" else 10.0, 4.0)
 		draw_string_outline(f, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, 3, Color(0, 0, 0, 0.8))
 		draw_string(f, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("e8f0e0"))
+	# The bosses' lairs: known by word of mouth, seen or not.
+	for b in bosses:
+		var c: Vector2 = origin + (Vector2(b[0]) + Vector2(0.5, 0.5)) * px
+		var col: Color = UiTheme.DANGER if b[2] <= 0.0 else UiTheme.TEXT_FAINT
+		var pulse := 1.0 + (0.15 * sin(Time.get_ticks_msec() / 250.0) if b[2] <= 0.0 else 0.0)
+		draw_colored_polygon(PackedVector2Array([c + Vector2(0, -9) * pulse, c + Vector2(9, 0) * pulse, c + Vector2(0, 9) * pulse, c + Vector2(-9, 0) * pulse]), col)
+		draw_polyline(PackedVector2Array([c + Vector2(0, -9) * pulse, c + Vector2(9, 0) * pulse, c + Vector2(0, 9) * pulse, c + Vector2(-9, 0) * pulse, c + Vector2(0, -9) * pulse]), UiTheme.INK, 1.5)
+		draw_string(f, c + Vector2(-5, 5), "!", HORIZONTAL_ALIGNMENT_CENTER, 10, 13, UiTheme.INK)
+		var label: String = "บอส: " + b[1] + ("" if b[2] <= 0.0 else " (ตายแล้ว · กลับมาใน %d ชม.)" % ceili(b[2]))
+		UiTheme.over_world(self, c + Vector2(13, 5), label, f, UiTheme.SIZE_LABEL, col)
 	for i in pins.size():
 		var p := origin + (Vector2(pins[i]) + Vector2(0.5, 0.5)) * px
 		draw_circle(p + Vector2(0, -8), 5.5, UiTheme.DANGER_DEEP)
@@ -239,7 +250,7 @@ func _draw() -> void:
 	draw_line(Vector2(1, ly), Vector2(sz.x - 1, ly), UiTheme.BORDER)
 	var x := P
 	for item in [[Color("b8452a"), "วัด"], [Color("3a72b8"), "มินิมาร์ท"], [Color("8e949a"), "คอนโด"], [Color("1e6a3a"), "ทางไปย่านอื่น"],
-			[UiTheme.ACCENT, "คุณ"], [UiTheme.INFO, "คนอื่น"], [UiTheme.DANGER_DEEP, "หมุด"], [Color(0.03, 0.03, 0.03), "ยังไม่เคยไป"]]:
+			[UiTheme.ACCENT, "คุณ"], [UiTheme.INFO, "คนอื่น"], [UiTheme.DANGER, "บอส"], [UiTheme.DANGER_DEEP, "หมุด"], [Color(0.03, 0.03, 0.03), "ยังไม่เคยไป"]]:
 		var cy := ly + LEGEND / 2
 		draw_style_box(UiTheme.rbox(item[0], 2, UiTheme.BORDER_STRONG), Rect2(x, cy - 5, 10, 10))
 		draw_string(UiTheme.medium(), Vector2(x + 16, cy + 5), item[1], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)

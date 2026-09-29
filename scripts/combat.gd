@@ -306,11 +306,13 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 		how = "kick" if kind == Look.KICK else "punch"
 	for z: Zombie in hits:
 		var where := zone if z == picked and kind != Look.KICK else "body"
-		var dmg: float = stats[1] * ZONE_DMG[where]
+		var dmg: float = stats[1] * ZONE_DMG[where] * z.armour_k(where)
 		if kind != Look.KICK and backstab(p, z, wid):
 			_silent_kill(p, z, wid)
 			continue
 		z.hp -= dmg
+		if z.is_boss():
+			z.hurt_by[p.peer_id] = z.hurt_by.get(p.peer_id, 0.0) + dmg
 		z.stun = stats[3] * Zombie.KINDS[z.kind].get("stun", 1.0)
 		z.push += dir * stats[4]  # (played out over a moment: Zombie.server_tick)
 		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), dmg, where, z.hp <= 0)
@@ -333,6 +335,8 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 			z.knock_down()
 		elif where == "legs" and not Items.has_tag(how, "blade") and z.kind != "fat" and z.down_t <= 0.0 and randf() < LEG_KNOCK:
 			z.knock_down()  # its legs taken out from under it
+		elif z.is_boss():
+			pass  # (its gear: no limbs off)
 		elif where == "legs" and Items.has_tag(how, "sever") and not z.crawler() and randf() < LEG_SEVER:
 			z.missing |= Look.LOST_LEG
 			z.lunge_t = 0.0
@@ -404,7 +408,7 @@ func backstab(p: Player, z: Zombie, wid: String) -> bool:
 ## What every screen can tell (the knife mark over its head, see Main): the
 ## server also checks it isn't after you.
 static func can_backstab(p: Player, z: Zombie, wid: String) -> bool:
-	if not p.sneak or wid == "" or not Items.def(wid).get("silent", false) or p.storey != z.storey:
+	if not p.sneak or wid == "" or not Items.def(wid).get("silent", false) or p.storey != z.storey or z.is_boss():
 		return false
 	if z.state == 2 or z.flags & 2 or z.crawler():
 		return false
@@ -519,7 +523,7 @@ func _kill_zombie(z: Zombie, fall_dir: float, how := "", zone := "body", close :
 	for slot in z.wear:
 		var id: String = z.wear[slot]
 		var full: int = Items.def(id).get("hp", 1)
-		var special: bool = Items.def(id).get("special", false)  # (the rare costumes always come off)
+		var special: bool = Items.def(id).get("special", false) or z.is_boss()  # (the rare costumes, and a boss's gear, always come off)
 		if not z.outfit.is_empty() or special or randf() < 0.35:
 			var hp := full if not z.outfit.is_empty() or special else maxi(1, int(full * randf_range(0.3, 0.8)))
 			main._spawn_pickup(z.position + Vector2.from_angle(i * 1.3) * 7, Items.from_key(id, hp), z.storey)
@@ -529,6 +533,8 @@ func _kill_zombie(z: Zombie, fall_dir: float, how := "", zone := "body", close :
 		main._spawn_pickup(z.position + Vector2(-6, 4), Items.make("pills"), z.storey)
 	if z.kind == "guard" and z.wear.get("neck", "") == "whistle" and randf() < 0.65:
 		main._spawn_pickup(z.position + Vector2(6, 4), Items.make("whistle"), z.storey)
+	if z.is_boss():
+		main.bosses.died(z)
 	main.survival.trapped_died(z)
 	main.zombies.erase(z.zid)
 	z.queue_free()
@@ -651,8 +657,10 @@ func fire(p: Player, hand: String) -> void:
 			hit_any = true
 			var where := zone_at(hit_dy, hit)
 			var dmg: float = d.dmg * (1.0 if length < d.range * 0.5 else 0.6)  # (pellets lose their bite far out)
-			dmg *= GUN_HEAD if where == "head" else ZONE_DMG[where]
+			dmg *= (GUN_HEAD if where == "head" else ZONE_DMG[where]) * hit.armour_k(where)
 			hit.hp -= dmg
+			if hit.is_boss():
+				hit.hurt_by[p.peer_id] = hit.hurt_by.get(p.peer_id, 0.0) + dmg
 			hit.stun = maxf(hit.stun, 0.25)
 			hit.position = main.world.slide(hit.position, dir * 3.0, Zombie.RADIUS, false, false, hit.storey)
 			fx_hit.rpc(hit.zid, hit.position, dir, true, p.peer_id, "", dmg, where, hit.hp <= 0)
