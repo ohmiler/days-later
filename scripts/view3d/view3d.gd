@@ -32,7 +32,7 @@ var people := {}  # Player or Zombie -> {holder, sk, kind, phase, last, weapon}
 var doors := {}  # door id -> Node3D
 var bikes := {}  # World.vehicles id -> Node3D (motorbikes and the trial car)
 var pickups := {}  # pickup id -> Node3D
-var corpses := {}  # cid -> Node3D
+var corpses := {}  # Corpse node -> Node3D
 var cam_target := Vector3.ZERO
 var built_for: World = null
 var hidden_now: Array = []  # storey/roof nodes hidden this frame (put back next)
@@ -321,13 +321,15 @@ func _cutaway(me: Player) -> void:
 		return
 	var at := main.world.to_cell(me.position)
 	var inside_id := -1
-	if main.world.building_at.has(at):
+	if main.world.building_at.has(at) and not me.on_roof:  # (up on its roof: it stays whole under you)
 		inside_id = main.world.building_at[at].data.id
 	for id in bnodes:
 		var bn: Node3D = bnodes[id]
 		if not is_instance_valid(bn):
 			continue
 		var r: Rect2i = main.world.buildings[id].rect
+		if me.on_roof and main.world.building_at.has(at) and main.world.building_at[at].data.id == id:
+			continue
 		var mine: bool = id == inside_id
 		# In front of you (toward the camera), close by?
 		var front: bool = r.position.y > at.y - 1 and r.position.y < at.y + 14 and r.end.x > at.x - 7 and r.position.x < at.x + 7
@@ -358,8 +360,12 @@ func _lamps() -> void:
 		if l.visible:
 			var s: Array = spots[i]
 			var indoor: bool = s.size() > 2 and s[2] != null
-			l.position = City3D.to3(s[0], 2.6 if indoor else 5.5)
-			l.omni_range = maxf(4.0, s[1] / City3D.PX * 1.4)
+			var high := 2.6 if indoor else 5.5
+			var pool: float = s[1] / City3D.PX * 1.6
+			l.position = City3D.to3(s[0], high)
+			l.omni_range = sqrt(high * high + pool * pool) + 1.0
+			l.omni_attenuation = 0.7
+			l.light_energy = 3.0 if not indoor else 2.0
 
 
 func _floor_of(p) -> float:
@@ -602,6 +608,9 @@ func _sync_doors() -> void:
 	var w := main.world
 	for id in w.doors.size():
 		var d: Dictionary = w.doors[id]
+		if World.BUILDS.has(d.kind):
+			_sync_trap(id, d)
+			continue
 		var pos := w.to_pos(d.cell)
 		if not _near(pos):
 			if doors.has(id):
@@ -622,6 +631,44 @@ func _sync_doors() -> void:
 			else:
 				n.get_child(0).rotation.y = 0.0 if shut else -PI * 0.5
 		n.visible = d.get("storey", 0) == 0 or true
+
+
+## Barbed wire and nail boards players put down (they live in World.doors).
+func _sync_trap(id: int, d: Dictionary) -> void:
+	var gone: bool = d.get("broken", false) or d.hp <= 0.0
+	var n: Node3D = doors.get(id)
+	if n and (n.get_meta("gone", false) != gone):
+		n.queue_free()
+		doors.erase(id)
+		n = null
+	if n != null or gone:
+		return
+	n = Node3D.new()
+	n.set_meta("gone", gone)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var xf := Transform3D.IDENTITY
+	if d.kind == "wire":
+		# Coils of barbed wire on stakes.
+		for x in [-0.4, 0.4]:
+			Props3D.xbox(st, xf, Vector3(x, 0.4, 0), Vector3(0.05, 0.8, 0.05), Color("6a5a44"))
+		for i in 3:
+			Props3D.xcyl(st, xf, Vector3(0, 0.25 + i * 0.22, 0), 0.22, 0.95, 0, Color("7a7c80"), 10)
+	else:
+		Props3D.xbox(st, xf, Vector3(0, 0.03, 0), Vector3(0.8, 0.04, 0.8), Color("8a6a44"))
+		for i in 16:
+			Props3D.xbox(st, xf, Vector3(-0.3 + (i % 4) * 0.2, 0.09, -0.3 + (i / 4) * 0.2), Vector3(0.02, 0.1, 0.02), Color("a8acb0"))
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.metallic = 0.3
+	m.roughness = 0.6
+	mi.material_override = m
+	n.add_child(mi)
+	n.position = Vector3(d.cell.x + 0.5, city.ground_h(d.cell) if city else 0.0, d.cell.y + 0.5)
+	add_child(n)
+	doors[id] = n
 
 
 func _door_node(d: Dictionary) -> Node3D:
@@ -687,10 +734,13 @@ func _sync_pickups() -> void:
 
 ## Blood on the ground: discs, darker as they dry (Main.blood).
 func _sync_blood() -> void:
+	if main.blood.size() > 600:
+		main.blood = main.blood.slice(main.blood.size() - 600)  # (oldest stains fade from memory)
 	var list: Array = main.blood
-	if list.size() == blood_n:
+	var sig := list.size() * 100003 + (hash(list[-1][0]) if not list.is_empty() else 0)
+	if sig == blood_n:
 		return
-	blood_n = list.size()
+	blood_n = sig
 	var mm := blood_mm.multimesh
 	mm.instance_count = list.size()
 	for i in list.size():
@@ -748,17 +798,19 @@ func _draw_overlay() -> void:
 		overlay.draw_rect(Rect2(r.position, Vector2(r.size.x * k, r.size.y)), Color(1, 0.85, 0.4))
 
 
+## The dead, from the Corpse nodes every machine has (the server's own list,
+## Main.corpses, isn't on a machine that joined): keyed by the node.
 func _sync_corpses() -> void:
-	for cid in corpses.keys():
-		if not main.corpses.has(cid):
-			corpses[cid].queue_free()
-			corpses.erase(cid)
-	for cid in main.corpses:
-		if corpses.has(cid):
+	for key in corpses.keys():
+		if not is_instance_valid(key):
+			corpses[key].queue_free()
+			corpses.erase(key)
+	for node in get_tree().get_nodes_in_group("corpses"):
+		var cn: Corpse = node
+		if corpses.has(cn) or not _near(cn.position):
 			continue
-		var c: Dictionary = main.corpses[cid]
-		if not c.has("pos") or not _near(c.pos):
-			continue
+		var cid := cn.get_instance_id()
+		var c := {pos = cn.position, body = cn.lk, style = cn.style, fall_dir = cn.fall_dir, storey = cn.storey}
 		var body: Dictionary = c.get("body", {})
 		var r := RandomNumberGenerator.new()
 		r.seed = cid
@@ -779,4 +831,4 @@ func _sync_corpses() -> void:
 		holder.position = City3D.to3(c.pos, City3D.storey_y(c.get("storey", 0)) + 0.12)
 		holder.rotation = Vector3(PI * 0.5 if face_down else -PI * 0.5, (0.0 if float(c.get("fall_dir", 1.0)) > 0.0 else PI) + r.randf_range(-0.6, 0.6), 0.0)
 		add_child(holder)
-		corpses[cid] = holder
+		corpses[cn] = holder

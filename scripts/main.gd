@@ -962,6 +962,7 @@ func leave_corpse(pos: Vector2, fall_dir: float, body: Dictionary, zombie: bool,
 	c.t = age
 	c.burn = burn
 	c.storey = storey
+	c.add_to_group("corpses")  # (the 3D view finds the dead by it, on every machine)
 	if cid > 0:
 		if corpse_nodes.has(cid) and is_instance_valid(corpse_nodes[cid]):
 			corpse_nodes[cid].queue_free()

@@ -28,6 +28,12 @@ func run() -> void:
 	# Out of the camp onto a street, zombies about.
 	var street := _street_spot()
 	me.position = street
+	me.god = true  # (a look round, not a fight)
+	# A trap put down, and a body left by someone who died here before.
+	var tc: Vector2i = main.world.to_cell(street) + Vector2i(2, 1)
+	main.world.add_structure(main.world.doors.size(), tc, "wire", 60.0)
+	main.world.add_structure(main.world.doors.size(), tc + Vector2i(1, 0), "spikes", 5.0)
+	main.leave_corpse(street + Vector2(-30, 10), 1.0, {skin = Color("c8906a"), shirt = Color("3a6aa8"), pants = Color("2a3a5a")}, false, 0.0)
 	for i in 12:
 		var zp: Vector2 = street + Vector2(randf_range(-160, 160), randf_range(-120, 120))
 		if main.world.can_stand(zp, 5.0):

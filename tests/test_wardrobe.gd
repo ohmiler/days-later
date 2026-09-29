@@ -90,10 +90,14 @@ func run() -> void:
 
 	# --- Round 2 ---
 	# A life jacket: the canal can be swum (slowly); without one, it can't; zombies never.
+	# (A bank you can stand on: the city is random, and a bank cell can be a wall.)
 	var wc := Vector2i(-1, -1)
-	for y in range(1, World.H - 1):
-		if w.get_tile(Vector2i(60, y)) == World.WATER and w.get_tile(Vector2i(60, y - 1)) != World.WATER:
-			wc = Vector2i(60, y)
+	for x in range(60, World.W - 1):
+		for y in range(1, World.H - 1):
+			if w.get_tile(Vector2i(x, y)) == World.WATER and w.get_tile(Vector2i(x, y - 1)) != World.WATER 					and not w.is_solid(Vector2i(x, y - 1)) and not w.is_solid(Vector2i(x, y - 2)):
+				wc = Vector2i(x, y)
+				break
+		if wc.x >= 0:
 			break
 	check(wc.x >= 0, "a canal to swim")
 	var bank := w.to_pos(wc + Vector2i.UP)
