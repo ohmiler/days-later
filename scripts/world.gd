@@ -790,7 +790,7 @@ func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, sto
 		var lo := to_cell(pos + Vector2(-r, -d))
 		var hi := to_cell(pos + Vector2(r, d))
 		var np := pos + v
-		if to_cell(np + Vector2(-r, -d)) == lo and to_cell(np + Vector2(r, d)) == hi 				and not _boxes.has(lo) and not _boxes.has(hi) and not _boxes.has(Vector2i(lo.x, hi.y)) and not _boxes.has(Vector2i(hi.x, lo.y)):
+		if to_cell(np + Vector2(-r, -d)) == lo and to_cell(np + Vector2(r, d)) == hi 				and not _boxes.has(lo) and not _boxes.has(hi) and not _boxes.has(Vector2i(lo.x, hi.y)) and not _boxes.has(Vector2i(hi.x, lo.y)) 				and not is_thin_wall(lo) and not is_thin_wall(hi) and not is_thin_wall(Vector2i(lo.x, hi.y)) and not is_thin_wall(Vector2i(hi.x, lo.y)):
 			return np
 	var stuck := _solid_corner_cells(pos, r, roof, road, storey, swim)
 	if not stuck.is_empty():
@@ -819,7 +819,10 @@ func _solid_corner_cells(p: Vector2, r: float, roof: bool, road := false, storey
 		var c := to_cell(p + o)
 		if swim and storey == 0 and not roof and get_tile(c) == WATER:
 			continue  # (a life jacket: the canal's no wall)
-		if (not is_roof(c)) if roof else (is_solid_on(c, storey) if storey > 0 else (is_solid(c) or road and get_tile(c) in [FLOOR, DOOR])):
+		if not roof and is_thin_wall(c, storey):
+			if _hits_wall_line(c, p, r, storey):
+				out.append(c)
+		elif (not is_roof(c)) if roof else (is_solid_on(c, storey) if storey > 0 else (is_solid(c) or road and get_tile(c) in [FLOOR, DOOR])):
 			out.append(c)
 		elif storey == 0 and not roof:
 			var box := _in_vehicle(c, p + o)
@@ -867,10 +870,10 @@ func _read_boxes() -> void:
 				_boxes[c].append(box)
 
 
-## Seen from above at this angle, what someone stands on is wide and shallow:
-## the corners of that footprint, `r` either side and FOOT_DEPTH of that
-## up and down (so you walk right up to a wall above or below you).
-const FOOT_DEPTH := 0.4
+## What someone stands on: the corners of a footprint `r` either side and
+## FOOT_DEPTH of that up and down. (It was shallow, 0.4, for the 3/4 drawing;
+## seen in 3D from above, a body is as deep as it is wide.)
+const FOOT_DEPTH := 1.0
 
 
 static func _feet(r: float) -> Array:
@@ -885,6 +888,10 @@ func can_stand(p: Vector2, r: float, roof := false, road := false, storey := 0, 
 		var c := to_cell(p + o)
 		if swim and storey == 0 and not roof and get_tile(c) == WATER:
 			continue
+		if not roof and is_thin_wall(c, storey):
+			if _hits_wall_line(c, p, r, storey):
+				return false
+			continue
 		if (not is_roof(c)) if roof else is_solid_on(c, storey):
 			return false
 		if road and get_tile(c) in [FLOOR, DOOR]:
@@ -892,6 +899,64 @@ func can_stand(p: Vector2, r: float, roof := false, road := false, storey := 0, 
 		if storey == 0 and not roof and _in_vehicle(c, p + o).has_area():
 			return false
 	return true
+
+
+## Walls stand thin down the middle of their cells, as the 3D view draws
+## them (City3D): you can walk right up to one. A wall cell is solid only
+## along its line: a post in the middle and an arm out to each neighbour it
+## joins (another wall, a doorway, something built solid). Paths, sight and
+## sound still take the whole cell as wall.
+const WALL_HALF := 1.6  # px: half a wall's thickness (0.2 m)
+
+
+func is_thin_wall(c: Vector2i, storey := 0) -> bool:
+	if storey > 0:
+		return storeys.get(storey, {}).get(c, -1) == IWALL and not storeys_blocked.get(storey, {}).has(c)
+	return get_tile(c) in [WALL, IWALL] and not blocked.has(c) and not door_at.has(c)
+
+
+func _joins(q: Vector2i, storey: int) -> bool:
+	if storey > 0:
+		return storeys.get(storey, {}).get(q, -1) == IWALL
+	return get_tile(q) in [WALL, IWALL, BUILDING, DOOR]
+
+
+## The solid parts of the wall in cell `c`: its post, and its arms.
+func wall_rects(c: Vector2i, storey := 0) -> Array[Rect2]:
+	var mid := to_pos(c)
+	var t := WALL_HALF
+	var post := Rect2(mid - Vector2(t, t), Vector2(t, t) * 2.0)
+	var out: Array[Rect2] = [post]
+	for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+		if _joins(c + d, storey):
+			var across := Vector2(absf(d.y), absf(d.x)) * t
+			var edge := mid + Vector2(d) * TILE * 0.5
+			out.append(post.expand(edge + across).expand(edge - across))
+	return out
+
+
+## Does a body at `p` (half-width `r`) overlap the wall line in cell `c`?
+func _hits_wall_line(c: Vector2i, p: Vector2, r: float, storey := 0) -> bool:
+	var body := Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0)
+	for rect in wall_rects(c, storey):
+		if body.intersects(rect):
+			return true
+	return false
+
+
+## Does the line from `a` to `b` cross the wall line in cell `c`?
+func line_hits_wall(c: Vector2i, a: Vector2, b: Vector2, storey := 0) -> bool:
+	for rect in wall_rects(c, storey):
+		if rect.has_point(a) or rect.has_point(b):
+			return true
+		var p0 := rect.position
+		var p1 := rect.position + Vector2(rect.size.x, 0)
+		var p2 := rect.end
+		var p3 := rect.position + Vector2(0, rect.size.y)
+		for e in [[p0, p1], [p1, p2], [p2, p3], [p3, p0]]:
+			if Geometry2D.segment_intersects_segment(a, b, e[0], e[1]) != null:
+				return true
+	return false
 
 
 ## Flat shophouse roofs join up along a row, so you can walk from one to the next.
@@ -935,7 +1000,12 @@ func ray_length(from: Vector2, dir: Vector2, max_len: float) -> float:
 	var t := 0.0
 	while t < max_len:
 		var c := to_cell(from + dir * t)
-		if not in_bounds(c) or get_tile(c) in [TREE, WALL, BUILDING, IWALL] or _blocks_sight(c):
+		if not in_bounds(c) or _blocks_sight(c):
+			return t
+		if is_thin_wall(c):
+			if line_hits_wall(c, from, from + dir * max_len):
+				return t
+		elif get_tile(c) in [TREE, WALL, BUILDING, IWALL]:
 			return t
 		t += 4.0
 	return max_len
@@ -968,7 +1038,10 @@ func sight_ray(from: Vector2, dir: Vector2, max_len: float) -> Array:
 		if not in_bounds(c):
 			return [t, c]
 		var k := tiles[c.y * W + c.x]
-		if k == WALL or k == BUILDING or k == IWALL or (door_at.has(c) and _blocks_sight(c)):
+		if (k == WALL or k == IWALL) and is_thin_wall(c):
+			if line_hits_wall(c, from, from + dir * max_len):
+				return [t, c]
+		elif k == WALL or k == BUILDING or k == IWALL or (door_at.has(c) and _blocks_sight(c)):
 			return [t, c]
 	return [max_len, Vector2i(-1, -1)]
 

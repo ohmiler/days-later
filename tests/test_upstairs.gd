@@ -52,7 +52,9 @@ func run() -> void:
 	simulate(1.5)
 	me.move = Vector2.ZERO
 	var c := w.to_cell(me.position)
-	check(me.position != start and w.storey_map(1).get(c) == World.FLOOR, "you walk on the floor up there")
+	# (Walls are thin: you may end up against one, in its cell, beside its line.)
+	check(me.position != start and (w.storey_map(1).get(c) == World.FLOOR or w.is_thin_wall(c, 1)) and w.can_stand(me.position, Player.RADIUS, false, false, 1),
+			"you walk on the floor up there")
 	me.move = Vector2.UP
 	simulate(2.0)
 	me.move = Vector2.ZERO

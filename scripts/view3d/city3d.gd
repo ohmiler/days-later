@@ -148,6 +148,7 @@ func build_chunk(cc: Vector2i, out_buildings: Dictionary) -> Node3D:
 				_tree(props, Vector3(x + 0.5, hgt, y + 0.5), World.hash01(x, y, 3))
 			elif t == World.WALL and not world.building_at.has(c):
 				_wall_cell(props, c, 0.0, COMPOUND_H, Color("c8c0b0"), func(q: Vector2i): return world.get_tile(q) == World.WALL and not world.building_at.has(q), func(_q): return false)
+	_road_marks(g, r)
 	_commit(g, root, "ground", false)
 	if water:
 		var wm := MeshInstance3D.new()
@@ -178,6 +179,32 @@ func build_chunk(cc: Vector2i, out_buildings: Dictionary) -> Node3D:
 			root.add_child(bn)
 			out_buildings[b.id] = bn
 	return root
+
+
+## Paint on the roads in this chunk: a dashed line down the middle, solid
+## lines along the edges.
+func _road_marks(st: SurfaceTool, area: Rect2i) -> void:
+	var paint := Color("d8d2c0")
+	for road in world.roads:
+		var rr: Rect2i = road.rect
+		var cut := rr.intersection(area)
+		if cut.size.x <= 0 or cut.size.y <= 0:
+			continue
+		var horiz: bool = road.horizontal
+		var mid: float = rr.position.y + rr.size.y * 0.5 if horiz else rr.position.x + rr.size.x * 0.5
+		var from := cut.position.x if horiz else cut.position.y
+		var to := cut.end.x if horiz else cut.end.y
+		var t := from
+		while t < to:
+			var at := float(t) + 0.5
+			if not road.get("median", false) and posmod(t, 4) < 2:
+				var c := Vector3(at, 0.006, mid) if horiz else Vector3(mid, 0.006, at)
+				box(st, c, Vector3(1.0, 0.012, 0.12) if horiz else Vector3(0.12, 0.012, 1.0), paint)
+			for edge in [0.35, (rr.size.y if horiz else rr.size.x) - 0.35]:
+				var e: float = (rr.position.y if horiz else rr.position.x) + edge
+				var ce := Vector3(at, 0.006, e) if horiz else Vector3(e, 0.006, at)
+				box(st, ce, Vector3(1.0, 0.012, 0.1) if horiz else Vector3(0.1, 0.012, 1.0), paint.darkened(0.1))
+			t += 1
 
 
 func _tree(st: SurfaceTool, at: Vector3, k: float) -> void:
@@ -311,18 +338,16 @@ const PROP_COL := {taxi = Color("d86a9a"), bus = Color("c8b060"), army = Color("
 
 func _street_prop(st: SurfaceTool, sp: Dictionary) -> void:
 	var s: Array = PROPS.get(sp.kind, [])
-	if s.is_empty():
-		return  # (marks on the ground: papers, drag marks, glass)
+	if s.is_empty() or sp.kind == "motorbike":
+		return  # (marks on the ground: papers, drag marks, glass; bikes are View3D's, they move)
 	var col: Color = PROP_COL.get(sp.kind, sp.get("color", Color("8a8680")))
 	var at := to3(sp.pos)
 	at.y = ground_h(world.to_cell(sp.pos))
-	var size := Vector3(s[0], s[2], s[1]) if sp.get("horizontal", true) else Vector3(s[1], s[2], s[0])
-	if sp.kind in ["car", "taxi", "pickup", "van", "wreck"]:
-		# A body and a cabin.
-		box(st, at + Vector3(0, size.y * 0.3, 0), Vector3(size.x, size.y * 0.5, size.z), col)
-		box(st, at + Vector3(0, size.y * 0.72, 0), Vector3(size.x * (0.55 if size.x > size.z else 0.92), size.y * 0.42, size.z * (0.92 if size.x > size.z else 0.55)), Color("2a323a"))
-	else:
-		box(st, at + Vector3(0, size.y * 0.5, 0), size, col)
+	# Along the street, one way or the other (the seed says which).
+	var seed: int = sp.get("seed", 0)
+	var yaw := (0.0 if sp.get("horizontal", true) else PI * 0.5) + (PI if seed % 2 else 0.0)
+	var xf := Transform3D(Basis(Vector3.UP, yaw), at)
+	Props3D.build(st, xf, sp, Vector3(s[0], s[2], s[1]), col)
 
 
 const FURNITURE := {bed = [2.0, 1.2, 0.5], fridge = [0.7, 0.7, 1.8], shelf = [1.6, 0.4, 1.9], counter = [1.8, 0.6, 1.0], cabinet = [1.0, 0.5, 1.8],

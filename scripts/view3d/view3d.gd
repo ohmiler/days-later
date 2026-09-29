@@ -26,11 +26,15 @@ var chunks := {}  # Vector2i -> Node3D
 var bnodes := {}  # building id -> Node3D (its storeys and roof)
 var people := {}  # Player or Zombie -> {holder, sk, kind, phase, last, weapon}
 var doors := {}  # door id -> Node3D
+var bikes := {}  # World.vehicles id -> Node3D (motorbikes and the trial car)
 var pickups := {}  # pickup id -> Node3D
 var corpses := {}  # cid -> Node3D
 var cam_target := Vector3.ZERO
 var built_for: World = null
 var hidden_now: Array = []  # storey/roof nodes hidden this frame (put back next)
+var overlay: Control  # names, what people say, damage numbers, the search bar: on screen, over the 3D
+var blood_mm: MultiMeshInstance3D  # the blood on the ground (Main.blood)
+var blood_n := -1
 var lamps: Array[OmniLight3D] = []  # the nearest lit spots at night (World.light_spots)
 const LAMPS := 12
 
@@ -69,6 +73,32 @@ func _ready() -> void:
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 45.0
 	add_child(sun)
+	var layer := CanvasLayer.new()
+	layer.layer = 0
+	add_child(layer)
+	overlay = Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.draw.connect(_draw_overlay)
+	layer.add_child(overlay)
+	blood_mm = MultiMeshInstance3D.new()
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	var disc := CylinderMesh.new()
+	disc.top_radius = 1.0
+	disc.bottom_radius = 1.0
+	disc.height = 0.01
+	disc.radial_segments = 10
+	disc.rings = 1
+	mm.mesh = disc
+	blood_mm.multimesh = mm
+	var bm := StandardMaterial3D.new()
+	bm.vertex_color_use_as_albedo = true
+	bm.roughness = 0.25
+	blood_mm.material_override = bm
+	blood_mm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(blood_mm)
 	cam = Camera3D.new()
 	cam.fov = 35.0
 	cam.far = 300.0
@@ -98,6 +128,47 @@ func mouse_ground(height := 1.2) -> Vector2:
 	return City3D.to2(o + d * ((height - o.y) / d.y))
 
 
+## The cursor for a blow or a shot, in the game's terms: if the mouse is on
+## a zombie's body in 3D, the spot on its drawn 2D figure that stands for the
+## same part (head, body, legs: Combat.zone_at reads it from there); else the
+## ground under the mouse.
+func cursor() -> Vector2:
+	var m := get_viewport().get_mouse_position()
+	var o := cam.project_ray_origin(m)
+	var d := cam.project_ray_normal(m)
+	var best: Zombie = null
+	var best_t := INF
+	var best_h := 0.0
+	for z: Zombie in main.zombies.values():
+		if not is_instance_valid(z) or z.flags & 2:
+			continue
+		var foot := City3D.to3(z.position, _floor_of(z))
+		var tall := 1.7 * z.height
+		# The ray's closest pass to the body's upright line.
+		var flat := Vector2(d.x, d.z)
+		if flat.length_squared() < 0.000001:
+			continue
+		var t := -Vector2(o.x - foot.x, o.z - foot.z).dot(flat) / flat.length_squared()
+		var at := o + d * t
+		var h := at.y - foot.y
+		if t > 0.0 and t < best_t and Vector2(at.x - foot.x, at.z - foot.z).length() < 0.32 and h > -0.05 and h < tall + 0.08:
+			best = z
+			best_t = t
+			best_h = h / tall
+	var ground := mouse_ground()
+	if best == null:
+		return ground + Look.CHEST
+	var k: float = best.height
+	var dy: float
+	if best_h > 0.84:
+		dy = Proportions.head_line() * k - 2.0
+	elif best_h < 0.5:
+		dy = Proportions.legs_line() * k + 2.0
+	else:
+		dy = (Proportions.head_line() + Proportions.legs_line()) * 0.5 * k
+	return best.position + Vector2(0.0, dy - best.lift)
+
+
 func _process(delta: float) -> void:
 	if main == null or main.world == null:
 		return
@@ -119,18 +190,23 @@ func _process(delta: float) -> void:
 	main.grade_mat.set_shader_parameter("vignette", 0.5)
 	_sync_people(delta)
 	_sync_doors()
+	_sync_vehicles()
 	_sync_pickups()
 	_sync_corpses()
+	_sync_blood()
+	overlay.visible = visible
+	overlay.queue_redraw()
 
 
 func _clear() -> void:
-	for n in chunks.values() + people.values().map(func(e): return e.holder) + doors.values() + pickups.values() + corpses.values():
+	for n in chunks.values() + people.values().map(func(e): return e.holder) + doors.values() + pickups.values() + corpses.values() + bikes.values():
 		if is_instance_valid(n):
 			n.queue_free()
 	chunks.clear()
 	bnodes.clear()
 	people.clear()
 	doors.clear()
+	bikes.clear()
 	pickups.clear()
 	corpses.clear()
 
@@ -301,7 +377,7 @@ func _sync_people(delta: float) -> void:
 			var sk: Skeleton3D = Person.new().build(_body_of(p))
 			holder.add_child(sk)
 			add_child(holder)
-			e = {holder = holder, sk = sk, phase = 0.0, last = p.position, weapon = "fists", held = null}
+			e = {holder = holder, sk = sk, phase = 0.0, last = p.position, weapon = "fists", held = null, spd = 0.0}
 			people[p] = e
 		_pose(p, e, delta)
 	for p in people.keys():
@@ -316,6 +392,13 @@ func _pose(p, e: Dictionary, delta: float) -> void:
 	holder.position = City3D.to3(p.position, _floor_of(p))
 	var step: float = (p.position - e.last).length() / City3D.PX
 	e.last = p.position
+	if step > 2.0:
+		step = 0.0  # (a jump: the stairs, a respawn, a new zone)
+	# The stride follows the speed seen, so feet don't slide: a walk below
+	# ~2 m/s, the game's usual pace (3.4 m/s) a jog, a sprint (6 m/s) a run.
+	e.spd = lerpf(e.spd, step / maxf(delta, 0.001), minf(1.0, delta * 8.0))
+	var run: float = clampf((e.spd - 1.9) / 3.6, 0.0, 1.0)
+	var cycle: float = lerpf(1.4, 2.9, run)
 	holder.rotation.x = 0.0
 	if p is Player:
 		var pl: Player = p
@@ -324,8 +407,20 @@ func _pose(p, e: Dictionary, delta: float) -> void:
 			holder.rotation.x = -PI * 0.5 * clampf(pl.death_t / 0.6, 0.0, 1.0)
 			Pose.stand(sk)
 			return
-		if pl.aim.length() > 1.0:
-			holder.rotation.y = lerp_angle(holder.rotation.y, atan2(pl.aim.x, pl.aim.y), minf(1.0, delta * 16.0))
+		# (Your own body turns to the ground under the mouse: the aim you send
+		# leans toward the part of a zombie you point at, for the hit zones.)
+		var look: Vector2 = (mouse_ground() - pl.position) if pl.is_local else pl.aim
+		if look.length() > 1.0:
+			holder.rotation.y = lerp_angle(holder.rotation.y, atan2(look.x, look.y), minf(1.0, delta * 16.0))
+		if pl.riding >= 0 and pl.riding < main.world.vehicles.size():
+			var v: Dictionary = main.world.vehicles[pl.riding]
+			var car := Vehicles.is_car(v)
+			holder.rotation.y = _heading_of(v)
+			var back := Vector3(sin(holder.rotation.y), 0, cos(holder.rotation.y)) * (-0.55 if pl.seat == 1 else -0.12)
+			holder.position = City3D.to3(v.pos, _floor_of(pl) + (0.0 if car else 0.28)) + back
+			Pose.ride(sk, pl.seat == 1, car)
+			W.hands(sk, "fists")
+			return
 		var want := _weapon_of(pl.weapon_id)
 		if want != e.weapon:
 			if e.held:
@@ -339,9 +434,9 @@ func _pose(p, e: Dictionary, delta: float) -> void:
 				e.held = W.build(want)
 				e.held.position = W.FIST
 				att.add_child(e.held)
-		e.phase += step / lerpf(1.4, 2.6, pl.run_k) * TAU
-		if pl.moving or step > 0.002:
-			Pose.walk(sk, e.phase, pl.run_k)
+		e.phase += step / cycle * TAU
+		if e.spd > 0.15:
+			Pose.walk(sk, e.phase, run)
 		else:
 			Pose.stand(sk, Time.get_ticks_msec() / 1000.0)
 		var attack := -1.0
@@ -361,10 +456,100 @@ func _pose(p, e: Dictionary, delta: float) -> void:
 			holder.rotation.x = -PI * 0.47
 			Pose.stand(sk)
 			return
-		e.phase += step / 1.1 * TAU
-		Pose.zombie(sk, e.phase, float(z.zid % 7) * 0.08 - 0.24)
+		e.phase += step / maxf(1.1, cycle * 0.85) * TAU
+		Pose.zombie(sk, e.phase, float(z.zid % 7) * 0.08 - 0.24, run)
 		if z.flags & 1:  # lunging: arms right out, leaning in
 			sk.set_bone_pose_rotation(sk.find_bone("spine"), Quaternion.from_euler(Vector3(0.45, 0, 0)))
+
+
+# --- Vehicles -----------------------------------------------------------------
+
+## Which way a vehicle points, as a Y rotation (the model runs along +Z).
+func _heading_of(v: Dictionary) -> float:
+	var a: float = v.dir
+	if not (v.get("rider", 0) != 0 or v.get("spd", 0.0) != 0.0 or v.get("view", "side") == "car"):
+		# Parked: it stands in one of the old drawing's views.
+		match v.get("view", "side"):
+			"front": a = PI * 0.5
+			"back": a = -PI * 0.5
+			_: a = 0.0 if float(v.dir) > 0.0 else PI
+	return atan2(cos(a), sin(a))
+
+
+func _sync_vehicles() -> void:
+	var w := main.world
+	for v in w.vehicles:
+		var id: int = v.id
+		if not _near(v.pos):
+			if bikes.has(id):
+				bikes[id].queue_free()
+				bikes.erase(id)
+			continue
+		var n: Node3D = bikes.get(id)
+		if n == null:
+			n = _car_model(v) if Vehicles.is_car(v) else _bike_model(v)
+			add_child(n)
+			bikes[id] = n
+		n.position = City3D.to3(v.pos, city.ground_h(w.to_cell(v.pos)) if city else 0.0)
+		n.rotation = Vector3(0, _heading_of(v), 0 if v.get("upright", true) else PI * 0.45)
+
+
+static func _part(parent: Node3D, mesh: Mesh, col: Color, pos: Vector3, rot := Vector3.ZERO, metal := 0.0) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	var m := StandardMaterial3D.new()
+	m.albedo_color = col
+	m.metallic = metal
+	m.roughness = 0.4 if metal > 0.0 else 0.6
+	mi.material_override = m
+	mi.position = pos
+	mi.rotation = rot
+	parent.add_child(mi)
+
+
+static func _boxm(size: Vector3) -> BoxMesh:
+	var b := BoxMesh.new()
+	b.size = size
+	return b
+
+
+static func _wheel(r: float, w: float) -> CylinderMesh:
+	var c := CylinderMesh.new()
+	c.top_radius = r
+	c.bottom_radius = r
+	c.height = w
+	c.radial_segments = 14
+	c.rings = 1
+	return c
+
+
+## A Thai step-through scooter: two wheels, the body over the back one, a seat,
+## a front shield and the bars.
+func _bike_model(v: Dictionary) -> Node3D:
+	var n := Node3D.new()
+	var col := Color.from_hsv(World.hash01(v.seed, 1, 9), 0.55, 0.75)
+	var dark := Color("1e1e20")
+	for z in [0.62, -0.62]:
+		_part(n, _wheel(0.28, 0.1), dark, Vector3(0, 0.28, z), Vector3(0, 0, PI * 0.5))
+	_part(n, _boxm(Vector3(0.3, 0.32, 0.8)), col, Vector3(0, 0.52, -0.3))  # the body over the engine
+	_part(n, _boxm(Vector3(0.28, 0.1, 0.62)), Color("2a2624"), Vector3(0, 0.72, -0.28))  # the seat
+	_part(n, _boxm(Vector3(0.12, 0.2, 0.6)), col.darkened(0.2), Vector3(0, 0.32, 0.18))  # the floor between
+	_part(n, _boxm(Vector3(0.34, 0.55, 0.12)), col, Vector3(0, 0.68, 0.45), Vector3(-0.35, 0, 0))  # the front shield
+	_part(n, _boxm(Vector3(0.62, 0.04, 0.04)), Color("8a8e94"), Vector3(0, 1.02, 0.4), Vector3.ZERO, 0.7)  # the bars
+	_part(n, _boxm(Vector3(0.14, 0.1, 0.06)), Color("f0eadc"), Vector3(0, 0.95, 0.5))  # the headlight
+	return n
+
+
+func _car_model(v: Dictionary) -> Node3D:
+	var n := Node3D.new()
+	var col := Color.from_hsv(World.hash01(v.seed, 1, 9), 0.5, 0.7)
+	_part(n, _boxm(Vector3(1.8, 0.62, 4.5)), col, Vector3(0, 0.55, 0))
+	_part(n, _boxm(Vector3(1.6, 0.55, 2.2)), Color("26303a"), Vector3(0, 1.12, -0.3), Vector3.ZERO, 0.3)
+	_part(n, _boxm(Vector3(1.5, 0.05, 1.6)), col, Vector3(0, 1.42, -0.3))
+	for x in [0.85, -0.85]:
+		for z in [1.4, -1.4]:
+			_part(n, _wheel(0.32, 0.22), Color("1a1a1c"), Vector3(x, 0.32, z), Vector3(0, 0, PI * 0.5))
+	return n
 
 
 # --- Doors, things on the ground, the dead --------------------------------------
@@ -460,6 +645,69 @@ func _sync_pickups() -> void:
 		pickups[id] = mi
 
 
+## Blood on the ground: discs, darker as they dry (Main.blood).
+func _sync_blood() -> void:
+	var list: Array = main.blood
+	if list.size() == blood_n:
+		return
+	blood_n = list.size()
+	var mm := blood_mm.multimesh
+	mm.instance_count = list.size()
+	for i in list.size():
+		var b: Array = list[i]
+		var pos: Vector2 = b[0]
+		var rad: float = maxf(0.08, float(b[1]) / City3D.PX * 1.4)
+		var y := city.ground_h(main.world.to_cell(pos)) + 0.012 if city else 0.02
+		var basis := Basis.from_scale(Vector3(rad, 1.0, rad * (0.7 + 0.3 * fmod(pos.x * 0.37, 1.0))))
+		mm.set_instance_transform(i, Transform3D(basis, City3D.to3(pos, y)))
+		var col: Color = b[2]
+		mm.set_instance_color(i, Color(col.r * 0.8, col.g * 0.5, col.b * 0.5))
+
+
+## Over the 3D, on screen: others' names and what they say, damage numbers,
+## your search bar.
+func _draw_overlay() -> void:
+	if main == null or main.world == null or not main.in_game:
+		return
+	var font := UiTheme.medium()
+	var local: Player = main.players.get(multiplayer.get_unique_id())
+	for p: Player in main.players.values():
+		if not p.alive() or not people.has(p):
+			continue
+		var head: Vector3 = people[p].holder.position + Vector3(0, 2.05, 0)
+		if cam.is_position_behind(head):
+			continue
+		var s := cam.unproject_position(head)
+		if p != local and p.pname != "":
+			var tag := "%s · %d" % [p.pname, p.level_total]
+			var w := font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 12.0
+			overlay.draw_rect(Rect2(s + Vector2(-w * 0.5, -20), Vector2(w, 20)), Color(0, 0, 0, 0.45 * p.sight_k))
+			overlay.draw_string(font, s + Vector2(-w * 0.5, -5), tag, HORIZONTAL_ALIGNMENT_CENTER, w, 15, Color(UiTheme.PAPER, p.sight_k))
+		if p.say_t > 0.0:
+			var a := clampf(p.say_t / 0.6, 0.0, 1.0)
+			var bw := minf(font.get_string_size(p.say, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + 18.0, 320.0)
+			var br := Rect2(s + Vector2(-bw * 0.5, -54), Vector2(bw, 26))
+			overlay.draw_rect(br, Color(0.95, 0.93, 0.88, 0.92 * a))
+			overlay.draw_string(font, br.position + Vector2(9, 19), p.say, HORIZONTAL_ALIGNMENT_LEFT, bw - 18, 16, Color(0.1, 0.1, 0.1, a))
+	for dn in main.dmg_numbers:
+		var k: float = dn[3] / 0.9
+		var at := City3D.to3(dn[0], 1.5 + 0.6 * ease(k, 0.4))
+		if cam.is_position_behind(at):
+			continue
+		var s := cam.unproject_position(at)
+		var size := 26 if dn[2] else 20
+		var col := Color(UiTheme.WARN, 1.0 - k * k) if dn[2] else Color(1, 1, 1, 1.0 - k * k)
+		overlay.draw_string_outline(font, s - Vector2(40, 0), "-" + dn[1], HORIZONTAL_ALIGNMENT_CENTER, 80, size, 6, Color(0.45, 0.06, 0.04, 1.0 - k * k))
+		overlay.draw_string(font, s - Vector2(40, 0), "-" + dn[1], HORIZONTAL_ALIGNMENT_CENTER, 80, size, col)
+	var now := Time.get_ticks_msec() / 1000.0
+	if local and people.has(local) and now < main.search_until:
+		var k := 1.0 - (main.search_until - now) / main.search_total
+		var s := cam.unproject_position(people[local].holder.position + Vector3(0, 2.1, 0))
+		var r := Rect2(s + Vector2(-40, -8), Vector2(80, 8))
+		overlay.draw_rect(r.grow(2.0), Color(0, 0, 0, 0.7))
+		overlay.draw_rect(Rect2(r.position, Vector2(r.size.x * k, r.size.y)), Color(1, 0.85, 0.4))
+
+
 func _sync_corpses() -> void:
 	for cid in corpses.keys():
 		if not main.corpses.has(cid):
@@ -471,15 +719,24 @@ func _sync_corpses() -> void:
 		var c: Dictionary = main.corpses[cid]
 		if not c.has("pos") or not _near(c.pos):
 			continue
-		var mi := MeshInstance3D.new()
-		var b := CapsuleMesh.new()
-		b.radius = 0.2
-		b.height = 1.6
-		mi.mesh = b
-		var m := StandardMaterial3D.new()
-		m.albedo_color = Color("5a4a40")
-		mi.material_override = m
-		mi.position = City3D.to3(c.pos, City3D.storey_y(c.get("storey", 0)) + 0.18)
-		mi.rotation = Vector3(0, float(cid % 7), PI * 0.5)
-		add_child(mi)
-		corpses[cid] = mi
+		var body: Dictionary = c.get("body", {})
+		var r := RandomNumberGenerator.new()
+		r.seed = cid
+		var holder := Node3D.new()
+		var sk: Skeleton3D = Person.new().build({detail = "low", zombie = body.has("wear") or body.has("grime"),
+				height = 1.7 * float(body.get("height", 1.0)), skin = body.get("skin", Color("b88c6a")), hair = body.get("hair", Color("2a2622")),
+				shirt = {kind = ["tee", "shirt", "long"][r.randi() % 3], col = body.get("shirt", Color("6a6a6a"))}, pants = {kind = "long", col = body.get("pants", Color("3a3a3a"))},
+				grime = float(body.get("grime", 0.5)), blood = 0.8, seed = cid})
+		holder.add_child(sk)
+		Pose.stand(sk)
+		# Arms flung out, a knee bent: lying as it fell.
+		sk.set_bone_pose_rotation(sk.find_bone("upperarm_l"), Quaternion.from_euler(Vector3(-0.3, 0, 1.1 + r.randf() * 0.6)))
+		sk.set_bone_pose_rotation(sk.find_bone("upperarm_r"), Quaternion.from_euler(Vector3(-0.2, 0, -0.9 - r.randf() * 0.8)))
+		sk.set_bone_pose_rotation(sk.find_bone("thigh_l"), Quaternion.from_euler(Vector3(-0.3 * r.randf(), 0, 0.15)))
+		sk.set_bone_pose_rotation(sk.find_bone("shin_l"), Quaternion.from_euler(Vector3(0.6 * r.randf(), 0, 0)))
+		sk.set_bone_pose_rotation(sk.find_bone("head"), Quaternion.from_euler(Vector3(0, r.randf_range(-0.8, 0.8), 0)))
+		var face_down: bool = String(c.get("style", "")) in ["kneel", "slump"] and r.randf() < 0.6
+		holder.position = City3D.to3(c.pos, City3D.storey_y(c.get("storey", 0)) + 0.12)
+		holder.rotation = Vector3(PI * 0.5 if face_down else -PI * 0.5, (0.0 if float(c.get("fall_dir", 1.0)) > 0.0 else PI) + r.randf_range(-0.6, 0.6), 0.0)
+		add_child(holder)
+		corpses[cid] = holder

@@ -1011,7 +1011,7 @@ func _process(delta: float) -> void:
 		var cursor := get_global_mouse_position()
 		var from := me.position + Look.CHEST + Vector2(0, -me.lift)
 		if view3d and view3d.visible:
-			cursor = view3d.mouse_ground() + Look.CHEST
+			cursor = view3d.cursor()
 			from = me.position + Look.CHEST
 		var aim := cursor - from
 		if me.aiming:  # the cursor on a zombie aims at its middle

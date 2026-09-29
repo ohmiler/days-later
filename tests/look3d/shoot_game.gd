@@ -39,6 +39,28 @@ func run() -> void:
 		main.camera.zoom = main.play_zoom
 		await wait(2.5)
 		await _shot("game_inside.png")
+	# Out on a street with parked bikes: zombies, a body, blood, a hit.
+	var bike: Dictionary = {}
+	for v in main.world.vehicles:
+		if v.get("upright", true) and main.world.get_tile(main.world.to_cell(v.pos)) in [World.SIDEWALK, World.ROAD]:
+			bike = v
+			break
+	if not bike.is_empty():
+		me.position = bike.pos + Vector2(40, 30)
+		main.play_zoom = Vector2(3.6, 3.6)
+		main.camera.zoom = main.play_zoom
+		for i in 5:
+			var zp: Vector2 = me.position + Vector2(-50 + i * 22, -40 + (i % 2) * 20)
+			var z = main._add_zombie(main.new_zid(zp), zp)
+			z.skin = Color("9a9a80")
+			z.shirt = Color.from_hsv(i * 0.2, 0.5, 0.6)
+			z.pants = Color("3a3a40")
+		main.add_corpse(me.position + Vector2(30, -10), 1.0, {skin = Color("9a9a80"), shirt = Color("c83a3a"), pants = Color("2a2a3a"), grime = 0.7}, "slump")
+		for i in 12:
+			main.blood.append([me.position + Vector2(30 + randf_range(-10, 10), -10 + randf_range(-6, 6)), randf_range(1.0, 3.0), Color(0.4, 0.03, 0.03, 0.8)])
+		main.dmg_numbers.append([me.position + Vector2(-20, -30), "24", true, 0.2])
+		await wait(2.0)
+		await _shot("game_street.png")
 	main.time = 0.9  # night
 	await wait(2.0)
 	await _shot("game_night.png")

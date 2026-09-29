@@ -86,8 +86,8 @@ static func swing(sk: Skeleton3D, k: float) -> void:
 
 
 ## A zombie shambling, arms up and reaching, head hanging; `ph` into the step.
-static func zombie(sk: Skeleton3D, ph: float, tilt := 0.2) -> void:
-	walk(sk, ph, 0.0)
+static func zombie(sk: Skeleton3D, ph: float, tilt := 0.2, run := 0.0) -> void:
+	walk(sk, ph, run)
 	var s := sin(ph)
 	_rot(sk, "spine", Vector3(0.22, 0, tilt * 0.4))
 	_rot(sk, "chest", Vector3(0.12, s * 0.08, tilt * 0.3))
@@ -98,3 +98,26 @@ static func zombie(sk: Skeleton3D, ph: float, tilt := 0.2) -> void:
 	_rot(sk, "forearm_r", Vector3(-0.15, 0, 0))
 	_rot(sk, "hand_l", Vector3(0.4, 0, 0))
 	_rot(sk, "hand_r", Vector3(0.5, 0, 0))
+
+
+## Sat on a bike (or behind the rider, `pillion`), hands on the bars; in a
+## car, sat upright with the hands on the wheel.
+static func ride(sk: Skeleton3D, pillion := false, car := false) -> void:
+	reset(sk)
+	var hips := sk.find_bone("hips")
+	sk.set_bone_pose_position(hips, sk.get_bone_rest(hips).origin + Vector3(0, -0.12, 0))
+	_rot(sk, "thigh_l", Vector3(-1.35, 0, 0.18))
+	_rot(sk, "thigh_r", Vector3(-1.35, 0, -0.18))
+	_rot(sk, "shin_l", Vector3(1.25, 0, 0))
+	_rot(sk, "shin_r", Vector3(1.25, 0, 0))
+	if pillion:
+		_rot(sk, "upperarm_l", Vector3(-0.5, 0, 0.3))
+		_rot(sk, "upperarm_r", Vector3(-0.5, 0, -0.3))
+		_rot(sk, "forearm_l", Vector3(-1.2, 0, 0))
+		_rot(sk, "forearm_r", Vector3(-1.2, 0, 0))
+		return
+	_rot(sk, "spine", Vector3(0.12 if not car else 0.0, 0, 0))
+	_rot(sk, "upperarm_l", Vector3(-0.95, 0, 0.12))
+	_rot(sk, "upperarm_r", Vector3(-0.95, 0, -0.12))
+	_rot(sk, "forearm_l", Vector3(-0.35, 0, 0))
+	_rot(sk, "forearm_r", Vector3(-0.35, 0, 0))
