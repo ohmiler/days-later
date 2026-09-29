@@ -258,6 +258,8 @@ func _make_backdrop() -> void:
 
 
 func _clear_backdrop() -> void:
+	if view3d:
+		view3d.release()  # (its builder thread may be reading this world)
 	if not backdrop_nodes.is_empty() and world:
 		world.dispose()
 	for n in backdrop_nodes:
@@ -431,6 +433,8 @@ func _drop_world() -> void:
 	corpse_nodes.clear()
 	actions.alarms.clear()
 	hidden_building = null
+	if view3d:
+		view3d.release()
 	world.dispose()
 	world.queue_free()
 	world = null

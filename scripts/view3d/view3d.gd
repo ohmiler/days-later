@@ -214,6 +214,14 @@ func _exit_tree_wait() -> void:
 			job_node = null
 
 
+## Let go of the world about to be dropped (Main calls this first): wait for
+## the chunk being built from it, and take everything made from it away.
+func release() -> void:
+	_clear()
+	built_for = null
+	city = null
+
+
 func _clear() -> void:
 	_exit_tree_wait()
 	for n in chunks.values() + people.values().map(func(e): return e.holder) + doors.values() + pickups.values() + corpses.values() + bikes.values():
@@ -298,7 +306,7 @@ func _light() -> void:
 	sky_mat.sky_horizon_color = sky_col if not night else Color("1a2030")
 	sky_mat.ground_horizon_color = sky_col.darkened(0.2)
 	env.fog_light_color = sky_col.darkened(0.1)
-	env.fog_density = 0.012 if main.raining else 0.004
+	env.fog_density = 0.01 if main.raining else 0.0022
 
 
 ## Take away what stands between the camera and you: in a building, its

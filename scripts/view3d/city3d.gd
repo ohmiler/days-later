@@ -55,16 +55,28 @@ void fragment() {
 	vec3 seg = eye_pos - you_pos;
 	float k = clamp(dot(wp - you_pos, seg) / dot(seg, seg), 0.0, 1.0);
 	float d = length(wp - (you_pos + seg * k));
+	float fade = 0.0;
 	if (wp.y > you_pos.y + 2.0 && k > 0.02 && d < 2.6) {
-		float fade = smoothstep(2.6, 1.4, d);
-		if (fract(dot(FRAGCOORD.xy, vec2(0.5, 0.25))) < fade * 0.85) { discard; }
+		fade = smoothstep(2.6, 1.4, d);
 	}
+	// High overhead (the skytrain deck, a tall building's upper floors) close
+	// round you: it thins out all over, as the 2D skywalk faded when you went under.
+	if (wp.y > you_pos.y + 6.0) {
+		fade = max(fade, smoothstep(11.0, 6.0, length(wp.xz - you_pos.xz)) * 0.8);
+	}
+	if (fract(dot(FRAGCOORD.xy, vec2(0.5, 0.25))) < fade * 0.85) { discard; }
 	vec2 p = abs(wn.y) > 0.5 ? wp.xz : (abs(wn.x) > 0.5 ? wp.zy : wp.xy);
 	float grit = n(p * 30.0);
 	vec3 c = COLOR.rgb * (0.82 + fbm(p * 0.45) * 0.3) * (0.95 + grit * 0.08);
 	c = mix(c, c * vec3(0.72, 0.7, 0.62), smoothstep(0.5, 0.85, fbm(p * 0.6 + 7.0)) * 0.45);
 	// grime near the ground on walls
-	if (abs(wn.y) < 0.5) { c *= mix(0.7, 1.0, smoothstep(0.0, 1.2, fract(wp.y / 3.1) * 3.1)); }
+	if (abs(wn.y) < 0.5) {
+		c *= mix(0.7, 1.0, smoothstep(0.0, 1.2, fract(wp.y / 3.1) * 3.1));
+		// Streaks where rain has run down the wall for years.
+		float along = abs(wn.x) > 0.5 ? wp.z : wp.x;
+		float streak = n(vec2(along * 6.0, wp.y * 0.25)) * n(vec2(along * 2.3, 1.0));
+		c *= 1.0 - smoothstep(0.35, 0.8, streak) * 0.22;
+	}
 	ALBEDO = c;
 	ROUGHNESS = 0.88 + grit * 0.08;
 }
@@ -185,6 +197,8 @@ func build_chunk(cc: Vector2i, out_buildings: Dictionary) -> Node3D:
 					_stairs(props, f)
 				else:
 					_furniture(props, f)
+	_wires(props, r)
+	_skytrain(props, r)
 	_commit(props, root, "props")
 	for b in world.buildings:
 		var br: Rect2i = b.rect
@@ -222,14 +236,18 @@ func _road_marks(st: SurfaceTool, area: Rect2i) -> void:
 
 
 func _tree(st: SurfaceTool, at: Vector3, k: float) -> void:
-	var tall := 4.5 + k * 3.0
-	box(st, at + Vector3(0, tall * 0.35, 0), Vector3(0.28, tall * 0.7, 0.28), Color("5a4634"))
-	var green := Color("4a6a38").lerp(Color("3a5a30"), k)
-	for i in 5:
-		var a := TAU * (i / 5.0 + k)
-		var o := Vector3(cos(a), 0, sin(a)) * (1.0 + k * 0.5)
-		var s := 2.0 + fmod(k * 7.0 + i, 1.0) * 1.2
-		box(st, at + o + Vector3(0, tall * 0.8 + (i % 2) * 0.6, 0), Vector3(s, s * 0.7, s), green.lightened(0.05 * (i % 3)))
+	# A trunk, then a crown of a few overlapping rounded clumps (a rain tree,
+	# a mango): wide and soft, darker underneath.
+	var tall := 3.2 + k * 2.4
+	Props3D.xcyl(st, Transform3D.IDENTITY, at + Vector3(0, tall * 0.5, 0), 0.16, tall, 1, Color("5a4634"), 7, 0.11)
+	var green := Color("56773c").lerp(Color("3e6232"), k)
+	var xf := Transform3D.IDENTITY
+	for i in 4:
+		var a := TAU * (i / 4.0 + k)
+		var o := Vector3(cos(a), 0, sin(a)) * (0.7 + k * 0.4)
+		var s := 1.8 + fmod(k * 5.0 + i * 0.37, 1.0) * 0.9
+		Props3D.xblob(st, xf, at + o + Vector3(0, tall + 0.2 + (i % 2) * 0.35, 0), Vector3(s, s * 0.62, s), green.lightened(0.04 * (i % 3)))
+	Props3D.xblob(st, xf, at + Vector3(0, tall + 0.7, 0), Vector3(2.2, 1.3, 2.2), green.lightened(0.07))
 
 
 ## A wall along the middle of cell `c`: a post, and an arm toward each
@@ -299,6 +317,7 @@ func _building(b: Dictionary) -> Node3D:
 			# The floor of this storey (the ground floor's is the ground).
 			if f > 0:
 				box(slab, Vector3(c.x + 0.5, y0 - 0.1, c.y + 0.5), Vector3(1.0, 0.2, 1.0), Color("b8ac94"), true)
+		_facade(walls, b, f, floors)
 		_commit(walls, sn, "walls")
 		if f > 0:
 			_commit(slab, sn, "floor")
@@ -334,6 +353,121 @@ func _building(b: Dictionary) -> Node3D:
 		l.shaded = true
 		node.get_node("s0").add_child(l)
 	return node
+
+
+# --- Fronts of buildings -------------------------------------------------------
+
+const GLASS := Color("2a3440")
+const GRILLE := Color("4a4c50")
+
+
+## What makes a Bangkok shophouse front: upstairs, windows behind steel
+## grilles, an air conditioner hung under one, now and then a balcony; over
+## the shop, an awning. Big buildings get bands of windows all round.
+## (Shophouse fronts face south, toward the camera: CityGen lays them so.)
+func _facade(st: SurfaceTool, b: Dictionary, f: int, floors: int) -> void:
+	var r: Rect2i = b.rect
+	var y0 := storey_y(f)
+	var h := storey_h(f)
+	var seed: int = b.get("seed", 0)
+	var col: Color = b.get("color", Color("d8cdb4"))
+	if b.get("big", false):
+		# Ribbon windows on every side, a storey at a time.
+		var wy := y0 + h * 0.55
+		var out := WALL_T * 0.5 + 0.03
+		box(st, Vector3(r.position.x + r.size.x * 0.5, wy, r.end.y - 0.5 + out), Vector3(r.size.x - 1.4, 1.1, 0.04), GLASS)
+		box(st, Vector3(r.position.x + r.size.x * 0.5, wy, r.position.y + 0.5 - out), Vector3(r.size.x - 1.4, 1.1, 0.04), GLASS)
+		box(st, Vector3(r.position.x + 0.5 - out, wy, r.position.y + r.size.y * 0.5), Vector3(0.04, 1.1, r.size.y - 1.4), GLASS)
+		box(st, Vector3(r.end.x - 0.5 + out, wy, r.position.y + r.size.y * 0.5), Vector3(0.04, 1.1, r.size.y - 1.4), GLASS)
+		return
+	var z := r.end.y - 0.5 + WALL_T * 0.5  # the face of the front wall
+	var w := r.size.x
+	if f == 0:
+		# The awning over the shop front, sloping down toward the street.
+		var awn: Color = [Color("c8b8a0"), Color("3a6aa8"), Color("c83a30"), Color("2a7a4a"), Color("8a8e94")][seed % 5]
+		var xf := Transform3D(Basis(Vector3.RIGHT, -0.28), Vector3(r.position.x + w * 0.5, GROUND_H - 0.55, z + 0.6))
+		Props3D.xbox(st, xf, Vector3.ZERO, Vector3(w - 0.2, 0.05, 1.3), awn)
+		return
+	var n := maxi(1, int(w / 2.2))
+	for i in n:
+		var x := r.position.x + (i + 0.5) * w / n
+		var wy := y0 + 1.55
+		box(st, Vector3(x, wy, z + 0.02), Vector3(1.1, 1.25, 0.04), GLASS)
+		box(st, Vector3(x, wy - 0.68, z + 0.06), Vector3(1.3, 0.08, 0.12), col.darkened(0.15))  # the sill
+		for g in 5:
+			box(st, Vector3(x - 0.5 + g * 0.25, wy, z + 0.1), Vector3(0.025, 1.3, 0.025), GRILLE)  # the grille
+		for g in 3:
+			box(st, Vector3(x, wy - 0.6 + g * 0.6, z + 0.1), Vector3(1.1, 0.025, 0.025), GRILLE)
+		# An air conditioner under this one, now and then.
+		if (seed + i * 7 + f * 3) % 3 == 0:
+			box(st, Vector3(x + 0.1, y0 + 0.55, z + 0.2), Vector3(0.8, 0.5, 0.3), Color("e4e0d8"))
+			box(st, Vector3(x + 0.1, y0 + 0.55, z + 0.36), Vector3(0.5, 0.36, 0.02), Color("9a9a98"))
+	# A balcony on the first floor of some.
+	if f == 1 and seed % 4 == 1:
+		box(st, Vector3(r.position.x + w * 0.5, y0 + 0.05, z + 0.5), Vector3(w - 0.3, 0.12, 1.0), col.darkened(0.1))
+		box(st, Vector3(r.position.x + w * 0.5, y0 + 0.55, z + 0.98), Vector3(w - 0.3, 0.9, 0.04), GRILLE)
+	# Rain stains down from the roof line.
+	if f == floors - 1:
+		box(st, Vector3(r.position.x + w * 0.5, y0 + h - 0.15, z + 0.03), Vector3(w, 0.3, 0.04), col.darkened(0.25))
+
+
+# --- Overhead: power lines and the skytrain ---------------------------------------
+
+## The tangle of wires between the poles (World.wires: pole tops, drawn 100 px
+## up in the 2D map): several strands, sagging, at a pole's top.
+func _wires(st: SurfaceTool, area: Rect2i) -> void:
+	for wire in world.wires:
+		var a2: Vector2 = wire[0] + Vector2(0, 100)
+		var b2: Vector2 = wire[1] + Vector2(0, 100)
+		if not area.has_point(world.to_cell((a2 + b2) * 0.5)):
+			continue
+		var a := to3(a2)
+		var b := to3(b2)
+		for s in 5:
+			var top := 7.5 + s * 0.22
+			var sag := 0.5 + s * 0.18
+			var side := Vector3(0, 0, (s - 2) * 0.12) if absf(b.x - a.x) > absf(b.z - a.z) else Vector3((s - 2) * 0.12, 0, 0)
+			var prev := a + Vector3(0, top, 0) + side
+			for k in range(1, 9):
+				var t := k / 8.0
+				var p := a.lerp(b, t) + Vector3(0, top - sag * 4.0 * t * (1.0 - t), 0) + side
+				var mid := (prev + p) * 0.5
+				var d := p - prev
+				var xf := Transform3D(Basis.looking_at(d.normalized(), Vector3.UP), mid)
+				Props3D.xbox(st, xf, Vector3.ZERO, Vector3(0.03, 0.03, d.length() + 0.02), Color("1a1a1a"))
+				prev = p
+
+
+## The skytrain's deck along its line (World.bts_path), 11 m up, in pieces of
+## about 2 m; wider at the station.
+func _skytrain(st: SurfaceTool, area: Rect2i) -> void:
+	var path: PackedVector2Array = world.bts_path
+	if path.size() < 2:
+		return
+	var concrete := Color("b0aca4")
+	for i in path.size() - 1:
+		var a: Vector2 = path[i]
+		var b: Vector2 = path[i + 1]
+		var len_ := a.distance_to(b) / PX
+		var n := maxi(1, int(len_ / 2.0))
+		for k in n:
+			var p2 := a.lerp(b, (k + 0.5) / n)
+			if not area.has_point(world.to_cell(p2)):
+				continue
+			var at := to3(p2, 11.0)
+			var d := to3(b) - to3(a)
+			var station: bool = world.bts_station.x >= 0 and p2.y >= world.bts_station.x and p2.y <= world.bts_station.y
+			var wide := 18.0 if station else 9.0
+			var xf := Transform3D(Basis.looking_at(d.normalized(), Vector3.UP), at)
+			var piece := len_ / n + 0.05
+			Props3D.xbox(st, xf, Vector3(0, 0, 0), Vector3(wide, 1.2, piece), concrete)
+			for sx in [-1.0, 1.0]:
+				Props3D.xbox(st, xf, Vector3(sx * (wide * 0.5 - 0.1), 1.1, 0), Vector3(0.2, 1.0, piece), concrete.lightened(0.05))
+				Props3D.xbox(st, xf, Vector3(sx * 1.4, 0.75, 0), Vector3(0.12, 0.15, piece), Color("5a5a5c"))  # the rails
+			if station:
+				Props3D.xbox(st, xf, Vector3(0, 5.2, 0), Vector3(wide + 1.0, 0.25, piece), Color("7a8a9a"))  # the roof
+				for sx in [-1.0, 1.0]:
+					Props3D.xbox(st, xf, Vector3(sx * (wide * 0.5 - 0.3), 3.2, 0), Vector3(0.15, 4.0, 0.15), Color("8a8e94"))
 
 
 # --- Street props and furniture (grey stand-ins with the right size) ---------

@@ -61,6 +61,29 @@ func run() -> void:
 		main.dmg_numbers.append([me.position + Vector2(-20, -30), "24", true, 0.2])
 		await wait(2.0)
 		await _shot("game_street.png")
+	# The skytrain over the road near the monument, and a shophouse street.
+	if main.world.bts_path.size() > 2:
+		var p: Vector2 = main.world.bts_path[0]
+		for q in main.world.bts_path:
+			if main.world.get_tile(main.world.to_cell(q)) == World.ROAD:
+				p = q
+				break
+		me.position = p + Vector2(0, 90)
+		main.play_zoom = Vector2(2.4, 2.4)
+		main.camera.zoom = main.play_zoom
+		await wait(4.0)
+		await _shot("game_bts.png")
+	for b in main.world.buildings:
+		if b.kind == "shop" and b.get("floors", 1) >= 2:
+			var spot := Vector2i(b.rect.get_center().x, b.rect.end.y + 1)
+			while main.world.is_solid(spot) or main.world.building_at.has(spot):
+				spot.y += 1
+			me.position = main.world.to_pos(spot)
+			break
+	main.play_zoom = Vector2(3.2, 3.2)
+	main.camera.zoom = main.play_zoom
+	await wait(4.0)
+	await _shot("game_fronts.png")
 	main.time = 0.9  # night
 	await wait(2.0)
 	await _shot("game_night.png")

@@ -52,6 +52,24 @@ static func xcyl(st: SurfaceTool, xf: Transform3D, c: Vector3, r: float, len: fl
 				st.add_vertex(xf * p)
 
 
+## A ball squashed to `size` (a tree's crown, a bush), `rings` x `segs` quads.
+static func xblob(st: SurfaceTool, xf: Transform3D, c: Vector3, size: Vector3, col: Color, segs := 9, rings := 5) -> void:
+	st.set_color(col)
+	for j in rings:
+		var p0 := PI * j / rings - PI * 0.5
+		var p1 := PI * (j + 1) / rings - PI * 0.5
+		for i in segs:
+			var a0 := TAU * i / segs
+			var a1 := TAU * (i + 1) / segs
+			var q := []
+			for e in [[a0, p0], [a1, p0], [a1, p1], [a0, p1]]:
+				var n := Vector3(cos(e[1]) * cos(e[0]), sin(e[1]), cos(e[1]) * sin(e[0]))
+				q.append([c + n * size * 0.5, n])
+			for k in [0, 2, 1, 0, 3, 2]:
+				st.set_normal(xf.basis * (q[k][1] as Vector3))
+				st.add_vertex(xf * (q[k][0] as Vector3))
+
+
 const TAXI := [Color("e0607e"), Color("6ab04a"), Color("e89a2e"), Color("3a7ac8"), Color("d8c83a")]  # pink, green-yellow, orange, blue, yellow
 const GLASS := Color("222a32")
 const TYRE := Color("1a1a1c")
