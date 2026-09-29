@@ -46,6 +46,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 		# On a car roof: only getting down again.
 		out.append({kind = "car", id = p.on_car, pos = p.position + Vector2(0, 1), title = "หลังคารถ"})
 		return out
+	_hurt_players(main, p, out)
 	if p.storey > 0:
 		# Upstairs: the stairs, and what's up here with you.
 		for pid in main.pickups:
@@ -112,6 +113,19 @@ static func _candidates(main: Node, p: Player) -> Array:
 		if f is FurnitureProp and p.position.distance_to(f.position) < CONTAINER_REACH and w.building_at.get(f.data.cell) == here and f.data.get("storey", 0) == 0:
 			out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
 	return out
+
+
+const FRIEND_REACH := 16.0
+
+
+## Another survivor beside you who's hurt (their health shows on every screen:
+## what's wrong, only the server knows).
+static func _hurt_players(main: Node, p: Player, out: Array) -> void:
+	if not Skills.has(p, "treat_other"):
+		return  # (no use pointing at a friend you can't help)
+	for q: Player in main.players.values():
+		if q != p and q.alive() and q.storey == p.storey and q.hp < 100.0 and p.position.distance_to(q.position) < FRIEND_REACH:
+			out.append({kind = "player", id = q.peer_id, pos = q.position, title = q.pname})
 
 
 ## Bodies on your floor you could burn.
@@ -229,6 +243,9 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 			out.append(_act("sit", "นั่งพัก", not taken, "มีคนนั่งอยู่"))
 		"vehicle":
 			out.append_array(main.vehicles.actions_for(p, t.id))
+		"player":
+			var bandages: bool = p.inv.any(func(it): return it != null and it.id in ["bandage", "firstaid"])
+			out.append(_act("treat_other", "พันแผลให้ " + t.title, bandages, "ไม่มีผ้าพันแผล"))
 	return out
 
 

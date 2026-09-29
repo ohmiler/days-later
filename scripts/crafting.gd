@@ -29,6 +29,8 @@ static func _load() -> Dictionary:
 		var r := {needs = cf.get_value(id, "needs", {}), makes = cf.get_value(id, "makes", ""),
 				count = cf.get_value(id, "count", 1), time = float(cf.get_value(id, "time", 2.0))}
 		r.name = cf.get_value(id, "name", "")  # ("": the result's name, looked up when shown)
+		if cf.has_section_key(id, "unlock"):
+			r.unlock = cf.get_value(id, "unlock")
 		out[id] = r
 	return out
 
@@ -52,7 +54,24 @@ static func problems() -> Array:
 		for need in r.needs:
 			if not need.begins_with("#") and not Items.DEFS.has(need):
 				out.append("%s: needs unknown item %s" % [id, need])
+		if r.has("unlock") and not Skills.UNLOCKS.has(r.unlock):
+			out.append("%s: unknown unlock %s" % [id, r.unlock])
 	return out
+
+
+## Whether `p` knows how to make recipe `id` (a recipe with an `unlock` needs
+## that skill level: Skills.has).
+static func knows(p: Player, id: String) -> bool:
+	var u: String = RECIPES.get(id, {}).get("unlock", "")
+	return u == "" or Skills.has(p, u)
+
+
+## What a recipe `p` doesn't know yet needs ("" if they know it).
+static func locked_why(p: Player, id: String) -> String:
+	if knows(p, id):
+		return ""
+	var u: Array = Skills.UNLOCKS[RECIPES[id].unlock]
+	return "ต้องมีฝีมือ%s Lv %d" % [Skills.DEFS[u[0]].name, u[1]]
 
 
 ## Does `it` count for the need `need` (an item id, or "#tag" for any material with it)?
@@ -99,6 +118,9 @@ static func repair_with(it) -> String:
 func req_craft(id: String) -> void:
 	var p := main._sender()
 	if p == null or not p.alive() or p.sleeping or not RECIPES.has(id):
+		return
+	if not knows(p, id):
+		main._toast(p, locked_why(p, id))
 		return
 	if not can_make(p.inv, id):
 		main._toast(p, "ของไม่พอ")

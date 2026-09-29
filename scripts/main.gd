@@ -1440,7 +1440,7 @@ func _draw_fx() -> void:
 		# Creeping up behind one, a knife ready: a small blade over its head.
 		# Behind one with nothing that can in hand: a grey blade, and what it needs.
 		var wid := local.hand_weapon("r")
-		var pointed: bool = Items.def(wid).get("silent", false)
+		var pointed: bool = Combat.silent_in(local, wid)
 		var reach: float = (Items.def(wid).get("range", 0.0) if pointed else 17.0) + Zombie.RADIUS + Combat.MELEE_SLACK
 		for z: Zombie in zombies.values():
 			if z.visible and z.position.distance_to(local.position) < reach + 14.0 and Combat.can_backstab(local, z, wid if pointed else "knife"):

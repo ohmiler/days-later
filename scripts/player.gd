@@ -399,9 +399,12 @@ func load_kg() -> float:
 	return kg
 
 
+const MORE_CARRY := 3.0  # kg more, with endurance's more_carry
+
+
 ## Kilograms you carry before slowing down: your own strength plus a bag's.
 func carry_limit() -> float:
-	var kg := Items.CARRY * Skills.mult(self, "carry")
+	var kg := Items.CARRY * Skills.mult(self, "carry") + (MORE_CARRY if Skills.has(self, "more_carry") else 0.0)
 	for slot in wear_ids:
 		kg += float(Items.def(wear_ids[slot]).get("carry", 0.0))
 	return kg

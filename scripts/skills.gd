@@ -85,6 +85,43 @@ static func mult(p: Player, key: String) -> float:
 	return m
 
 
+## What opens at a level (data/skills.cfg `unlocks`): unlock id -> [skill, level].
+static var UNLOCKS: Dictionary = _unlocks()
+
+
+static func _unlocks() -> Dictionary:
+	var out := {}
+	for id in DEFS:
+		var u: Dictionary = DEFS[id].get("unlocks", {})
+		for k in u:
+			out[u[k][0]] = [id, int(k)]
+	return out
+
+
+## Whether `p` has opened unlock `uid` (a skill at its level). The owner's own
+## screen knows too (their skills are sent to them).
+static func has(p: Player, uid: String) -> bool:
+	var u = UNLOCKS.get(uid)
+	return u != null and p != null and level(p, u[0]) >= u[1]
+
+
+## What the unlock at `lvl` of skill `id` says ("" if none).
+static func unlock_text(id: String, lvl: int) -> String:
+	var u = DEFS.get(id, {}).get("unlocks", {}).get(str(lvl))
+	return u[1] if u is Array else ""
+
+
+## What is wrong with the table, one line each (the tests run it).
+static func problems() -> Array:
+	var out := []
+	for id in DEFS:
+		var u: Dictionary = DEFS[id].get("unlocks", {})
+		for k in u:
+			if not (u[k] is Array and u[k].size() == 2) or int(k) < 2 or int(k) > MAX_LEVEL:
+				out.append("%s: unlock at %s must be [id, text] at level 2-%d" % [id, k, MAX_LEVEL])
+	return out
+
+
 # --- Server ---------------------------------------------------------------------
 
 ## `p` did `what` (a key of the skill's `xp` in skills.cfg), `times` over
@@ -174,7 +211,7 @@ func fx_level_up(peer: int, id: String, lvl: int) -> void:
 		return
 	p.levelup_t = LEVELUP_TIME
 	if peer == multiplayer.get_unique_id():
-		var unlock: String = DEFS[id].get("unlocks", {}).get(str(lvl), "")
+		var unlock := unlock_text(id, lvl)
 		main.ui.announce("%s  เลเวล %d%s" % [DEFS[id].name, lvl, ("\nปลดล็อก: " + unlock) if unlock != "" else ""], true)
 		Sfx.play_ui(main, "levelup", -2.0)
 
