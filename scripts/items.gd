@@ -192,6 +192,8 @@ static func problems() -> Array:
 		for part in d.get("salvage", {}):
 			if not DEFS.has(part):
 				out.append("%s: salvage gives unknown item %s" % [id, part])
+		if d.has("repair_lv") and (not (d.repair_lv is int or d.repair_lv is float) or d.repair_lv < 1 or d.repair_lv > Skills.MAX_LEVEL):
+			out.append("%s: repair_lv must be a craft level 1-%d" % [id, Skills.MAX_LEVEL])
 		if d.has("repair") and not DEFS.has(d.repair):
 			out.append("%s: repaired with unknown item %s" % [id, d.repair])
 		if d.has("leaves") and not DEFS.has(d.leaves):

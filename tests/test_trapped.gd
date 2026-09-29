@@ -23,7 +23,7 @@ func run() -> void:
 	me.position = far
 	main.survival._trapped_t = 0.0
 	main.survival._tick_trapped(0.0)
-	var inside := func() -> Array: return main.zombies.values().filter(func(z): return z.home == bid)
+	var inside := func() -> Array: return main.zombies.values().filter(func(z): return z.home == bid and not z.is_boss())  # (its boss, if it is the lair, is test_boss's)
 	check(inside.call().is_empty(), "nobody near: they stay a number")
 
 	# Up to its door: they're in there.

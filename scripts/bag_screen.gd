@@ -641,6 +641,8 @@ func _draw_card(head: Font, body: Font) -> void:
 		var rtext: String = Items.RARITY_NAMES[rarity]
 		if d.has("from"):
 			rtext += " · ได้จาก" + d.from + "เท่านั้น"
+		if d.has("repair_lv"):
+			rtext += " · ซ่อม: ช่าง Lv %d" % int(d.repair_lv)
 		elif Items.tier(it.id) >= Items.TIERS:
 			rtext += " · เจอแค่ใน" + Items.TIER_NAMES[Items.TIERS]
 		draw_string(UiTheme.medium(), Vector2(110 + nw, CARD_Y + 21), rtext, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL,
