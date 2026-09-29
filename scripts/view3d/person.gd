@@ -10,7 +10,7 @@ const DETAIL := {high = [0.022, 16], low = [0.045, 9]}
 var ring_step := 0.022
 var segs := 16
 
-const CLOTH := preload("res://tests/look3d/cloth.gdshader")
+const CLOTH := preload("res://scripts/view3d/cloth.gdshader")
 
 var p := {}  # build parameters (see DEFAULTS)
 var skel: Skeleton3D

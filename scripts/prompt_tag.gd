@@ -30,7 +30,7 @@ func _ready() -> void:
 func _draw() -> void:
 	if verb == "":
 		return
-	var at := get_viewport().get_canvas_transform() * world_pos
+	var at := View3D.screen_of(get_viewport(), world_pos)
 	var f := UiTheme.medium()
 	var fb := UiTheme.body()
 	var alpha := 1.0 if ok else 0.6

@@ -2,9 +2,9 @@ extends SceneTree
 ## Step 0 of the 3D move: weapons in hand, frame by frame. Not part of the game.
 ##   godot --path . --resolution 1600x900 -s res://tests/look3d/shoot_weapons.gd -- --out=DIR
 
-const Person := preload("res://tests/look3d/person.gd")
-const Pose := preload("res://tests/look3d/pose.gd")
-const W := preload("res://tests/look3d/weapons.gd")
+const Person := preload("res://scripts/view3d/person.gd")
+const Pose := preload("res://scripts/view3d/pose.gd")
+const W := preload("res://scripts/view3d/weapons.gd")
 
 var out := "user://look3d"
 var holder: Node3D

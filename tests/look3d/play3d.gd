@@ -6,9 +6,9 @@ extends Node3D
 ## hold aim the pistol · 1-4 fists, machete, axe, pistol · wheel zoom ·
 ## N night · Z more zombies · Esc quit
 
-const Person := preload("res://tests/look3d/person.gd")
-const Pose := preload("res://tests/look3d/pose.gd")
-const W := preload("res://tests/look3d/weapons.gd")
+const Person := preload("res://scripts/view3d/person.gd")
+const Pose := preload("res://scripts/view3d/pose.gd")
+const W := preload("res://scripts/view3d/weapons.gd")
 
 const WALK := 1.8  # m/s: a real walking pace
 const RUN := 5.0

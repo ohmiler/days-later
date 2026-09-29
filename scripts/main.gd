@@ -33,6 +33,7 @@ var vehicles: Vehicles
 var port := PORT  # override with -- --port=N
 var world: World
 var camera: Camera2D
+var view3d: View3D  # the game seen in 3D (a window only; F3 back to the 2D drawing)
 var shade: CanvasModulate
 var fx: Node2D
 var ui: GameUI
@@ -236,6 +237,11 @@ func _ready() -> void:
 			_join(arg.trim_prefix("--join="))
 			return
 	if DisplayServer.get_name() != "headless":
+		if not args.has("--2d"):
+			view3d = View3D.new()
+			view3d.main = self
+			add_child(view3d)
+			visible = false  # (the 2D drawing: the HUD and menus are on their own layers)
 		_make_backdrop()  # (nobody sees a title screen on a server with no screen)
 
 
@@ -1001,12 +1007,18 @@ func _process(delta: float) -> void:
 				float(Input.is_key_pressed(KEY_S)) - float(Input.is_key_pressed(KEY_W)))
 		move = move.limit_length(1.0)
 		# From where you're drawn: up on a roof that's lifted above your feet.
-		var aim := get_global_mouse_position() - (me.position + Look.CHEST + Vector2(0, -me.lift))
+		# In 3D, from your feet to the point under the mouse at chest height.
+		var cursor := get_global_mouse_position()
+		var from := me.position + Look.CHEST + Vector2(0, -me.lift)
+		if view3d and view3d.visible:
+			cursor = view3d.mouse_ground() + Look.CHEST
+			from = me.position + Look.CHEST
+		var aim := cursor - from
 		if me.aiming:  # the cursor on a zombie aims at its middle
-			aim = Combat.snap_aim(me.position + Look.CHEST + Vector2(0, -me.lift), get_global_mouse_position(), zombies.values())
+			aim = Combat.snap_aim(from, cursor, zombies.values())
 		if e_down_at >= 0.0 and not ui.wheel.visible and Time.get_ticks_msec() / 1000.0 - e_down_at > WHEEL_HOLD \
 				and not last_actions.is_empty():
-			var centre: Vector2 = get_viewport().get_canvas_transform() * (last_target.pos + Vector2(0, -12 - me.lift))
+			var centre: Vector2 = View3D.screen_of(get_viewport(), last_target.pos + Vector2(0, -12 - me.lift), me.lift)
 			ui.wheel.open(last_target.title, last_actions, centre)
 		if ui.wheel.visible:
 			ui.wheel.point(get_viewport().get_mouse_position())
@@ -1600,6 +1612,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F11:
 		ui.set_fullscreen(not ui.is_fullscreen())
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F3 and view3d:
+		view3d.visible = not view3d.visible  # 3D <-> the 2D drawing
+		view3d.cam.current = view3d.visible
+		visible = not view3d.visible
 		return
 	if world and in_game and event is InputEventKey and event.pressed and not event.echo:
 		var k: int = event.keycode

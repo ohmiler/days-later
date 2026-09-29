@@ -3,8 +3,8 @@ extends SceneTree
 ## corner. Not part of the game.
 ##   godot --path . --rendering-method forward_plus --resolution 1600x900 -s res://tests/look3d/shoot_people.gd -- --out=DIR
 
-const Person := preload("res://tests/look3d/person.gd")
-const Pose := preload("res://tests/look3d/pose.gd")
+const Person := preload("res://scripts/view3d/person.gd")
+const Pose := preload("res://scripts/view3d/pose.gd")
 
 var root3d: Node3D
 var out := "user://look3d"
