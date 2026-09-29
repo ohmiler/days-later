@@ -46,8 +46,19 @@ float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
 float n(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
 	return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
 float fbm(vec2 p) { mat2 r = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)); float a = n(p) * 0.5; p = r * p * 2.1 + 3.1; a += n(p) * 0.28; p = r * p * 2.2 + 1.7; a += n(p) * 0.14; return a + n(r * p * 2.3) * 0.08; }
+uniform vec3 eye_pos;
+uniform vec3 you_pos;
 void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; wn = NORMAL; }
 void fragment() {
+	// Between the camera and you, above your head: dithered away, so trees,
+	// awnings and roof edges never hide you.
+	vec3 seg = eye_pos - you_pos;
+	float k = clamp(dot(wp - you_pos, seg) / dot(seg, seg), 0.0, 1.0);
+	float d = length(wp - (you_pos + seg * k));
+	if (wp.y > you_pos.y + 2.0 && k > 0.02 && d < 2.6) {
+		float fade = smoothstep(2.6, 1.4, d);
+		if (fract(dot(FRAGCOORD.xy, vec2(0.5, 0.25))) < fade * 0.85) { discard; }
+	}
 	vec2 p = abs(wn.y) > 0.5 ? wp.xz : (abs(wn.x) > 0.5 ? wp.zy : wp.xy);
 	float grit = n(p * 30.0);
 	vec3 c = COLOR.rgb * (0.82 + fbm(p * 0.45) * 0.3) * (0.95 + grit * 0.08);
@@ -167,10 +178,13 @@ func build_chunk(cc: Vector2i, out_buildings: Dictionary) -> Node3D:
 		var c := world.to_cell(sp.pos)
 		if r.has_point(c):
 			_street_prop(props, sp)
-	for f in world.containers:
-		if r.has_point(f.cell):
-			var bld: Dictionary = world.building_at[f.cell].data if world.building_at.has(f.cell) else {}
-			_furniture(props, f.kind, f.cell, f.get("storey", 0), bld)
+	for list in [world.containers, world.decor, world.things]:
+		for f in list:
+			if r.has_point(f.cell) and not (list == world.things and f.kind in ["stove", "jar", "volunteer"]):
+				if f.kind == "stairs":
+					_stairs(props, f)
+				else:
+					_furniture(props, f)
 	_commit(props, root, "props")
 	for b in world.buildings:
 		var br: Rect2i = b.rect
@@ -350,11 +364,64 @@ func _street_prop(st: SurfaceTool, sp: Dictionary) -> void:
 	Props3D.build(st, xf, sp, Vector3(s[0], s[2], s[1]), col)
 
 
-const FURNITURE := {bed = [2.0, 1.2, 0.5], fridge = [0.7, 0.7, 1.8], shelf = [1.6, 0.4, 1.9], counter = [1.8, 0.6, 1.0], cabinet = [1.0, 0.5, 1.8],
-		wardrobe = [1.2, 0.6, 2.0], desk = [1.2, 0.6, 0.75], crate = [0.8, 0.8, 0.7], sofa = [1.9, 0.8, 0.8], table = [1.2, 0.8, 0.75]}
+## A piece of furniture (or a decor, or a Thing) in its cell, its back to the
+## nearest wall; a long bed runs the way the generator laid it.
+func _furniture(st: SurfaceTool, f: Dictionary) -> void:
+	var cell: Vector2i = f.cell
+	var storey: int = f.get("storey", 0)
+	var y := storey_y(storey) + (ground_h(cell) if storey == 0 else 0.0)
+	var yaw := 0.0
+	var long: int = f.get("long", 0)
+	if f.kind == "bed" and long != 0:
+		yaw = 0.0 if long == 2 else (PI * 0.5 if long == 1 else -PI * 0.5)
+	else:
+		for d in [Vector2i.UP, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.DOWN]:
+			if _is_wall_at(cell + d, storey):
+				# The model's back (-Z) toward that wall.
+				yaw = atan2(-float(d.x), -float(d.y))
+				break
+	var shop := ""
+	if world.building_at.has(cell):
+		var b: Dictionary = world.building_at[cell].data
+		shop = b.get("table", b.get("kind", ""))
+	var xf := Transform3D(Basis(Vector3.UP, yaw), Vector3(cell.x + 0.5, y, cell.y + 0.5))
+	Furniture3D.build(st, xf, f.kind, f.get("seed", f.get("id", 0)), shop, long != 0)
 
 
-func _furniture(st: SurfaceTool, kind: String, cell: Vector2i, storey: int, _bld: Dictionary) -> void:
-	var s: Array = FURNITURE.get(kind, [0.8, 0.6, 0.9])
-	var y := storey_y(storey) + (0.1 if storey == 0 else 0.0)
-	box(st, Vector3(cell.x + 0.5, y + s[2] * 0.5, cell.y + 0.5), Vector3(minf(s[0], 0.95), s[2], minf(s[1], 0.95)), Color("8a7a64"))
+## One cell of a flight of stairs: the flight is the line of stairs cells it
+## is in (up and down the room, or across); it climbs a whole storey from the
+## front end (+Z, or +X) to the back.
+var _stair_cells := {}
+
+
+func _stairs(st: SurfaceTool, f: Dictionary) -> void:
+	if _stair_cells.is_empty():
+		for d in world.decor:
+			if d.kind == "stairs":
+				_stair_cells[Vector3i(d.cell.x, d.cell.y, d.get("storey", 0))] = true
+	var c: Vector2i = f.cell
+	var s: int = f.get("storey", 0)
+	var along := Vector2i.DOWN if _stair_cells.has(Vector3i(c.x, c.y + 1, s)) or _stair_cells.has(Vector3i(c.x, c.y - 1, s)) else Vector2i.RIGHT
+	# Where this cell is in the flight, counting from its front (bottom) end.
+	var front := c
+	while _stair_cells.has(Vector3i(front.x + along.x, front.y + along.y, s)):
+		front += along
+	var back := c
+	while _stair_cells.has(Vector3i(back.x - along.x, back.y - along.y, s)):
+		back -= along
+	var n := (front - back).x + (front - back).y + 1
+	var i := (front - c).x + (front - c).y
+	var y0 := storey_y(s)
+	var rise := storey_h(s)
+	var per := 5
+	for k in per:
+		var t := float(i * per + k + 1) / (n * per)
+		var off := 0.5 - (k + 0.5) / per  # (toward the back of the cell as it climbs)
+		var at := Vector3(c.x + 0.5, y0 + t * rise - 0.06, c.y + 0.5) + Vector3(along.x, 0, along.y) * off
+		box(st, at, Vector3(1.0 / per + 0.02 if along.x != 0 else 0.9, 0.12, 0.9 if along.x != 0 else 1.0 / per + 0.02), Color("b0a490"))
+
+
+func _is_wall_at(c: Vector2i, storey: int) -> bool:
+	if storey > 0:
+		return world.storeys.get(storey, {}).get(c, -1) == World.IWALL
+	return world.get_tile(c) in [World.IWALL, World.WALL, World.BUILDING]

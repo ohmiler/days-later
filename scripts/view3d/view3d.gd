@@ -11,7 +11,6 @@ const Pose := preload("res://scripts/view3d/pose.gd")
 const W := preload("res://scripts/view3d/weapons.gd")
 
 const RADIUS := 3  # chunks each way from the one you're in
-const BUILD_PER_FRAME := 2  # new chunks made per frame at most (no hitch walking on)
 
 static var on := true  # (F3; saved nowhere yet)
 static var current: View3D = null
@@ -23,6 +22,11 @@ var sun: DirectionalLight3D
 var env: Environment
 var sky_mat: ProceduralSkyMaterial
 var chunks := {}  # Vector2i -> Node3D
+var job := -1  # the chunk being built on a worker thread (WorkerThreadPool task id), -1 none
+var job_cell := Vector2i.ZERO
+var job_node: Node3D = null
+var job_out := {}
+var job_world: World = null
 var bnodes := {}  # building id -> Node3D (its storeys and roof)
 var people := {}  # Player or Zombie -> {holder, sk, kind, phase, last, weapon}
 var doors := {}  # door id -> Node3D
@@ -107,6 +111,7 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_exit_tree_wait()
 	if current == self:
 		current = null
 
@@ -183,6 +188,8 @@ func _process(delta: float) -> void:
 	_camera()
 	_light()
 	_cutaway(me)
+	city.mat.set_shader_parameter("eye_pos", cam.global_position)
+	city.mat.set_shader_parameter("you_pos", cam_target)
 	_lamps()
 	# The 2D film grade was made for flat colours: gentler over the 3D.
 	main.grade_mat.set_shader_parameter("saturation", 1.0)
@@ -198,7 +205,17 @@ func _process(delta: float) -> void:
 	overlay.queue_redraw()
 
 
+func _exit_tree_wait() -> void:
+	if job >= 0:
+		WorkerThreadPool.wait_for_task_completion(job)
+		job = -1
+		if job_node:
+			job_node.free()
+			job_node = null
+
+
 func _clear() -> void:
+	_exit_tree_wait()
 	for n in chunks.values() + people.values().map(func(e): return e.holder) + doors.values() + pickups.values() + corpses.values() + bikes.values():
 		if is_instance_valid(n):
 			n.queue_free()
@@ -215,7 +232,6 @@ func _clear() -> void:
 
 func _stream(focus: Vector3) -> void:
 	var here := Vector2i(int(focus.x) / World.CHUNK, int(focus.z) / World.CHUNK)
-	var made := 0
 	# Nearest first.
 	var want: Array[Vector2i] = []
 	for dy in range(-RADIUS, RADIUS + 1):
@@ -224,12 +240,28 @@ func _stream(focus: Vector3) -> void:
 			if c.x >= 0 and c.y >= 0 and c.x * World.CHUNK < World.W and c.y * World.CHUNK < World.H:
 				want.append(c)
 	want.sort_custom(func(a, b): return (a - here).length_squared() < (b - here).length_squared())
-	for c in want:
-		if not chunks.has(c) and made < BUILD_PER_FRAME:
-			var n := city.build_chunk(c, bnodes)
-			add_child(n)
-			chunks[c] = n
-			made += 1
+	# Chunks are built on a worker thread, one at a time (a chunk with a big
+	# building takes a tenth of a second or more): the game never waits.
+	if job >= 0 and WorkerThreadPool.is_task_completed(job):
+		WorkerThreadPool.wait_for_task_completion(job)
+		job = -1
+		if job_world == main.world and job_node != null:
+			add_child(job_node)
+			chunks[job_cell] = job_node
+			bnodes.merge(job_out)
+		elif job_node != null:
+			job_node.free()
+		job_node = null
+	if job < 0:
+		for c in want:
+			if not chunks.has(c):
+				job_cell = c
+				job_out = {}
+				job_world = main.world
+				var w_city := city
+				var out := job_out
+				job = WorkerThreadPool.add_task(func(): job_node = w_city.build_chunk(c, out))
+				break
 	for c: Vector2i in chunks.keys():
 		if absi(c.x - here.x) > RADIUS + 1 or absi(c.y - here.y) > RADIUS + 1:
 			var n: Node3D = chunks[c]
