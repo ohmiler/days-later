@@ -53,7 +53,7 @@ const SIGN_LOOT := {
 ## Which city generator this is. Saves remember it: a city saved by an older
 ## generator cannot be rebuilt from its seed any more (see SaveGame).
 ## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
-const GEN := 9  # 9: big buildings (hospitals, flats, offices, the mall, the market); 8: zones drawn by hand (Victory Monument)
+const GEN := 10  # 10: the temple and its refugee camp in Victory Monument (Camp); 9: big buildings (hospitals, flats, offices, the mall, the market); 8: zones drawn by hand (Victory Monument)
 const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
 const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
 const MAX_DEPTH := 15
@@ -158,7 +158,8 @@ static func build(w: World, rng: RandomNumberGenerator) -> void:
 	_shop_fronts(w)
 	_zone_exits(w)
 	_landmarks(w)
-	Things.place_jars(w)  # (last of all: new things go after the old ones)
+	Things.place_jars(w)
+	Things.place_camp(w)  # (last of all: new things go after the old ones)
 
 
 ## A zone drawn by hand (data/zones/*.cfg): its streets, roundabout, canal,
@@ -212,10 +213,13 @@ static func _layout_plan(w: World, plan: Dictionary, rng: RandomNumberGenerator)
 					w.blocked[at + Vector2i(dx, dy)] = true  # the monument's base
 	w.fill(Rect2i(0, World.H - 3, World.W, 3), World.SIDEWALK)  # (the south edge: shops face onto it)
 	w.blocks = []
+	w.camps = []
 	for b in plan.get("blocks", []):
 		var br := Rect2i(b.rect[0], b.rect[1], b.rect[2], b.rect[3])
 		w.blocks.append({rect = br, use = b.get("use", "shophouses"), name = b.get("name", "")})
-		if BLOCK_USES.has(w.blocks[-1].use):
+		if w.blocks[-1].use == "temple":
+			_camp_block(w, br, w.blocks[-1].name, rng)
+		elif BLOCK_USES.has(w.blocks[-1].use):
 			_big_block(w, br, w.blocks[-1].use, w.blocks[-1].name, rng)
 		else:
 			_shophouse_block(w, br, rng)
@@ -844,6 +848,36 @@ static func _temple_block(w: World, b: Rect2i, rng: RandomNumberGenerator) -> vo
 	for p in [Vector2i(3, 3), Vector2i(4, 13), Vector2i(-4, -4), Vector2i(-7, -9), Vector2i(10, 4)]:
 		var cell := Vector2i(b.position.x + p.x if p.x > 0 else b.end.x + p.x, b.position.y + p.y if p.y > 0 else b.end.y + p.y)
 		w.fill(Rect2i(cell, Vector2i.ONE), World.TREE)
+
+
+const CAMP_GATE := 5  # cells wide, the gate in the middle of each side of a temple's wall
+
+
+## A zone's temple (block `use = "temple"`), where the refugee camp is: a wall
+## round the grounds with a gate in each side, the ordination hall, salas to
+## shelter under, a chedi, trees. What's inside the wall is the camp
+## (World.camps: safe, see Camp); its volunteer and notice board are Things.
+static func _camp_block(w: World, b: Rect2i, name: String, rng: RandomNumberGenerator) -> void:
+	var r := b.grow(-1)
+	w.fill(b, World.SIDEWALK)
+	w.fill(r, World.PLAZA)
+	var c := r.get_center()
+	for x in range(r.position.x, r.end.x):
+		for y in [r.position.y, r.end.y - 1]:
+			if absi(x - c.x) > CAMP_GATE / 2:
+				w.fill(Rect2i(x, y, 1, 1), World.WALL)
+	for y in range(r.position.y, r.end.y):
+		for x in [r.position.x, r.end.x - 1]:
+			if absi(y - c.y) > CAMP_GATE / 2:
+				w.fill(Rect2i(x, y, 1, 1), World.WALL)
+	add_building(w, Rect2i(c.x - 7, r.position.y + 4, 14, 9), "temple", rng)
+	add_building(w, Rect2i(r.end.x - 10, r.position.y + 4, 5, 5), "chedi", rng)
+	add_building(w, Rect2i(r.position.x + 4, r.end.y - 10, 9, 5), "sala", rng)
+	add_building(w, Rect2i(r.end.x - 13, r.end.y - 10, 9, 5), "sala", rng)
+	for p in [Vector2i(3, 3), Vector2i(4, 16), Vector2i(-4, 4), Vector2i(-5, 16), Vector2i(3, -4), Vector2i(-4, -4)]:
+		var cell := Vector2i(r.position.x + p.x if p.x > 0 else r.end.x + p.x, r.position.y + p.y if p.y > 0 else r.end.y + p.y)
+		w.fill(Rect2i(cell, Vector2i.ONE), World.TREE)
+	w.camps.append({rect = r, name = name})
 
 
 static func _condo_block(w: World, b: Rect2i, rng: RandomNumberGenerator) -> void:

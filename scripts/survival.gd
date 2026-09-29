@@ -485,6 +485,8 @@ func _spawn_zombie() -> void:
 		var c := main.world.to_cell(pos)
 		if not main.world.in_bounds(c) or main.world.is_solid(c) or main.world.building_at.has(c):
 			continue  # (never inside a building: a shut home stays shut)
+		if main.world.in_camp(pos, Camp.CLEAR):
+			continue  # (nor in or right round the refugee camp)
 		var too_close := false
 		for q: Player in main.players.values():
 			if q.position.distance_to(pos) < 300:

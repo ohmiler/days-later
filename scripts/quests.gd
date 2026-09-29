@@ -57,7 +57,7 @@ static func first_id() -> String:
 static func problems() -> Array:
 	var out := []
 	var kinds := ["kill", "kill_head", "silent_kill", "have_tag", "have_item", "hold_weapon", "board", "craft", "search",
-			"cook", "boil", "treat", "eat", "drink", "dawn"]
+			"cook", "boil", "treat", "eat", "drink", "dawn", "talk"]
 	for id in DEFS:
 		var d: Dictionary = DEFS[id]
 		for key in ["name", "desc", "objectives"]:
@@ -195,17 +195,21 @@ func server_tick(delta: float) -> void:
 		if not p.quests.has("active"):
 			ensure(p)  # (someone new, or from before there were quests)
 		_refresh(p)
-		_hand_out_daily(p)
 		if p.quests_dirty:
 			p.quests_dirty = false
 			main._notify(p.peer_id, &"quests_sync", [p.quests])
 
 
-## Once the start is done: two everyday tasks for each real day.
-func _hand_out_daily(p: Player) -> void:
+## Once the start is done: two everyday tasks for each real day, from the
+## refugee camp's notice board (Camp.jobs). "new": handed out; "had": today's
+## already; "start": the start isn't done yet.
+func hand_out_daily(p: Player) -> String:
+	ensure(p)
 	var today := real_day()
-	if not _start_done(p) or int(p.quests.get("day", -1)) == today:
-		return
+	if not _start_done(p):
+		return "start"
+	if int(p.quests.get("day", -1)) == today:
+		return "had"
 	p.quests.day = today
 	for id in p.quests.active.keys():
 		if DEFS[id].get("daily", false):
@@ -218,6 +222,7 @@ func _hand_out_daily(p: Player) -> void:
 		start(p, pool[k])
 		pool.remove_at(k)
 	p.quests_dirty = true
+	return "new"
 
 
 func _start_done(p: Player) -> bool:
