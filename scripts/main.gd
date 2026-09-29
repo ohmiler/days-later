@@ -26,6 +26,7 @@ var crafting: Crafting
 var admin: Admin
 var skills: Skills
 var quests: Quests
+var bosses: Bosses
 var vehicles: Vehicles
 var port := PORT  # override with -- --port=N
 var world: World
@@ -147,6 +148,7 @@ func _ready() -> void:
 	admin = _module(Admin.new(), "Admin")
 	skills = _module(Skills.new(), "Skills")
 	quests = _module(Quests.new(), "Quests")
+	bosses = _module(Bosses.new(), "Bosses")
 	vehicles = _module(Vehicles.new(), "Vehicles")
 	world_state = _module(WorldState.new(), "WorldState")
 	phantoms = Phantoms.new()
@@ -590,6 +592,7 @@ func _server_tick(delta: float) -> void:
 			quests.on_death(p)
 	skills.server_tick(delta)
 	quests.server_tick(delta)
+	bosses.server_tick(delta)
 	var t_ai := Time.get_ticks_usec() if profiling else 0
 	for z: Zombie in zombies.values():
 		if not admin.frozen:
@@ -711,7 +714,7 @@ func _module(m: Node, node_name: String) -> Node:
 func _handler(method: StringName) -> Node:
 	if has_method(method):
 		return self
-	for m in [combat, inventory, doors, survival, net, actions, things, crafting, vehicles, admin, skills, quests]:
+	for m in [combat, inventory, doors, survival, net, actions, things, crafting, vehicles, admin, skills, quests, bosses]:
 		if m.has_method(method):
 			return m
 	push_error("No handler for %s" % method)
@@ -978,6 +981,7 @@ func _process(delta: float) -> void:
 			ui.city_map.reveal(me.position)
 			_note_danger(me)
 		ui.city_map.me = me
+		ui.city_map.bosses = bosses.map_marks()
 		var others := []
 		for p: Player in players.values():
 			if p != me and p.alive():

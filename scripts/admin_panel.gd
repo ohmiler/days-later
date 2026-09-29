@@ -101,7 +101,7 @@ func _build() -> void:
 			var opts: Array = [1, 5, 20].map(func(n): return ["×%d" % n, func(): count = n, count == n])
 			opts.append(["ยืนนิ่ง (หุ่นซ้อม)", func(): still = not still, still])
 			y = _row(y, "จำนวน", opts)
-			var kinds := Zombie.KINDS.keys().map(func(k): return [ZOMBIE_NAMES.get(k, k), func(): zombie_requested.emit(k, count, false, still)])
+			var kinds := Zombie.KINDS.keys().map(func(k): return [ZOMBIE_NAMES.get(k, Bosses.DEFS.get(k, {}).get("name", k)), func(): zombie_requested.emit(k, count, false, still)])
 			kinds.append(["ชุดพิเศษ (สุ่ม)", func(): zombie_requested.emit("", count, true, still)])
 			y = _row(y, "เสกรอบตัว", kinds)
 			var admin: Admin = _admin()

@@ -19,7 +19,11 @@ const KINDS := {
 	"guard": {speed = 36.0, hp = 75.0, dmg = 8.0, girth = 1.1, door = 1.0},
 	# The evening aerobics class never stopped: dancing on the spot till it hears you.
 	"aerobic": {speed = 42.0, hp = 50.0, dmg = 7.0, girth = 0.9, door = 0.8},
+	# Bosses (data/bosses.cfg): `armour` is the share of a blow below the head
+	# their gear stops; they don't go down to a kick or lose limbs.
+	"sergeant": {speed = 34.0, hp = 250.0, dmg = 16.0, girth = 1.3, door = 3.0, stun = 0.15, armour = 0.85, boss = true},
 }
+const ENRAGE_SPEED := 1.35  # a boss past half its health comes on this much faster
 const CRAWL_SPEED := 0.3  # a crawler (a leg cut off) moves at this much of its speed
 const FRENZY := 9.0  # a junkie chases this long, then burns out...
 const SPENT := 3.5  # ...and lies there spent this long
@@ -108,6 +112,8 @@ var missing := 0  # Look.LOST_* bits; arms can be cut off in a fight
 var flags := 0  # 1 = lunging, 2 = down, 8 = holding someone; from the server fields, or from snapshots
 var storey := 0  # 0 on the ground, else the floor upstairs it's on (World.storey_map): it followed someone up the stairs
 var dummy := false  # server: an admin's practice dummy (Admin): stands still, thinks nothing, can still be hit and killed
+var hurt_by := {}  # server, bosses: peer_id -> damage they did (each gets the boss's drops)
+var enraged := false  # server, bosses: past half its health (Bosses)
 var home := -1  # a big building it was shut in (Survival._tick_trapped): its death counts there
 var lift := 0.0  # drawn this far up (eases to its storey while upstairs)
 var climb := Vector2i(-1, -1)  # server: the stairs it is heading for, after someone on the other floor
@@ -416,8 +422,21 @@ func crawler() -> bool:
 	return missing & Look.LOST_LEG != 0
 
 
-## Server: knocked flat by a kick.
+## One of the bosses (data/bosses.cfg).
+func is_boss() -> bool:
+	return KINDS[kind].get("boss", false)
+
+
+## How much of a blow to `zone` gets through its gear (a boss's armour stops
+## all but blows to the head).
+func armour_k(zone: String) -> float:
+	return 1.0 if zone == "head" else 1.0 - KINDS[kind].get("armour", 0.0)
+
+
+## Server: knocked flat by a kick (never a boss).
 func knock_down() -> void:
+	if is_boss():
+		return
 	down_t = DOWN_TIME
 	long_down = false
 	lunge_t = 0.0
@@ -561,6 +580,8 @@ func _ready() -> void:
 			skin = skin.lerp(Color("c8b870"), 0.35).darkened(0.1)  # sallow
 		"guard", "aerobic":
 			_uniform()
+	if is_boss():
+		_uniform()
 	if not outfit.is_empty():
 		apply_outfit(outfit)
 	# No two shamble quite the same.
@@ -572,16 +593,18 @@ func _ready() -> void:
 	gore = r2.randi() % 30
 	hair_style = ["short", "short", "long", "buzz", "bald", "ponytail"][r2.randi() % 6]
 	facing = RandomNumberGenerator.new().randf_range(-PI, PI) if zid == 0 else float(zid * 2654435761 % 6283) / 1000.0 - PI  # standing about, facing anywhere
-	if outfit.is_empty() and r2.randf() < 0.07:
+	if outfit.is_empty() and r2.randf() < 0.07 and not is_boss():
 		missing = Look.LOST_ARM_L if r2.randf() < 0.5 else Look.LOST_ARM_R  # lost an arm before it turned
 	if kind == "runner":
 		vary.tilt += Vector2(1.3, 0.9)  # the head thrust forward and low even standing: ready to go
-	height = r2.randf_range(0.92, 1.08)
+	height = r2.randf_range(0.92, 1.08) if not is_boss() else 1.12
 	grime = r2.randf_range(0.25, 0.55) if outfit.is_empty() else 0.15  # (a survivor who turned: not long in the dirt)
 	_set_wear(wear)  # (dirtied as filthy as it turned out)
 
 
 static func kind_for(id: int) -> String:
+	if Bosses.is_zid(id):
+		return Bosses.kind_at(id)
 	# Some belong to places (the id says where it's from: Main.new_zid).
 	var place: String = Items.ZOMBIE_PLACES[id % Items.ZOMBIE_PLACES.size()]
 	var h2 := (id * 40503 + 7) % 100
@@ -627,6 +650,8 @@ func _uniform() -> void:
 		w2.body = "guard_shirt"
 		w2.neck = "whistle"
 		w2.legs = "slacks"
+	elif is_boss():
+		w2 = Bosses.DEFS[kind].get("wear", {}).duplicate()
 	elif kind == "aerobic":
 		w2.body = "tanktop#%d" % (zid % 100000)
 		w2.legs = "shorts"

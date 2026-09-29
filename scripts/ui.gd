@@ -30,6 +30,7 @@ var statuses: StatusRow
 var weapons: WeaponPanel
 var vitals: Vitals
 var clock: Clock
+var boss_bar: BossBar  # a boss close by: its name and health, top middle (Bosses)
 var quest_tracker: QuestTracker  # what you're working toward, under the clock (Quests)
 var tut: TutorialCard
 var feed: VBoxContainer
@@ -638,6 +639,12 @@ func _build_hud() -> void:
 	statuses.offset_right = 24 + 600
 	statuses.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(statuses)
+
+	boss_bar = BossBar.new()
+	boss_bar.anchor_right = 1.0
+	boss_bar.offset_top = 64
+	boss_bar.offset_bottom = 110
+	hud.add_child(boss_bar)
 
 	quest_tracker = QuestTracker.new()
 	quest_tracker.anchor_left = 1.0

@@ -66,6 +66,13 @@ func req_zombie(pos: Vector2, kind: String, n := 1, special := false, dummy := f
 	var p := main._sender()
 	if not _allowed(p):
 		return
+	if Zombie.KINDS.get(kind, {}).get("boss", false):
+		# A boss's id says which it is (Bosses): one not from any building.
+		for i in clampi(n, 1, 5):
+			var z := main._add_zombie(Bosses.zid_for(100000 + main.next_zid, kind), pos + Vector2(i * 14.0, 0))
+			z.storey = p.storey
+			main.next_zid += 1
+		return
 	for i in clampi(n, 1, 50):
 		for tries in 200000:
 			var ok := kind == "" or not Zombie.KINDS.has(kind) or Zombie.kind_for(main.next_zid) == kind

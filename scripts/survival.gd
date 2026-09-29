@@ -565,8 +565,6 @@ func _let_out(rec: Dictionary) -> void:
 	var n: int = main.world_state.state("building", rec.id).get("trapped", 0)
 	var zids := []
 	_awake[rec.id] = zids
-	if n <= 0:
-		return
 	var r: Rect2i = rec.rect
 	var spots := []  # [cell, storey]
 	for y in range(r.position.y, r.end.y):
@@ -582,9 +580,10 @@ func _let_out(rec: Dictionary) -> void:
 					spots.append([c, f])
 	if spots.is_empty():
 		return
+	main.bosses.let_out(rec, spots, zids)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(rec.seed) + n * 131
-	for i in n:
+	for i in maxi(0, n):
 		var s: Array = spots[rng.randi() % spots.size()]
 		var pos: Vector2 = w.to_pos(s[0]) + Vector2(rng.randf_range(-3, 3), rng.randf_range(-3, 3))
 		var z: Zombie = main._add_zombie(main.new_zid(pos), pos)
@@ -599,6 +598,8 @@ func trapped_died(z: Zombie) -> void:
 	if z.home < 0 or not _awake.has(z.home):
 		return
 	_awake[z.home].erase(z.zid)
+	if z.is_boss():
+		return  # (not one of the ordinary shut-in dead: Bosses keeps its own count)
 	var n: int = main.world_state.state("building", z.home).get("trapped", 0)
 	main.world_state.set_state("building", z.home, {trapped = maxi(0, n - 1)})
 

@@ -11,6 +11,7 @@ extends SceneTree
 
 const OUTFITS := [
 	{},
+	{body = "army_shirt", over = "vest", face = "gasmask", head = "bucket#27", legs = "cargo#21", feet = "boots"},  # (the sergeant: data/bosses.cfg)
 	{head = "cap", body = "hoodie", legs = "jeans", feet = "sneakers", back = "schoolbag", face = "sunglasses"},
 	{head = "fullface", body = "bikerjacket", over = "rider", hands = "leathergloves", feet = "boots", knees = "kneepads"},
 	{head = "helmet", over = "stabvest", back = "backpack", hands = "gloves", arms = "armguards", face = "mask", knees = "shinguards"},

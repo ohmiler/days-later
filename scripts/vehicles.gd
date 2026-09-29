@@ -211,7 +211,7 @@ func server_tick(p: Player, delta: float) -> void:
 				continue
 			var dir := p.ride_vel.normalized()
 			z.knock_down()
-			z.hp -= speed * 0.15
+			z.hp -= speed * 0.15 * z.armour_k("body")
 			main.combat.fx_hit.rpc(z.zid, z.position, dir, true, p.peer_id, "", z.hp)
 			main.fx_sound.rpc("kick", z.position)
 			if z.hp <= 0.0:
