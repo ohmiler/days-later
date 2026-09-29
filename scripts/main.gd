@@ -12,6 +12,7 @@ const HOUR := DAY_LENGTH / 24.0  # a game hour, in seconds of game time
 const MAX_ZOMBIES := 40  # around each player (see Survival._spawn_zombie); the city itself is far bigger
 const NEAR := 900.0  # px: a player's surroundings, where zombies are about and sent to them
 const SNAPSHOT_RATE := 0.05
+const SERVER_FPS := 30  # a dedicated server thinks this often (tests/capacity.gd measures what that costs)
 const SOCKET_BUFFER := 4 * 1024 * 1024  # bytes each way (see _socket)
 # Feature modules, split out of this file. Each is a child node with a fixed
 # name, so its network calls line up between server and clients.
@@ -228,6 +229,7 @@ func _ready() -> void:
 			zone = arg.trim_prefix("--zone=")  # a dedicated server for this zone (see Zones)
 	for arg in args:
 		if arg == "--server":
+			Engine.max_fps = SERVER_FPS  # (left alone it runs ~130 a second: four times the work for nothing)
 			_host(true, SaveGame.has_world() and not args.has("--new"))
 			return
 		elif arg.begins_with("--join="):
@@ -728,7 +730,7 @@ func _notify(peer_id: int, method: StringName, args: Array) -> void:
 	var h := _handler(method)
 	if peer_id == multiplayer.get_unique_id():
 		h.callv(method, args)
-	else:
+	elif multiplayer.get_peers().has(peer_id):  # (not someone who just dropped: nobody to tell)
 		h.callv("rpc_id", [peer_id, method] + args)
 
 
