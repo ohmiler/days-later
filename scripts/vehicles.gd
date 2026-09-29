@@ -17,6 +17,9 @@ const HOTWIRE_TIME := 8.0
 const FUEL_CAN := 3.0  # litres in a jerrycan
 const HIT_SPEED := 60.0  # faster than this, a zombie in the way is knocked flat
 const SLOW_GROUND := 0.5  # grass and dirt, for bikes not built for it
+const CAR_REACH := 34.0
+const CAR_TURN := 80.0  # px: a car's tightest turn (its radius), about 5 m
+const CAR_BACK := 0.35  # a car backs up this much of its top speed
 const KEY_CHANCE := 0.15  # bikes left with the key still in (few: a bike worth keeping is worth looking after)
 ## Steering: a moving bike swings round toward where you steer at so many
 ## radians a second (tight at a crawl, wide at full speed); below CRAWL it
@@ -49,7 +52,7 @@ static func _load() -> Dictionary:
 		var m := {}
 		for key in cf.get_section_keys(id):
 			m[key] = cf.get_value(id, key)
-		m.merge({offroad = false, electric = false}, false)
+		m.merge({offroad = false, electric = false, car = false}, false)
 		out[id] = m
 	return out
 
@@ -71,6 +74,15 @@ static func setup(w: World) -> void:
 		rec.vehicle = w.vehicles.size() - 1
 
 
+static func is_car(v: Dictionary) -> bool:
+	return MODELS.get(v.model, {}).get("car", false)
+
+
+## How close you get in to a vehicle: a car from beside its doors.
+static func reach_of(v: Dictionary) -> float:
+	return CAR_REACH if is_car(v) else REACH
+
+
 static func title_of(v: Dictionary) -> String:
 	var m: Dictionary = MODELS[v.model]
 	return "%s · %s %d%%" % [m.name, "แบต" if m.electric else "น้ำมัน", roundi(v.fuel / m.fuel * 100.0)]
@@ -81,6 +93,8 @@ static func title_of(v: Dictionary) -> String:
 ## server and the rider's own machine so what they see matches what happens.
 ## Returns how fast it was going if it just ran into something (else 0).
 static func step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World) -> float:
+	if is_car(v):
+		return _car_step(p, v, move, delta, w)
 	var m: Dictionary = MODELS[v.model]
 	var top: float = m.speed
 	if not m.offroad and w.get_tile(w.to_cell(p.position)) in [World.GRASS, World.DIRT]:
@@ -119,6 +133,60 @@ static func step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World
 	return hit
 
 
+## A car: hold a direction and it drives round toward it (never turning on
+## the spot); hold the way behind it and it brakes, then backs up. It hits
+## walls, trees and parked vehicles with its whole length (CarArt.SEDAN).
+static func _car_step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World) -> float:
+	var m: Dictionary = MODELS[v.model]
+	var spd: float = v.get("spd", 0.0)
+	var heading: float = v.dir
+	var top: float = m.speed
+	if v.fuel <= 0.0 or v.hp <= 0 or p.grabbed_by >= 0:
+		top = 0.0
+	var want := 0.0
+	var steer := 0.0
+	if move.length() > 0.1:
+		var ang := wrapf(move.angle() - heading, -PI, PI)
+		if absf(ang) < 2.0 or spd > 20.0:
+			want = top  # forward, swinging round toward it
+			steer = clampf(ang, -1.0, 1.0)
+		else:
+			want = -top * CAR_BACK  # it's behind you: back up, the tail swinging toward it
+			steer = clampf(wrapf(move.angle() - (heading + PI), -PI, PI), -1.0, 1.0)
+	var rate: float = m.accel if signf(want) == signf(spd) and absf(want) > absf(spd) else m.accel * 2.2
+	spd = move_toward(spd, want, rate * delta)
+	heading += steer * absf(spd) / CAR_TURN * delta
+	var pos: Vector2 = v.pos + Vector2.from_angle(heading) * spd * delta
+	var hit := 0.0
+	if car_blocked(w, pos, heading, CarArt.SEDAN):
+		hit = absf(spd)
+		spd *= -0.25  # (a bump: it bounces back a little)
+	else:
+		v.pos = pos
+		v.dir = heading
+	v.spd = spd
+	v.view = "car"
+	p.position = v.pos
+	p.ride_vel = Vector2.from_angle(v.dir) * spd
+	_place(v)
+	return hit
+
+
+## Would a car `spec` at `pos` facing `heading` run into anything?
+static func car_blocked(w: World, pos: Vector2, heading: float, spec: Dictionary) -> bool:
+	var fwd := Vector2.from_angle(heading)
+	var right := fwd.orthogonal()
+	var h: float = spec.len * 0.5
+	var hw: float = spec.wid * 0.5
+	for c in [Vector2(h, hw), Vector2(h, -hw), Vector2(-h, hw), Vector2(-h, -hw), Vector2(h, 0), Vector2(-h, 0), Vector2(0, hw), Vector2(0, -hw),
+			Vector2(h * 0.5, hw), Vector2(h * 0.5, -hw), Vector2(-h * 0.5, hw), Vector2(-h * 0.5, -hw)]:
+		var q: Vector2 = pos + fwd * c.x + right * c.y
+		var cell := w.to_cell(q)
+		if not w.in_bounds(cell) or w.is_solid(cell) or w.get_tile(cell) in [World.FLOOR, World.DOOR] or w._in_vehicle(cell, q).has_area():
+			return true
+	return false
+
+
 ## Whether a bike's headlight is on: at night, with someone riding it and
 ## something in the tank. It lights the road, and shows the rider up to zombies.
 static func headlight_on(v: Dictionary, w: World) -> bool:
@@ -145,7 +213,7 @@ static func beam_texture() -> Texture2D:
 
 ## Face a bike the way it is going (only once it is really moving).
 static func turn_to(v: Dictionary, vel: Vector2) -> void:
-	if vel.length() < 12.0:
+	if vel.length() < 12.0 or is_car(v):
 		return
 	var prev := [Look.SIDE, v.dir < 0.0] if v.view == "side" else [Look.FRONT if v.view == "front" else Look.BACK, false]
 	var pv := Look.pick_view(vel.angle(), prev)
@@ -156,6 +224,13 @@ static func turn_to(v: Dictionary, vel: Vector2) -> void:
 
 ## Move a bike's drawing to where the bike is.
 static func _place(v: Dictionary) -> void:
+	if v.rec.is_empty():  # (a car made after the city: it draws itself)
+		var n: Node2D = v.get("node")
+		if n:
+			n.position = v.pos
+			n.visible = v.rider == 0
+			n.queue_redraw()
+		return
 	v.rec.pos = v.pos
 	v.rec.dir = v.dir
 	v.rec.view = v.view
@@ -204,10 +279,13 @@ func server_tick(p: Player, delta: float) -> void:
 		main._make_noise(p.position, m.noise * (0.5 + 0.5 * speed / m.speed))
 	# Running into zombies knocks them down, and knocks the bike about.
 	if speed > HIT_SPEED:
+		var car := is_car(v)
+		var nose: float = CarArt.SEDAN.len * 0.5 + 4.0 if car else 12.0
+		var width: float = CarArt.SEDAN.wid * 0.5 if car else RADIUS
 		for z: Zombie in main.zombies.values():
-			# Anything the front of the bike is about to go through.
-			var ahead := Geometry2D.get_closest_point_to_segment(z.position, p.position, p.position + p.ride_vel.normalized() * 12.0)
-			if z.down_t > 0.0 or z.position.distance_to(ahead) > RADIUS + Zombie.RADIUS + 2.0:
+			# Anything the front of the bike (or car) is about to go through.
+			var ahead := Geometry2D.get_closest_point_to_segment(z.position, p.position, p.position + p.ride_vel.normalized() * nose)
+			if z.down_t > 0.0 or z.position.distance_to(ahead) > width + Zombie.RADIUS + 2.0:
 				continue
 			var dir := p.ride_vel.normalized()
 			z.knock_down()
@@ -217,8 +295,10 @@ func server_tick(p: Player, delta: float) -> void:
 			if z.hp <= 0.0:
 				main.combat._kill_zombie(z, signf(dir.x) if dir.x != 0.0 else 1.0, "stomp")
 				p.kills += 1
-			v.hp -= 3
-			p.ride_vel *= 0.6
+			v.hp -= 1 if car else 3
+			p.ride_vel *= 0.85 if car else 0.6
+			if car:
+				v.spd = v.get("spd", 0.0) * 0.85
 			main._notify(p.peer_id, &"jolt", [2.0])
 			if v.hp <= 0:
 				main._toast(p, "รถพังแล้ว!")
@@ -308,7 +388,13 @@ func dismount(p: Player) -> void:
 ## Stand someone beside the bike (first free spot, `first` tried before the rest).
 func _step_off(p: Player, v: Dictionary, first := Vector2(0, 9)) -> void:
 	p.ride_vel = Vector2.ZERO
-	for off in [first, Vector2(0, 9), Vector2(0, -9), Vector2(10, 0), Vector2(-10, 0)]:
+	var offs := [first, Vector2(0, 9), Vector2(0, -9), Vector2(10, 0), Vector2(-10, 0)]
+	if is_car(v):
+		v.spd = 0.0
+		var side := Vector2.from_angle(v.dir).orthogonal() * (CarArt.SEDAN.wid * 0.5 + 7.0)
+		var along := Vector2.from_angle(v.dir) * (CarArt.SEDAN.len * 0.5 + 7.0)
+		offs = [side, -side, along, -along]  # (out of a door, else by a bumper)
+	for off in offs:
 		if main.world.can_stand(v.pos + off, Player.RADIUS):
 			p.position = v.pos + off
 			return
@@ -346,7 +432,7 @@ func actions_for(p: Player, id: int) -> Array:
 	var m: Dictionary = MODELS[v.model]
 	var out := []
 	if v.rider != 0:
-		out.append(Interact._act("pillion", "ซ้อนท้าย", v.pillion == 0, "มีคนซ้อนแล้ว"))
+		out.append(Interact._act("pillion", "นั่งข้างคนขับ" if is_car(v) else "ซ้อนท้าย", v.pillion == 0, "มีคนนั่งแล้ว" if is_car(v) else "มีคนซ้อนแล้ว"))
 		return out
 	var why := ""
 	if v.hp <= 0:
@@ -355,7 +441,7 @@ func actions_for(p: Player, id: int) -> Array:
 		why = "ไม่มีกุญแจ · ต่อสายตรงก่อน"
 	elif v.fuel <= 0.0:
 		why = "แบตหมด" if m.electric else "น้ำมันหมด · เติมจากแกลลอน"
-	out.append(Interact._act("ride", "ขี่", why == "", why))
+	out.append(Interact._act("ride", "ขับ" if is_car(v) else "ขี่", why == "", why))
 	if not v.key:
 		var tool := p.holds(["screwdriver"])
 		out.append(Interact._act("hotwire", "ต่อสายตรง (ถือไขควง)", tool, "ต้องถือไขควงไว้ในมือ"))
@@ -383,7 +469,33 @@ func restore(ch: Dictionary) -> void:
 
 
 func send_all(peer: int) -> void:
+	for v in main.world.vehicles:
+		if v.get("spawned", false):
+			vehicle_add.rpc_id(peer, v.id, v.model, v.pos, v.dir)
 	vehicles_sync.rpc_id(peer, changed())
+
+
+## Server (admin menu): a car here, facing `heading`, key in, tank full.
+func spawn_car(pos: Vector2, heading: float) -> void:
+	vehicle_add.rpc(main.world.vehicles.size(), "sedan", pos, heading)
+
+
+## Every machine: a vehicle that wasn't in the city when it was built.
+@rpc("authority", "call_local", "reliable")
+func vehicle_add(id: int, model: String, pos: Vector2, heading: float) -> void:
+	var w: World = main.world
+	if id != w.vehicles.size():
+		return  # (already have it)
+	var m: Dictionary = MODELS[model]
+	var v := {id = id, model = model, seed = id * 7919, pos = pos, dir = heading, view = "car", fuel = m.fuel, hp = m.hp, key = true,
+			upright = true, rider = 0, pillion = 0, rec = {}, spd = 0.0, spawned = true}
+	var node := CarProp.new()
+	node.v = v
+	node.z_index = 1
+	main.add_child(node)
+	v.node = node
+	w.vehicles.append(v)
+	_place(v)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -393,6 +505,8 @@ func vehicles_sync(ch: Dictionary) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func vehicle_state(id: int, pos: Vector2, dir: float, fuel: float, hp: int, key: bool, upright: bool, view: String) -> void:
+	if id >= main.world.vehicles.size():
+		return  # (one we haven't been told about yet)
 	var v: Dictionary = main.world.vehicles[id]
 	_apply(v, [pos, dir, fuel, hp, key, upright, view])
 

@@ -92,6 +92,16 @@ func req_zombie(pos: Vector2, kind: String, n := 1, special := false, dummy := f
 		main.next_zid += 1
 
 
+## A car beside you (trial), facing the way you look.
+@rpc("any_peer", "call_remote", "reliable")
+func req_car() -> void:
+	var p := main._sender()
+	if not _allowed(p):
+		return
+	var dir := p.aim.normalized() if p.aim.length() > 0.1 else Vector2.RIGHT
+	main.vehicles.spawn_car(p.position + dir * 50.0, dir.angle())
+
+
 ## Remove every zombie within `radius` of you.
 @rpc("any_peer", "call_remote", "reliable")
 func req_clear(radius: float) -> void:
