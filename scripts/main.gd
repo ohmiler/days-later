@@ -1078,6 +1078,7 @@ func _process(delta: float) -> void:
 		shake = move_toward(shake, 0.0, delta * 14.0)
 		if not me.on_roof:
 			_fade_trees_near(me.position)
+		_step_fades(delta)
 		if me.muffled() != _muffled:
 			_muffled = me.muffled()
 			Sfx.set_muffled(_muffled)
@@ -1150,6 +1151,7 @@ func _process(delta: float) -> void:
 
 
 var faded: Array = []
+var fade_goal := {}  # node -> the alpha it is easing toward (see _step_fades)
 
 
 ## The light over the city through the day, by the clock's hour: moonlit
@@ -1335,14 +1337,14 @@ func _fade_over(pos: Vector2) -> void:
 		for dx in range(-2, 3):
 			var t: TreeProp = world.props.get(c + Vector2i(dx, dy))
 			if t and not faded.has(t):
-				t.modulate.a = 0.45
+				fade_goal[t] = 0.45
 				faded.append(t)
 	for k in range(1, 14):  # (the tallest roofs reach about this many cells north)
 		for dx in range(-1, 2):
 			var b = world.building_at.get(c + Vector2i(dx, k))
 			if b and is_instance_valid(b) and b != hidden_building and b.visible and not faded.has(b) \
 					and pos.y < b.position.y and b.visual_rect().intersects(body):
-				b.modulate.a = 0.3
+				fade_goal[b] = 0.3
 				faded.append(b)
 
 
@@ -1351,14 +1353,14 @@ func _fade_over(pos: Vector2) -> void:
 func _fade_trees_near(pos: Vector2) -> void:
 	for t in faded:
 		if is_instance_valid(t):
-			t.modulate.a = 1.0
+			fade_goal[t] = 1.0
 	faded.clear()
 	var c := world.to_cell(pos)
 	for dy in range(0, 7):  # (trees are big: see TreeProp.SCALE)
 		for dx in range(-3, 4):
 			var t: TreeProp = world.props.get(c + Vector2i(dx, dy))
 			if t:
-				t.modulate.a = 0.45
+				fade_goal[t] = 0.45
 				faded.append(t)
 	var body := Rect2(pos + Vector2(-6, -28), Vector2(12, 28))
 	# Inside a building, all of it: the tall ones south of it stand in front of its rooms.
@@ -1369,7 +1371,7 @@ func _fade_trees_near(pos: Vector2) -> void:
 	for b in world.near(pos, 3 if hidden_building else 2):
 		if b is BuildingProp and b != hidden_building and not faded.has(b) and (pos.y < b.position.y and b.visual_rect().intersects(body)
 				or inside.has_area() and b.position.y > inside.end.y and b.visual_rect().intersects(inside)):
-			b.modulate.a = 0.3
+			fade_goal[b] = 0.3
 			faded.append(b)
 	# Inside, the front's doors, windows and shutter (as tall as a real shop
 	# front) would stand over the front of the room: see-through. So do the
@@ -1380,14 +1382,14 @@ func _fade_trees_near(pos: Vector2) -> void:
 			for tx in range(fr.position.x - 3, fr.end.x + 3):
 				var tt: TreeProp = world.props.get(Vector2i(tx, ty))
 				if tt and not faded.has(tt):
-					tt.modulate.a = 0.45
+					fade_goal[tt] = 0.45
 					faded.append(tt)
 		for x in range(fr.position.x, fr.end.x):
 			var id: int = world.door_at.get(Vector2i(x, fr.end.y - 1), -1)
 			if id >= 0 and id < world.door_nodes.size():
 				var dn = world.door_nodes[id]
 				if is_instance_valid(dn) and not faded.has(dn):
-					dn.modulate.a = 0.25
+					fade_goal[dn] = 0.25
 					faded.append(dn)
 	# Anyone your character can see, standing where a roof or a tree is drawn
 	# over them: that turns see-through too, so what you see is never hidden.
@@ -1402,7 +1404,7 @@ func _fade_trees_near(pos: Vector2) -> void:
 	var lifted := pos + Vector2(0, World.BTS_H - 14)
 	for i in world.bts_path.size() - 1:
 		if Geometry2D.get_closest_point_to_segment(lifted, world.bts_path[i], world.bts_path[i + 1]).distance_to(lifted) < 44.0:
-			world.overhead.modulate.a = 0.45
+			fade_goal[world.overhead] = 0.45
 			faded.append(world.overhead)
 			break
 	# Under the skywalk round the monument's circle (a ring drawn raised).
@@ -1411,14 +1413,27 @@ func _fade_trees_near(pos: Vector2) -> void:
 		var ring_r: float = (world.circle.r - 6) * World.TILE
 		var ring_d := (pos + Vector2(0, World.BTS_H * 0.6 - 14.0)).distance_to(ring_at)
 		if ring_d > ring_r - 16.0 and ring_d < ring_r + 40.0:
-			world.overhead.modulate.a = 0.45
+			fade_goal[world.overhead] = 0.45
 			faded.append(world.overhead)
 	if world.bts_row >= 0:
 		var deck_bottom := (world.bts_row + 3) * World.TILE - World.BTS_H + 9
 		var deck_top := (world.bts_row - 1) * World.TILE - World.BTS_H
 		if pos.y - 28 < deck_bottom and pos.y > deck_top:
-			world.overhead.modulate.a = 0.45
+			fade_goal[world.overhead] = 0.45
 			faded.append(world.overhead)
+
+
+## Ease what stands over you toward see-through (and back) in about a
+## seventh of a second, so a roof fades instead of popping.
+func _step_fades(delta: float) -> void:
+	for n in fade_goal.keys():
+		if not is_instance_valid(n):
+			fade_goal.erase(n)
+			continue
+		var a := move_toward(n.modulate.a, fade_goal[n], delta * 7.0)
+		n.modulate.a = a
+		if a == fade_goal[n] and a >= 1.0:
+			fade_goal.erase(n)
 
 
 func _draw_fx() -> void:

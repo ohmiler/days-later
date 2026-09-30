@@ -31,7 +31,7 @@ const TRADE_AWNING := {"ร้านขายยา": Color("2a9a5a"), "คล�
 		"ร้านตัดผม": Color("2a4ab8"), "ก๋วยเตี๋ยวเรือ": Color("d83a2a"), "ข้าวมันไก่": Color("e08a2a")}
 ## Trades that also hang a tall sign board down the front, old Chinese style.
 const TALL_SIGNS := ["ร้านทอง", "ร้านขายยา", "ร้านวัสดุ", "ขายส่ง", "ก๋วยเตี๋ยวเรือ", "โจ๊ก ข้าวต้ม", "โรงรับจำนำ"]
-const GRAFFITI := ["ช่วยด้วย", "มีคนรอด", "อย่าเข้า", "หนีไปวัด", "ติดเชื้อ", "SOS", "ไม่มีของแล้ว"]
+const GRAFFITI := ["ช่วยด้วย", "มีคนรอด", "อย่าเข้า", "หนีไปวัด", "ติดเชื้อ", "SOS"]
 
 
 ## How tall a building is drawn (px up from its footprint to the roof).

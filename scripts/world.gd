@@ -170,6 +170,11 @@ func _spawn_props() -> void:
 			# Drawn at the old height, stretched to the storey: a door a person walks through upright.
 			n.scale = Vector2(1, DoorProp.SHUTTER_STRETCH if d.kind == "shutter" else (DoorProp.DOOR_STRETCH if d.kind == "door" else DoorProp.WINDOW_STRETCH))
 		n.z_index = 1
+		# A front on the building's north side: the shutter (as tall as a shop
+		# front) would stand over whoever is at the door, hiding them. Under.
+		var fronted: BuildingProp = building_at.get(d.cell)
+		if not d.side and d.kind in ["shutter", "door"] and fronted and fronted.data.get("facing", "s") == "n":
+			n.z_index = 0
 		_stream(n, n.position)
 		door_nodes.append(n)
 		astar.set_point_solid(d.cell, d.closed)

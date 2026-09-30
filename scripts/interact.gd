@@ -12,6 +12,7 @@ const PICKUP_REACH := 14.0
 const CONTAINER_REACH := 20.0
 const TRAP_REACH := 12.0
 const STOMP_REACH := 18.0
+const DOOR_REACH := 24.0  # (the prompt shows a step before you touch it)
 
 
 ## The thing E would act on for player `p`, or {} if nothing is in reach.
@@ -79,7 +80,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 	var trap := trap_near(w, p.position)
 	if trap >= 0:
 		out.append({kind = "trap", id = trap, pos = w.to_pos(w.doors[trap].cell), title = World.BUILDS[w.doors[trap].kind].name})
-	var door := w.door_near(p.position, 16.0)
+	var door := w.door_near(p.position, DOOR_REACH)
 	if door >= 0 and not w.is_built(door):
 		var d: Dictionary = w.doors[door]
 		var win := w.is_window(door)
