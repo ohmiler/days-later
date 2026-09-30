@@ -50,6 +50,13 @@ func run() -> void:
 	simulate(0.2)
 	v.dir = PI * 0.5
 	v.spd = 100.0
+	for dx in range(-160, 161, 8):  # (somewhere the way down is clear: the street has cars parked along it)
+		var ok := true
+		for dy in range(0, 50, 6):
+			ok = ok and not Vehicles.car_blocked(w, v.pos + Vector2(dx, dy), PI * 0.5, CarArt.SEDAN)
+		if ok:
+			v.pos += Vector2(dx, 0)
+			break
 	me.move = Vector2(1, -1).normalized()
 	simulate(0.3)
 	check(v.dir > PI * 0.5 + 0.02, "heading down, D is still the car's right, the screen's left (%.2f rad)" % v.dir)

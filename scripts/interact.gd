@@ -105,7 +105,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 		if Rect2(r.position * World.TILE, r.size * World.TILE).grow(12.0).has_point(p.position) and p.storey == 0:
 			out.append({kind = "exit", id = e.id, pos = p.position + Vector2(0, -2), title = "ทางไป" + Zones.name_of(e.to)})
 	for n in w.near(p.position):
-		if n is StreetProp and n.data.kind in StreetProp.CLIMB and p.storey == 0 \
+		if n is StreetProp and n.data.kind in StreetProp.CLIMB and p.storey == 0 and not n.data.get("moved", false) \
 				and p.position.distance_to(StreetProp.middle(n.data)) < CAR_REACH:
 			out.append({kind = "car", id = n.data.id, pos = StreetProp.middle(n.data), title = "รถ"})
 	_seats(w, p, here, out)

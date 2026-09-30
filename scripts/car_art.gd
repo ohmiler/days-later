@@ -18,7 +18,7 @@ const COLOURS := [Color("b8302a"), Color("e8e4dc"), Color("2a62a8"), Color("3a3c
 ## The sedan in its own colour (from the vehicle's seed).
 static func spec_of(v: Dictionary) -> Dictionary:
 	var s := SEDAN.duplicate()
-	s.col = COLOURS[int(v.get("seed", 0)) % COLOURS.size()]
+	s.col = v.color if v.get("color") is Color else COLOURS[int(v.get("seed", 0)) % COLOURS.size()]
 	return s
 
 

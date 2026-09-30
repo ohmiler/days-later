@@ -168,6 +168,8 @@ func _draw() -> void:
 
 
 func _paint() -> void:
+	if data.get("art_gone", false):
+		return  # (a parked car: drawn as a real car by CarProp; this stays for climbing on)
 	match data.kind:
 		"pole":
 			_pole()

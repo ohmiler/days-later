@@ -73,6 +73,122 @@ static func setup(w: World) -> void:
 				dir = rec.get("dir", 1.0 if rec.seed % 2 else -1.0), view = rec.get("view", "side"), fuel = m.fuel * h * 0.6, hp = m.hp,
 				key = World.hash01(rec.seed, 5, 23) < KEY_CHANCE, upright = rec.seed % 7 != 3, rider = 0, pillion = 0, rec = rec})
 		rec.vehicle = w.vehicles.size() - 1
+	_park_cars(w)
+
+
+## Cars parked in the city. The street's cars and taxis are real cars (CarArt,
+## the same as the one the admin menu makes), standing along the kerb facing the
+## way that side's traffic goes (on the left). About one in five runs (some with
+## the key in, some needing a hotwire); the rest are dead shells: still solid,
+## still climbable, never started. Cars left out in the lanes go, and so do
+## wrecks that aren't at a junction: the road keeps a clear way through.
+const RUNNING := 0.2
+const PARK_SHIFT := 6.5  # (a car is wider than its lane of cells: pulled in off the kerb)
+
+
+## The five cells a street vehicle takes (see CityGen._size_vehicles).
+static func _strip(rec: Dictionary) -> Array:
+	var base := Vector2i((rec.pos / World.TILE).floor())
+	var out := []
+	for i in 5:
+		out.append(Vector2i(base.x + i, base.y - 1) if rec.get("horizontal", true) else Vector2i(base.x, base.y - 1 - i))
+	return out
+
+
+## How many cells from `c` to the nearest pavement or building across the street,
+## and which way: [cells, -1 | +1 along the cross axis].
+static func _kerb(w: World, c: Vector2i, horizontal: bool) -> Array:
+	var back := Vector2i.UP if horizontal else Vector2i.LEFT
+	for r in range(1, 12):
+		for side in [-1, 1]:
+			if w.get_tile(c + back * r * side) not in [World.ROAD, World.SOI]:
+				return [r, side]
+	return [99, 1]
+
+
+static func _park_cars(w: World) -> void:
+	var m: Dictionary = MODELS.get("sedan", {})
+	if m.is_empty():
+		return
+	for rec in w.street_props:
+		if rec.kind not in ["car", "taxi", "wreck"]:
+			continue
+		var strip := _strip(rec)
+		var horizontal: bool = rec.get("horizontal", true)
+		var kerb := _kerb(w, strip[0], horizontal)
+		var owned := strip.filter(func(c): return w.blocked.has(c))
+		if rec.kind == "wreck":
+			# Kept where the road is wide open beside it or it's a junction pile-up; else cleared.
+			var near_junction := strip.any(func(c): return _near_intersection(w, c, 4))
+			if kerb[0] > 2 and not near_junction:
+				rec.culled = true
+				for c in owned:
+					w.blocked.erase(c)
+			continue
+		if kerb[0] > 2:
+			rec.culled = true  # (left out in the lane: gone)
+			for c in owned:
+				w.blocked.erase(c)
+			continue
+		# A car along the kerb: nose the way its side's traffic goes (on the left).
+		var dir: float
+		var centre: Vector2
+		var inward := float(kerb[1]) * -1.0  # (+1: toward +y / +x: away from a kerb on the - side)
+		if horizontal:
+			dir = 0.0 if kerb[1] < 0 else PI
+			centre = Vector2((strip[0].x + 2.5) * World.TILE, (strip[0].y + 0.5) * World.TILE + inward * PARK_SHIFT)
+		else:
+			dir = -PI * 0.5 if kerb[1] < 0 else PI * 0.5
+			centre = Vector2((strip[0].x + 0.5) * World.TILE + inward * PARK_SHIFT, (strip[0].y - 2.0) * World.TILE)
+		var h := World.hash01(rec.seed, 7, 31)
+		var runs := h < RUNNING
+		var v := {id = w.vehicles.size(), model = "sedan", seed = rec.seed, color = rec.get("color", Color.WHITE), pos = centre, dir = dir, view = "car",
+				fuel = m.fuel * (0.25 + 0.5 * World.hash01(rec.seed, 9, 11)) if runs else 0.0, hp = m.hp if runs else 0,
+				key = runs and World.hash01(rec.seed, 5, 23) < 0.35, upright = true, rider = 0, pillion = 0, rec = {}, spd = 0.0, prop = rec, cells = owned}
+		rec.art_gone = true
+		rec.car_vehicle = v.id
+		w.vehicles.append(v)
+		free_cells(w, v)
+		block_parked(w, v)
+
+
+static func _near_intersection(w: World, c: Vector2i, r: int) -> bool:
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if w.in_intersection(c + Vector2i(dx, dy)):
+				return true
+	return false
+
+
+## A parked car's cells are solid to walkers and zombies; while it's driven they
+## are not (it carries its own collision), and where it stops it blocks again.
+static func free_cells(w: World, v: Dictionary) -> void:
+	for c in v.get("cells", []):
+		w.blocked.erase(c)
+		if w.astar.region.has_point(c):
+			w.astar.set_point_solid(c, w.is_solid(c))
+	v.cells = []
+
+
+static func block_parked(w: World, v: Dictionary) -> void:
+	free_cells(w, v)
+	var fwd := Vector2.from_angle(v.dir)
+	var right := fwd.orthogonal()
+	var spec := CarArt.SEDAN
+	var cells := {}
+	for ix in range(-int(spec.len * 0.5) + 2, int(spec.len * 0.5) - 1, 4):
+		for iy in range(-int(spec.wid * 0.5) + 2, int(spec.wid * 0.5) - 1, 4):
+			cells[w.to_cell(v.pos + fwd * ix + right * iy)] = true
+	var taken := []
+	for c: Vector2i in cells:
+		if w.in_bounds(c) and not w.blocked.has(c) and w.get_tile(c) in [World.ROAD, World.SOI, World.SIDEWALK, World.PLAZA]:
+			w.blocked[c] = true
+			taken.append(c)
+			if w.astar.region.has_point(c):
+				w.astar.set_point_solid(c, true)
+	v.cells = taken
+	if v.has("prop"):
+		v.prop.moved = v.get("touched", false)  # (a car that has been driven can't be climbed where it was)
 
 
 static func is_car(v: Dictionary) -> bool:
@@ -363,6 +479,10 @@ func mount(p: Player, id: int) -> void:
 	v.rider = p.peer_id
 	v.upright = true
 	v.touched = true
+	if is_car(v):
+		free_cells(main.world, v)
+		if v.has("prop"):
+			v.prop.moved = true
 	_place(v)
 	main.fx_sound.rpc("door", v.pos)
 	if is_car(v):
@@ -408,6 +528,8 @@ func dismount(p: Player) -> void:
 		main._toast(q, "คนขี่ลงแล้ว")
 	_place(v)
 	_step_off(p, v)
+	if is_car(v):
+		block_parked(main.world, v)
 	_send(v)
 
 
@@ -564,4 +686,6 @@ func _apply(v: Dictionary, e: Array) -> void:
 	v.upright = e[5]
 	v.view = e[6] if e.size() > 6 else "side"  # (saves from before bikes had front and back)
 	v.touched = true
+	if is_car(v) and v.rider == 0:
+		block_parked(main.world, v)  # (a car standing where it was left is solid there)
 	_place(v)

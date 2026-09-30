@@ -273,7 +273,7 @@ func _spawn_props() -> void:
 	for i in street_props.size():
 		street_props[i].id = i  # (a car you stand on is known by this)
 	for rec in street_props:
-		if rec.kind == "pillar" and not SKYTRAIN_SHOWN:
+		if rec.kind == "pillar" and not SKYTRAIN_SHOWN or rec.get("culled", false):
 			continue
 		if rec.kind == "pole" and rec.get("lamp", Vector2.ZERO) != Vector2.ZERO:
 			light_spots.append([rec.pos + Vector2(rec.lamp.x, 0), LAMP_LIGHT])  # (the pool it throws on the street below)
@@ -289,6 +289,15 @@ func _spawn_props() -> void:
 			_stream(p, p.position)
 		if rec.has("vehicle"):
 			vehicles[rec.vehicle].node = p
+	# The city's parked cars (Vehicles._park_cars): each drawn as a real car, always in the scene.
+	for v in vehicles:
+		if Vehicles.is_car(v) and v.rec.is_empty() and not v.has("node") and not v.get("spawned", false):
+			var cp := CarProp.new()
+			cp.v = v
+			cp.position = v.pos
+			cp.z_index = 1
+			v.node = cp
+			_own(cp)
 	overhead = Overhead.new()
 	overhead.world = self
 	overhead.z_index = 4
@@ -898,7 +907,7 @@ func _read_boxes() -> void:
 	_boxes_read = true
 	for sp in street_props:
 		var shift: Vector2 = StreetProp.draw_shift(sp)
-		if shift == Vector2.ZERO:
+		if shift == Vector2.ZERO or sp.get("culled", false) or sp.get("art_gone", false):
 			continue
 		var x := int(sp.pos.x / TILE)
 		var last := int(sp.pos.y / TILE) - 1
