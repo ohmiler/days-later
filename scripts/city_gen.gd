@@ -53,7 +53,7 @@ const SIGN_LOOT := {
 ## Which city generator this is. Saves remember it: a city saved by an older
 ## generator cannot be rebuilt from its seed any more (see SaveGame).
 ## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
-const GEN := 10  # 10: the temple and its refugee camp in Victory Monument (Camp); 9: big buildings (hospitals, flats, offices, the mall, the market); 8: zones drawn by hand (Victory Monument)
+const GEN := 11  # 11: city 2 blocks, shophouses facing every street (docs/city/rules.md); 10: the temple and its refugee camp in Victory Monument (Camp); 9: big buildings (hospitals, flats, offices, the mall, the market); 8: zones drawn by hand (Victory Monument)
 const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
 const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
 const MAX_DEPTH := 15
@@ -222,7 +222,7 @@ static func _layout_plan(w: World, plan: Dictionary, rng: RandomNumberGenerator)
 		elif BLOCK_USES.has(w.blocks[-1].use):
 			_big_block(w, br, w.blocks[-1].use, w.blocks[-1].name, rng)
 		else:
-			_shophouse_block(w, br, rng)
+			_city_block(w, br, rng)  # ("shophouses", "rows")
 	if plan.has("bts"):
 		_skytrain_plan(w, plan.bts)
 	_street_furniture(w, rng)
@@ -374,10 +374,14 @@ static func _layout_sections(w: World, rng: RandomNumberGenerator) -> void:
 	w.spawn_cell = mid + Vector2i(XS[2] - 2, YS[1] + ROAD_W)
 
 
-static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGenerator) -> void:
+## `facing`: the side its front is on, the street it opens onto ("s", the
+## default, toward the camera; "n", "e", "w"). The plan is laid out turned.
+static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGenerator, facing := "s") -> void:
 	w.fill(r, World.BUILDING)
 	var rec := {rect = r, kind = kind, seed = rng.randi(), floors = 1, sign = "",
 			color = WALL_COLORS[rng.randi() % WALL_COLORS.size()], open = rng.randf() < 0.5}
+	if facing != "s":
+		rec.facing = facing
 	match kind:
 		"shop":
 			rec.floors = rng.randi_range(2, 3)
@@ -389,7 +393,8 @@ static func add_building(w: World, r: Rect2i, kind: String, rng: RandomNumberGen
 			rec.floors = rng.randi_range(10, 14)
 	if kind in ["shop", "store"]:
 		# A plan made for what this shop sells if there is one, else a plain one.
-		var fits := PREFABS.keys().filter(func(n): return kind in PREFABS[n].kinds and _fits_width(PREFABS[n], r.size.x))
+		var front_w := r.size.x if facing in ["s", "n"] else r.size.y
+		var fits := PREFABS.keys().filter(func(n): return kind in PREFABS[n].kinds and _fits_width(PREFABS[n], front_w))
 		var plans := fits.filter(func(n): return rec.sign in PREFABS[n].signs)
 		if plans.is_empty():
 			plans = fits.filter(func(n): return PREFABS[n].signs.is_empty())
@@ -424,8 +429,11 @@ static func _widened(rows: Array, plan: Dictionary, width: int) -> Array:
 
 ## A plan's rows made the plot's size: widened, and the ~ rows repeated to fill its depth.
 static func _fit(plan_rows: Array, plan: Dictionary, r: Rect2i) -> Array:
-	var ground: Array = _widened(plan_rows, plan, r.size.x)
-	var extra: int = r.size.y - plan_rows.size()
+	var f: String = FACING_OF.get(r, "s")
+	var width := r.size.x if f in ["s", "n"] else r.size.y
+	var depth := r.size.y if f in ["s", "n"] else r.size.x
+	var ground: Array = _widened(plan_rows, plan, width)
+	var extra: int = depth - plan_rows.size()
 	var n_stretch: int = plan.stretch.count(true)
 	var rows := []
 	var k := 0
@@ -435,7 +443,61 @@ static func _fit(plan_rows: Array, plan: Dictionary, r: Rect2i) -> Array:
 			for j in extra / n_stretch + (1 if k < extra % n_stretch else 0):
 				rows.append(ground[i])
 			k += 1
-	return rows
+	return _orient(rows, f)
+
+
+## Which way the building being laid out faces (set around _build_plan: _fit
+## is handed only the rect).
+static var FACING_OF := {}
+
+
+## A plan's rows (front at the bottom) turned to face `f`: the rows as they
+## lie on the map, top to bottom. North is turned right round; east and west
+## a quarter turn, so the front row ends up along that side.
+static func _orient(rows: Array, f: String) -> Array:
+	if f == "s" or rows.is_empty():
+		return rows
+	var d := rows.size()
+	var wd: int = (rows[0] as String).length()
+	var out := []
+	match f:
+		"n":
+			for y in range(d - 1, -1, -1):
+				out.append((rows[y] as String).reverse())
+		"e":
+			for yw in wd:
+				var s := ""
+				for xw in d:
+					s += (rows[xw] as String)[wd - 1 - yw]
+				out.append(s)
+		"w":
+			for yw in wd:
+				var s := ""
+				for xw in d:
+					s += (rows[d - 1 - xw] as String)[yw]
+				out.append(s)
+	return out
+
+
+## Out of a building's front, the way it faces (a step outside the front door).
+static func out_of(rec: Dictionary) -> Vector2i:
+	return {"s": Vector2i.DOWN, "n": Vector2i.UP, "e": Vector2i.RIGHT, "w": Vector2i.LEFT}[rec.get("facing", "s")]
+
+
+## Is `c` in a building's front wall?
+static func on_front(rec: Dictionary, c: Vector2i) -> bool:
+	var r: Rect2i = rec.rect
+	match rec.get("facing", "s"):
+		"n": return c.y == r.position.y
+		"e": return c.x == r.end.x - 1
+		"w": return c.x == r.position.x
+	return c.y == r.end.y - 1
+
+
+## How far along its front a front cell is (the column, facing south).
+static func along_front(rec: Dictionary, c: Vector2i) -> int:
+	var r: Rect2i = rec.rect
+	return c.x - r.position.x if rec.get("facing", "s") in ["s", "n"] else c.y - r.position.y
 
 
 ## A floor above the ground (World.storey_map(f)) from its rows: its walls
@@ -445,6 +507,7 @@ static func _fit(plan_rows: Array, plan: Dictionary, r: Rect2i) -> Array:
 static func _build_storey(w: World, rec: Dictionary, plan: Dictionary, plan_rows: Array, f: int, rng: RandomNumberGenerator) -> void:
 	var r: Rect2i = rec.rect
 	var rows := _fit(plan_rows, plan, r)
+	var foot := Vector2i.DOWN if out_of(rec).y != 0 else Vector2i.RIGHT
 	var upper := w.storey_map(f)
 	var upper_blocked := w.storey_blocked(f)
 	rec.upper = true
@@ -459,13 +522,17 @@ static func _build_storey(w: World, rec: Dictionary, plan: Dictionary, plan_rows
 			if ch == "T":
 				rec.taps_up.append([c, f])
 				continue
-			if ch == "b" and y > 0 and rows[y - 1][x] == "b":
-				continue  # the foot of the bed above
+			var bx := x - foot.x
+			var by := y - foot.y
+			if ch == "b" and by >= 0 and bx >= 0 and rows[by][bx] == "b":
+				continue  # the foot of the bed above (or beside, facing east or west)
 			if PLAN_FURNITURE.has(ch) or ch == "b":
 				var data := {id = w.containers.size(), kind = PLAN_FURNITURE.get(ch, "bed"), cell = c, table = "home", sign = rec.sign, storey = f}
-				if ch == "b" and y + 1 < rows.size() and rows[y + 1][x] == "b":
-					data.long = 2
-					upper_blocked[c + Vector2i.DOWN] = true
+				var fx := x + foot.x
+				var fy := y + foot.y
+				if ch == "b" and fy < rows.size() and fx < (rows[fy] as String).length() and rows[fy][fx] == "b":
+					data.long = 2 if foot.y != 0 else 1
+					upper_blocked[c + foot] = true
 				upper_blocked[c] = true
 				w.containers.append(data)
 			elif PLAN_DECOR.has(ch) and ch != "S":
@@ -478,6 +545,8 @@ static func _build_storey(w: World, rec: Dictionary, plan: Dictionary, plan_rows
 static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: RandomNumberGenerator) -> void:
 	var r: Rect2i = rec.rect
 	rec.table = "store" if rec.kind == "store" else SIGN_LOOT.get(rec.sign, "home")
+	var out := out_of(rec)
+	FACING_OF[r] = rec.get("facing", "s")
 	var rows := _fit(plan.rows, plan, r)
 	w.fill(r, World.IWALL)
 	var furniture := []  # [cell, letter]
@@ -500,12 +569,12 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 					pass
 				"D":
 					_add_opening(w, c, "door", rng)
-					if y == rows.size() - 1:
-						rec.door = x
-						rec.front_doors.append(x)
-						front = c + Vector2i.UP
+					if on_front(rec, c):
+						rec.door = along_front(rec, c)
+						rec.front_doors.append(along_front(rec, c))
+						front = c - out
 				"B":
-					if w.get_tile(c + Vector2i.UP) in [World.SOI, World.SIDEWALK, World.DIRT, World.GRASS]:
+					if w.get_tile(c - out) in [World.SOI, World.SIDEWALK, World.DIRT, World.GRASS]:
 						_add_opening(w, c, "door", rng)
 				"d":
 					_add_opening(w, c, "door", rng)
@@ -545,9 +614,9 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 			if d.broken:
 				d.closed = false
 		var mid: Vector2i = w.doors[shutter[shutter.size() / 2]].cell
-		rec.door = mid.x - r.position.x
+		rec.door = along_front(rec, mid)
 		rec.shutter = true
-		front = mid + Vector2i.UP
+		front = mid - out
 	# Rooms: floor joined up without passing a door.
 	var room_of := {}
 	var rooms := []
@@ -590,17 +659,20 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 			kind = sells[next_sold]
 			next_sold += 1
 		var long := 0
+		# (A bed's two cells run front to back: down the map, or across it
+		# for a building facing east or west.)
+		var foot := Vector2i.DOWN if out.y != 0 else Vector2i.RIGHT
 		if e[1] == "b":
-			if beds.has(c + Vector2i.UP):
+			if beds.has(c - foot):
 				continue  # the foot of a bed that starts above
 			kind = "bed"
-			long = 2 if beds.has(c + Vector2i.DOWN) else 0
+			long = (2 if foot.y != 0 else 1) if beds.has(c + foot) else 0
 		var table: String = rec.table if room_of[c] == shop_room or home_rooms.is_empty() else "home"
 		var data := {id = w.containers.size(), kind = kind, cell = c, table = table, sign = rec.sign}
 		if kind == "bed":
 			data.long = long
-			if long == 2:
-				w.blocked[c + Vector2i.DOWN] = true
+			if long != 0:
+				w.blocked[c + foot] = true
 		w.blocked[c] = true
 		w.containers.append(data)
 	for e in decor:
@@ -616,6 +688,7 @@ static func _build_plan(w: World, rec: Dictionary, plan: Dictionary, rng: Random
 	if rec.kind != "store":
 		for i in plan.get("storeys", []).size():
 			_build_storey(w, rec, plan, plan.storeys[i], i + 1, rng)
+	FACING_OF.erase(r)
 
 
 ## A door or window in a wall. Windows start intact (glass), some already smashed.
@@ -828,6 +901,97 @@ static func _row(w: World, x0: int, x1: int, y: int, depth: int, rng: RandomNumb
 			continue
 		add_building(w, Rect2i(start, y, bw, depth), kind, rng)
 		x = start + bw
+		shared = true
+
+
+## City 2 (docs/city/rules.md): a block the way Bangkok's are. Shophouse rows
+## all round it, each facing the street on its side (the north row north, the
+## west row west...), the corners taken by the long rows; a soi in from the
+## middle of the south side to a dead end, with homes along it facing it;
+## behind them all, the back yards and an alley.
+const SOI_W2 := 5  # a soi a car can get down
+
+
+## A drawn zone's big block of shophouses cut into city blocks by sois a
+## car can get down (about 80 m apart each way), each block built the city 2
+## way (_rows_block): the rows along a soi face it, as along a road.
+static func _city_block(w: World, b: Rect2i, rng: RandomNumberGenerator) -> void:
+	var cols := maxi(1, roundi((b.size.x + SOI_W2) / 80.0))
+	var rows := maxi(1, roundi((b.size.y + SOI_W2) / 80.0))
+	w.fill(b, World.SOI)
+	var bw := (b.size.x - (cols - 1) * SOI_W2) / float(cols)
+	var bh := (b.size.y - (rows - 1) * SOI_W2) / float(rows)
+	for j in rows:
+		for i in cols:
+			var x0 := b.position.x + roundi(i * (bw + SOI_W2))
+			var y0 := b.position.y + roundi(j * (bh + SOI_W2))
+			var x1 := b.end.x if i == cols - 1 else b.position.x + roundi(i * (bw + SOI_W2) + bw)
+			var y1 := b.end.y if j == rows - 1 else b.position.y + roundi(j * (bh + SOI_W2) + bh)
+			_rows_block(w, Rect2i(x0, y0, x1 - x0, y1 - y0), rng)
+
+
+static func _rows_block(w: World, b: Rect2i, rng: RandomNumberGenerator) -> void:
+	var d := rng.randi_range(MIN_DEPTH, MAX_DEPTH)
+	if b.size.x < d * 2 + SOI_W2 + 4 or b.size.y < d * 2 + 4:
+		_shophouse_block(w, b, rng)  # (too small for rows all round)
+		return
+	w.fill(b, World.DIRT)  # (the yards behind, till built on)
+	var mouth := b.position.x + b.size.x / 2 - SOI_W2 / 2
+	var y0 := b.position.y + d
+	var y1 := b.end.y - d
+	_strip(w, Rect2i(b.position.x, b.position.y, b.size.x, d), "n", rng)
+	_strip(w, Rect2i(b.position.x, y1, mouth - b.position.x, d), "s", rng)
+	_strip(w, Rect2i(mouth + SOI_W2, y1, b.end.x - mouth - SOI_W2, d), "s", rng)
+	# (A side on the edge of the map has no street: that row faces the yards.)
+	_strip(w, Rect2i(b.position.x, y0, d, y1 - y0), "w" if w.in_bounds(Vector2i(b.position.x - 1, y0)) else "e", rng)
+	_strip(w, Rect2i(b.end.x - d, y0, d, y1 - y0), "e" if w.in_bounds(Vector2i(b.end.x, y0)) else "w", rng)
+	# The soi, and the homes along it facing it.
+	var top := y0 + 2
+	w.fill(Rect2i(mouth, top, SOI_W2, b.end.y - top), World.SOI)
+	var left := mouth - (b.position.x + d) - 2  # (a two-cell alley behind)
+	var right := b.end.x - d - (mouth + SOI_W2) - 2
+	var hd := mini(MAX_DEPTH, mini(left, right))
+	if hd >= MIN_DEPTH:
+		_strip(w, Rect2i(mouth - hd, top, hd, y1 - top), "e", rng)
+		_strip(w, Rect2i(mouth + SOI_W2, top, hd, y1 - top), "w", rng)
+	for y in range(y0, y1):
+		for x in range(b.position.x + d, b.end.x - d):
+			var c := Vector2i(x, y)
+			if w.get_tile(c) == World.DIRT and rng.randf() < 0.05 					and not World.DIRS.any(func(dir): return w.get_tile(c + dir) == World.DOOR):
+				w.fill(Rect2i(c, Vector2i.ONE), World.TREE)  # (never in front of a door)
+
+
+## A strip of shophouses wall to wall along its front: along x for one facing
+## north or south, along y for east or west; each shares its side wall with
+## the next.
+static func _strip(w: World, r: Rect2i, facing: String, rng: RandomNumberGenerator) -> void:
+	var across := facing in ["s", "n"]
+	var from := r.position.x if across else r.position.y
+	var to := r.end.x if across else r.end.y
+	var depth := r.size.y if across else r.size.x
+	var at := from
+	var shared := false
+	while at < to:
+		var start := at - 1 if shared else at
+		var left := to - start
+		if left < SHOP_W[0]:
+			return
+		var kind := "shop"
+		var bw: int = SHOP_W[rng.randi() % SHOP_W.size()]
+		if left >= STORE_W and rng.randf() < 0.1:
+			kind = "store"
+			bw = STORE_W
+		if left - bw < SHOP_W[0] - 1:
+			bw = mini(left, STORE_W)
+		var rect := Rect2i(start, r.position.y, bw, depth) if across else Rect2i(r.position.x, start, depth, bw)
+		if _on_circle(w, rect):
+			# (on a drawn zone's roundabout: left open)
+			w.fill(rect, World.SOI)
+			at = start + bw
+			shared = false
+			continue
+		add_building(w, rect, kind, rng, facing)
+		at = start + bw
 		shared = true
 
 
@@ -1227,11 +1391,18 @@ static func _shop_fronts(w: World) -> void:
 		rng.seed = rec.seed * 17 + 5
 		var r: Rect2i = rec.rect
 		var y := r.end.y
+		var out := out_of(rec)
 		for e in list:
 			if rec.sign == "" and rng.randf() < 0.5:
 				continue  # (not every home has pots out)
-			var x: int = [r.position.x + 1, r.position.x + r.size.x / 2, r.end.x - 2][e[1]]
-			var c := Vector2i(x, y)
+			var c: Vector2i
+			if out == Vector2i.DOWN:
+				c = Vector2i([r.position.x + 1, r.position.x + r.size.x / 2, r.end.x - 2][e[1]], y)
+			elif out == Vector2i.UP:
+				c = Vector2i([r.end.x - 2, r.position.x + r.size.x / 2, r.position.x + 1][e[1]], r.position.y - 1)
+			else:
+				var yy: int = [r.position.y + 1, r.position.y + r.size.y / 2, r.end.y - 2][e[1]]
+				c = Vector2i(r.end.x if out == Vector2i.RIGHT else r.position.x - 1, yy)
 			if w.get_tile(c) not in [World.SIDEWALK, World.SOI] or w.blocked.has(c) or w.door_at.has(c):
 				continue
 			w.decor.append({kind = e[0], cell = c, seed = rng.randi(), building = rec, outside = true})

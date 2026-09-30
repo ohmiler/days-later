@@ -123,6 +123,17 @@ func _draw_side() -> void:
 func _draw_shutter() -> void:
 	var T := World.TILE
 	var steel := Color("8e9092")
+	if door.get("side", false):
+		# Across a front facing east or west, seen edge on: a steel strip down
+		# the cell when it's down, nothing but the box above when it's up.
+		if shut <= 0.0 and not door.broken:
+			return
+		var len_ := T * shut if not door.broken else T * 0.6
+		draw_rect(Rect2(T * 0.5 - 2, T - len_, 4, len_), steel)
+		for y in range(0, int(len_), 2):
+			draw_line(Vector2(T * 0.5 - 2, T - y - 0.5), Vector2(T * 0.5 + 2, T - y - 0.5), steel.darkened(0.2), 0.4)
+		draw_rect(Rect2(T * 0.5 - 2, T - len_, 4, len_), Color("5a5c5e"), false, 0.5)
+		return
 	if shut <= 0.0 and not door.broken:
 		return
 	var top := -13.5  # (up to the bottom of the box it rolls into: see BuildingProp)

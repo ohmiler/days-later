@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 39  # 39: trial car (Vehicles.vehicle_add, sedan model, car steering); 38: the refugee camp (Camp rpcs none new; things volunteer, board; GEN 10; dailies from the board); 37: skill unlocks do things (Skills.has; treat_other, stitched wounds, recipe unlocks, fishrice); 36: army knife 80 hp, mended with scrap at craft Lv 20 (repair_lv); 35: bosses (Bosses rpcs fx_enrage, boss_down; boss zids; army_shirt, armyknife); 34: loot by how dangerous a place is (Items tier, 3 new items); 33: body proportions V5 and a height in the appearance code (Look.HEIGHTS first); 32: round 0 (shutter 300 hp + scrap repair, safe = the shell, no spawns indoors); 31: search_started says what the work is (what, recipe); 30: quests (Quests rpcs: quests_sync, quest_done); 29: skills (Skills rpcs: skills_sync, survivor_level, fx_level_up); 28: no crawling (P_PRONE gone, req_prone gone); 27: silent kill played out (fx_stealth); 26: crawlers (missing 4 bits, storey 4 bits), silent kills; 25: hit zones (fx_hit zone, kill), new death styles; 24: four new zombie kinds, flag 16, pills/whistle; 23: place items (round B), shut-in zombies; 22: big buildings (CityGen.GEN 9), generators, power; 21: WorldState (things, buildings), rain in every snapshot; 20: storeys
+const PROTOCOL := 41  # 41: parked cars are real (Vehicles._park_cars: the city has cars, ids after the bikes); 40: cars driven W/S pedals A/D wheel (the move means pedals and wheel in a car); 39: trial car (Vehicles.vehicle_add, sedan model, car steering); 38: the refugee camp (Camp rpcs none new; things volunteer, board; GEN 10; dailies from the board); 37: skill unlocks do things (Skills.has; treat_other, stitched wounds, recipe unlocks, fishrice); 36: army knife 80 hp, mended with scrap at craft Lv 20 (repair_lv); 35: bosses (Bosses rpcs fx_enrage, boss_down; boss zids; army_shirt, armyknife); 34: loot by how dangerous a place is (Items tier, 3 new items); 33: body proportions V5 and a height in the appearance code (Look.HEIGHTS first); 32: round 0 (shutter 300 hp + scrap repair, safe = the shell, no spawns indoors); 31: search_started says what the work is (what, recipe); 30: quests (Quests rpcs: quests_sync, quest_done); 29: skills (Skills rpcs: skills_sync, survivor_level, fx_level_up); 28: no crawling (P_PRONE gone, req_prone gone); 27: silent kill played out (fx_stealth); 26: crawlers (missing 4 bits, storey 4 bits), silent kills; 25: hit zones (fx_hit zone, kill), new death styles; 24: four new zombie kinds, flag 16, pills/whistle; 23: place items (round B), shut-in zombies; 22: big buildings (CityGen.GEN 9), generators, power; 21: WorldState (things, buildings), rain in every snapshot; 20: storeys
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -412,6 +412,8 @@ func snapshot(data: PackedByteArray) -> void:
 					old.pillion = 0
 				else:
 					old.rider = 0
+					if Vehicles.is_car(old):
+						Vehicles.block_parked(main.world, old)  # (left where it stands: solid again)
 				Vehicles._place(old)
 			p.riding = d.riding
 			p.seat = seat if p.riding >= 0 else 0
@@ -421,6 +423,8 @@ func snapshot(data: PackedByteArray) -> void:
 					main.world.vehicles[p.riding].pillion = p.peer_id
 				else:
 					main.world.vehicles[p.riding].rider = p.peer_id
+					if Vehicles.is_car(main.world.vehicles[p.riding]):
+						Vehicles.free_cells(main.world, main.world.vehicles[p.riding])  # (driven: it carries its own collision)
 				Vehicles._place(main.world.vehicles[p.riding])
 		if p.riding >= 0 and p.seat == 0 and not p.is_local:
 			# Someone else riding by: the bike goes with them.

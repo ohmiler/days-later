@@ -39,6 +39,7 @@ var prompt_tag: PromptTag  # "E  open" over whatever is in reach
 var dash: BikeDash  # the bike's dashboard while riding
 var help: Control
 var gear: BagScreen
+var card: BoxCard  # what a cupboard holds, small by the side (Tab: the whole bag beside it)
 var work: WorkBar
 var fs_button: Button
 var pause: Control
@@ -74,6 +75,8 @@ func _ready() -> void:
 	gear = BagScreen.new()
 	gear.visible = false
 	add_child(gear)
+	card = BoxCard.new()
+	add_child(card)
 	admin = AdminPanel.new()
 	admin.visible = false
 	add_child(admin)
@@ -210,6 +213,11 @@ func escape() -> void:
 		close_chat()
 	elif city_map.visible:
 		city_map.visible = false
+	elif card.visible:
+		card.hide_card()
+		gear.box_closed.emit()
+		gear.box_id = -1
+		gear.box_items = []
 	elif gear.visible:
 		toggle_gear()
 	elif help.visible:
@@ -383,17 +391,30 @@ func open_box(cid: int, items: Array, title: String) -> void:
 	gear.box_id = cid
 	gear.box_items = items
 	gear.box_title = title
-	gear.visible = true
 	gear.queue_redraw()
+	if gear.visible:
+		return  # (the bag is open: it shows it)
+	if card.visible and card.box_id == cid and not items.any(func(i): return i != null):
+		card.show_box(cid, items, title)  # (the last thing taken: it empties and goes)
+		return
+	card.show_box(cid, items, title)
 
 
 func close_box() -> void:
+	if gear.box_id >= 0 and gear.visible:
+		gear.visible = false  # (walked away from it with the bag open beside it)
+	card.hide_card()
 	gear.box_id = -1
 	gear.box_items = []
 	gear.queue_redraw()
 
 
 func toggle_gear() -> void:
+	if card.visible:
+		card.hide_card()  # (Tab on the card: the whole bag, the cupboard beside it)
+		gear.visible = not menu.visible
+		gear.queue_redraw()
+		return
 	gear.visible = not gear.visible and not menu.visible
 	if not gear.visible and gear.box_id >= 0:
 		close_box()

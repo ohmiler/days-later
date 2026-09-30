@@ -31,7 +31,7 @@ const TRADE_AWNING := {"ร้านขายยา": Color("2a9a5a"), "คล�
 		"ร้านตัดผม": Color("2a4ab8"), "ก๋วยเตี๋ยวเรือ": Color("d83a2a"), "ข้าวมันไก่": Color("e08a2a")}
 ## Trades that also hang a tall sign board down the front, old Chinese style.
 const TALL_SIGNS := ["ร้านทอง", "ร้านขายยา", "ร้านวัสดุ", "ขายส่ง", "ก๋วยเตี๋ยวเรือ", "โจ๊ก ข้าวต้ม", "โรงรับจำนำ"]
-const GRAFFITI := ["ช่วยด้วย", "มีคนรอด", "อย่าเข้า", "หนีไปวัด", "ติดเชื้อ", "SOS", "ไม่มีของแล้ว"]
+const GRAFFITI := ["ช่วยด้วย", "มีคนรอด", "อย่าเข้า", "หนีไปวัด", "ติดเชื้อ", "SOS"]
 
 
 ## How tall a building is drawn (px up from its footprint to the roof).
@@ -298,6 +298,9 @@ func _door() -> void:
 
 func _draw_shop() -> void:
 	var col: Color = data.color
+	if data.get("facing", "s") != "s":
+		_draw_shop_turned(col)
+		return
 	_flat_roof(col)
 	_wall(col)
 	c.draw_rect(Rect2(0, -h, 1.5, h), col.darkened(0.3))  # party wall between units
@@ -359,10 +362,69 @@ func _draw_shop() -> void:
 		_door()
 	if data.sign != "":
 		var sr := _sign_rect()
-		var sc: Color = SIGN_COLORS.get(data.sign, Color.from_hsv(rng.randf(), 0.7, 0.75))
+		var sc: Color = SIGN_COLORS.get(data.sign, Color("2a62a8") if data.kind == "store" else Color.from_hsv(rng.randf(), 0.7, 0.75))
 		c.draw_rect(sr, sc)
 		c.draw_rect(sr, sc.darkened(0.4), false, 0.5)
 		_text(sr, data.sign, SIGN_TEXT.get(data.sign, Color.WHITE if sc.get_luminance() < 0.55 else Color("1a1a1a")), 5)
+	_facade_life(col)
+
+
+## A shophouse whose front is away from us (north) or to one side (east,
+## west): the wall we see is its back or its side, plain, a few small windows
+## and the back door. What says what it is: facing north, the sign board up on
+## the parapet over the front, the awning's edge along it; facing east or west,
+## a blade sign standing out from the front wall over the street, and the
+## awning down that side.
+func _draw_shop_turned(col: Color) -> void:
+	var facing: String = data.facing
+	_flat_roof(col)
+	_wall(col)
+	c.draw_rect(Rect2(0, -h, 1.5, h), col.darkened(0.3))
+	# Small windows upstairs (bathrooms, stairs), grilled.
+	for f in range(1, data.floors):
+		var y := -GROUND_H - f * FLOOR_H + 7.0
+		for x in [w * 0.3, w * 0.7]:
+			var wr := Rect2(x - 3.5, y, 7, 8)
+			c.draw_rect(wr.grow(0.8), col.darkened(0.35))
+			c.draw_rect(wr, Color("262b30"))
+			for gx in range(1, 7, 2):
+				c.draw_line(wr.position + Vector2(gx, 0), wr.position + Vector2(gx, wr.size.y), Color("8a8a82"), 0.4)
+	var sc: Color = SIGN_COLORS.get(data.sign, Color.from_hsv(rng.randf(), 0.7, 0.75))
+	var aw: Color = TRADE_AWNING.get(data.sign, Color.from_hsv(rng.randf(), 0.5, 0.65))
+	var roof_top := -h - d
+	match facing:
+		"n":
+			# The awning's edge along the far side, and the sign up over it.
+			for i in int(w / 6):
+				c.draw_rect(Rect2(i * 6.0, roof_top - 3, 6, 3), aw if i % 2 == 0 else Color("e8e2d4"))
+			if data.sign != "":
+				var sr := Rect2(3, roof_top - 13, w - 6, 8)
+				c.draw_line(Vector2(sr.position.x + 3, sr.end.y), Vector2(sr.position.x + 3, roof_top - 2), Color("5a5c5e"), 1.0)
+				c.draw_line(Vector2(sr.end.x - 3, sr.end.y), Vector2(sr.end.x - 3, roof_top - 2), Color("5a5c5e"), 1.0)
+				c.draw_rect(sr, sc)
+				c.draw_rect(sr, sc.darkened(0.4), false, 0.5)
+				_text(sr, data.sign, SIGN_TEXT.get(data.sign, Color.WHITE if sc.get_luminance() < 0.55 else Color("1a1a1a")), 6)
+		"e", "w":
+			# Down the front side: the awning, and a blade sign standing out.
+			var x0 := w if facing == "e" else 0.0
+			var out := 1.0 if facing == "e" else -1.0
+			var n := int(d / 6.0)
+			for i in n:
+				var y := -GROUND_H - i * 6.0
+				c.draw_colored_polygon(PackedVector2Array([Vector2(x0, y), Vector2(x0, y - 6), Vector2(x0 + out * 5, y - 5), Vector2(x0 + out * 5, y + 1)]),
+						aw if i % 2 == 0 else Color("e8e2d4"))
+			if data.sign != "":
+				var bx := x0 if facing == "e" else -9.0
+				var br := Rect2(bx, -GROUND_H - FLOOR_H - d * 0.35, 9, 30)
+				c.draw_rect(br, sc)
+				c.draw_rect(br, sc.darkened(0.4), false, 0.5)
+				var tc: Color = SIGN_TEXT.get(data.sign, Color.WHITE if sc.get_luminance() < 0.55 else Color("1a1a1a"))
+				# The name turned on its side, reading up the board (as blade
+				# signs do: letters stacked one by one would lose the vowels).
+				var size := 6
+				c.draw_set_transform(Vector2(br.get_center().x + size * 0.36, br.end.y - 1), -PI / 2)
+				c.draw_string(Look.thai_font(), Vector2.ZERO, data.sign, HORIZONTAL_ALIGNMENT_CENTER, br.size.y - 2, size, tc)
+				c.draw_set_transform(Vector2.ZERO)
 	_facade_life(col)
 
 
@@ -435,6 +497,9 @@ func _facade_life(col: Color) -> void:
 
 func _draw_store() -> void:
 	var col := Color("e8e6e0")
+	if data.get("facing", "s") != "s":
+		_draw_shop_turned(col)  # (its glass front is on the wall we can't see: a sign says what it is)
+		return
 	_flat_roof(col)
 	_wall(col)
 	c.draw_rect(Rect2(0, -h + 1, w, 5), Color("2a62a8"))  # brand stripe

@@ -5,9 +5,9 @@ extends "res://tests/test_base.gd"
 ## purpose, update the fingerprints below (and think about old saves).
 
 const SEED := 777
-## (Generator 10: Victory Monument with its temple, the refugee camp. Changing these means old cities can no longer be rebuilt: bump
+## (Generator 11: city 2 blocks, shophouses facing every street. Changing these means old cities can no longer be rebuilt: bump
 ## CityGen.GEN so their saves move to a new city instead of loading wrong.)
-const FINGERPRINT := {tiles = 2009923922, doors = 896135986, containers = 2570011798, buildings = 2466335610}
+const FINGERPRINT := {tiles = 2688060455, doors = 1461155425, containers = 1869717571, buildings = 1367759965}
 
 
 func _fingerprint(w: World) -> Dictionary:
@@ -68,7 +68,7 @@ func run() -> void:
 			unreachable.append(d.cell)
 	for f in a.containers:
 		# (A bed down the room can be reached along its length, from its foot too.)
-		var cells := [f.cell] + ([f.cell + Vector2i.DOWN] if f.get("long", 0) == 2 else [])
+		var cells := [f.cell] + ([f.cell + (Vector2i.DOWN if f.long == 2 else Vector2i.RIGHT)] if f.get("long", 0) != 0 else [])
 		if f.get("storey", 0) > 0:
 			# Upstairs: from the top of the stairs.
 			var st: Vector2i = a.building_at[f.cell].data.stairs

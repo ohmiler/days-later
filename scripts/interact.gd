@@ -12,6 +12,7 @@ const PICKUP_REACH := 14.0
 const CONTAINER_REACH := 20.0
 const TRAP_REACH := 12.0
 const STOMP_REACH := 18.0
+const DOOR_REACH := 24.0  # (the prompt shows a step before you touch it)
 
 
 ## The thing E would act on for player `p`, or {} if nothing is in reach.
@@ -79,7 +80,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 	var trap := trap_near(w, p.position)
 	if trap >= 0:
 		out.append({kind = "trap", id = trap, pos = w.to_pos(w.doors[trap].cell), title = World.BUILDS[w.doors[trap].kind].name})
-	var door := w.door_near(p.position, 16.0)
+	var door := w.door_near(p.position, DOOR_REACH)
 	if door >= 0 and not w.is_built(door):
 		var d: Dictionary = w.doors[door]
 		var win := w.is_window(door)
@@ -104,7 +105,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 		if Rect2(r.position * World.TILE, r.size * World.TILE).grow(12.0).has_point(p.position) and p.storey == 0:
 			out.append({kind = "exit", id = e.id, pos = p.position + Vector2(0, -2), title = "ทางไป" + Zones.name_of(e.to)})
 	for n in w.near(p.position):
-		if n is StreetProp and n.data.kind in StreetProp.CLIMB and p.storey == 0 \
+		if n is StreetProp and n.data.kind in StreetProp.CLIMB and p.storey == 0 and not n.data.get("moved", false) \
 				and p.position.distance_to(StreetProp.middle(n.data)) < CAR_REACH:
 			out.append({kind = "car", id = n.data.id, pos = StreetProp.middle(n.data), title = "รถ"})
 	_seats(w, p, here, out)

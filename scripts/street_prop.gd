@@ -168,6 +168,8 @@ func _draw() -> void:
 
 
 func _paint() -> void:
+	if data.get("art_gone", false):
+		return  # (a parked car: drawn as a real car by CarProp; this stays for climbing on)
 	match data.kind:
 		"pole":
 			_pole()
@@ -722,6 +724,8 @@ func _monument() -> void:
 
 ## Stairs up from the pavement to the skytrain station.
 func _bts_stairs() -> void:
+	if not World.SKYTRAIN_SHOWN:
+		return
 	var concrete := Color("a8a49c")
 	_shadow(Vector2(9, 3), Vector2(0, -1))
 	for i in int((World.BTS_H - 16.0) / 5.5):

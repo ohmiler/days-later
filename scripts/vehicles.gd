@@ -18,7 +18,10 @@ const FUEL_CAN := 3.0  # litres in a jerrycan
 const HIT_SPEED := 60.0  # faster than this, a zombie in the way is knocked flat
 const SLOW_GROUND := 0.5  # grass and dirt, for bikes not built for it
 const CAR_REACH := 34.0
-const CAR_TURN := 80.0  # px: a car's tightest turn (its radius), about 5 m
+const CAR_TURN := 52.0  # px: a car's tightest turn (its radius), about 3.3 m (the streets are squeezed)
+const CAR_WIDEN := 1.0  # its turning circle is this much wider again at top speed
+const CAR_WHEEL := 7.0  # how fast the wheel goes over (full lock in about 0.15 s), so a tap is a small turn
+const CAR_CRAWL := 38.0  # px/s: slower than this it still turns as if at this speed (no dead wheel at a crawl)
 const CAR_BACK := 0.35  # a car backs up this much of its top speed
 const KEY_CHANCE := 0.15  # bikes left with the key still in (few: a bike worth keeping is worth looking after)
 ## Steering: a moving bike swings round toward where you steer at so many
@@ -72,6 +75,122 @@ static func setup(w: World) -> void:
 				dir = rec.get("dir", 1.0 if rec.seed % 2 else -1.0), view = rec.get("view", "side"), fuel = m.fuel * h * 0.6, hp = m.hp,
 				key = World.hash01(rec.seed, 5, 23) < KEY_CHANCE, upright = rec.seed % 7 != 3, rider = 0, pillion = 0, rec = rec})
 		rec.vehicle = w.vehicles.size() - 1
+	_park_cars(w)
+
+
+## Cars parked in the city. The street's cars and taxis are real cars (CarArt,
+## the same as the one the admin menu makes), standing along the kerb facing the
+## way that side's traffic goes (on the left). About one in five runs (some with
+## the key in, some needing a hotwire); the rest are dead shells: still solid,
+## still climbable, never started. Cars left out in the lanes go, and so do
+## wrecks that aren't at a junction: the road keeps a clear way through.
+const RUNNING := 0.2
+const PARK_SHIFT := 6.5  # (a car is wider than its lane of cells: pulled in off the kerb)
+
+
+## The five cells a street vehicle takes (see CityGen._size_vehicles).
+static func _strip(rec: Dictionary) -> Array:
+	var base := Vector2i((rec.pos / World.TILE).floor())
+	var out := []
+	for i in 5:
+		out.append(Vector2i(base.x + i, base.y - 1) if rec.get("horizontal", true) else Vector2i(base.x, base.y - 1 - i))
+	return out
+
+
+## How many cells from `c` to the nearest pavement or building across the street,
+## and which way: [cells, -1 | +1 along the cross axis].
+static func _kerb(w: World, c: Vector2i, horizontal: bool) -> Array:
+	var back := Vector2i.UP if horizontal else Vector2i.LEFT
+	for r in range(1, 12):
+		for side in [-1, 1]:
+			if w.get_tile(c + back * r * side) not in [World.ROAD, World.SOI]:
+				return [r, side]
+	return [99, 1]
+
+
+static func _park_cars(w: World) -> void:
+	var m: Dictionary = MODELS.get("sedan", {})
+	if m.is_empty():
+		return
+	for rec in w.street_props:
+		if rec.kind not in ["car", "taxi", "wreck"]:
+			continue
+		var strip := _strip(rec)
+		var horizontal: bool = rec.get("horizontal", true)
+		var kerb := _kerb(w, strip[0], horizontal)
+		var owned := strip.filter(func(c): return w.blocked.has(c))
+		if rec.kind == "wreck":
+			# Kept where the road is wide open beside it or it's a junction pile-up; else cleared.
+			var near_junction := strip.any(func(c): return _near_intersection(w, c, 4))
+			if kerb[0] > 2 and not near_junction:
+				rec.culled = true
+				for c in owned:
+					w.blocked.erase(c)
+			continue
+		if kerb[0] > 2:
+			rec.culled = true  # (left out in the lane: gone)
+			for c in owned:
+				w.blocked.erase(c)
+			continue
+		# A car along the kerb: nose the way its side's traffic goes (on the left).
+		var dir: float
+		var centre: Vector2
+		var inward := float(kerb[1]) * -1.0  # (+1: toward +y / +x: away from a kerb on the - side)
+		if horizontal:
+			dir = 0.0 if kerb[1] < 0 else PI
+			centre = Vector2((strip[0].x + 2.5) * World.TILE, (strip[0].y + 0.5) * World.TILE + inward * PARK_SHIFT)
+		else:
+			dir = -PI * 0.5 if kerb[1] < 0 else PI * 0.5
+			centre = Vector2((strip[0].x + 0.5) * World.TILE + inward * PARK_SHIFT, (strip[0].y - 2.0) * World.TILE)
+		var h := World.hash01(rec.seed, 7, 31)
+		var runs := h < RUNNING
+		var v := {id = w.vehicles.size(), model = "sedan", seed = rec.seed, color = rec.get("color", Color.WHITE), pos = centre, dir = dir, view = "car",
+				fuel = m.fuel * (0.25 + 0.5 * World.hash01(rec.seed, 9, 11)) if runs else 0.0, hp = m.hp if runs else 0,
+				key = runs and World.hash01(rec.seed, 5, 23) < 0.35, upright = true, rider = 0, pillion = 0, rec = {}, spd = 0.0, prop = rec, cells = owned}
+		rec.art_gone = true
+		rec.car_vehicle = v.id
+		w.vehicles.append(v)
+		free_cells(w, v)
+		block_parked(w, v)
+
+
+static func _near_intersection(w: World, c: Vector2i, r: int) -> bool:
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if w.in_intersection(c + Vector2i(dx, dy)):
+				return true
+	return false
+
+
+## A parked car's cells are solid to walkers and zombies; while it's driven they
+## are not (it carries its own collision), and where it stops it blocks again.
+static func free_cells(w: World, v: Dictionary) -> void:
+	for c in v.get("cells", []):
+		w.blocked.erase(c)
+		if w.astar.region.has_point(c):
+			w.astar.set_point_solid(c, w.is_solid(c))
+	v.cells = []
+
+
+static func block_parked(w: World, v: Dictionary) -> void:
+	free_cells(w, v)
+	var fwd := Vector2.from_angle(v.dir)
+	var right := fwd.orthogonal()
+	var spec := CarArt.SEDAN
+	var cells := {}
+	for ix in range(-int(spec.len * 0.5) + 2, int(spec.len * 0.5) - 1, 4):
+		for iy in range(-int(spec.wid * 0.5) + 2, int(spec.wid * 0.5) - 1, 4):
+			cells[w.to_cell(v.pos + fwd * ix + right * iy)] = true
+	var taken := []
+	for c: Vector2i in cells:
+		if w.in_bounds(c) and not w.blocked.has(c) and w.get_tile(c) in [World.ROAD, World.SOI, World.SIDEWALK, World.PLAZA]:
+			w.blocked[c] = true
+			taken.append(c)
+			if w.astar.region.has_point(c):
+				w.astar.set_point_solid(c, true)
+	v.cells = taken
+	if v.has("prop"):
+		v.prop.moved = v.get("touched", false)  # (a car that has been driven can't be climbed where it was)
 
 
 static func is_car(v: Dictionary) -> bool:
@@ -133,9 +252,15 @@ static func step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World
 	return hit
 
 
-## A car: hold a direction and it drives round toward it (never turning on
-## the spot); hold the way behind it and it brakes, then backs up. It hits
-## walls, trees and parked vehicles with its whole length (CarArt.SEDAN).
+## A car, driven the way cars are: W the accelerator, S the brake and then
+## reverse, A and D the wheel (it turns round its back wheels as it rolls,
+## never on the spot; backing up, the tail swings the way you steer the
+## nose). Let go of the wheel and it runs straight on, easing onto the
+## nearest of the eight compass ways, so a street is driven dead along it.
+## It hits walls, trees and parked vehicles with its whole length (CarArt.SEDAN).
+const CAR_SETTLE := 0.9  # radians a second it eases straight, at full speed
+const CAR_WAYS := PI / 4.0  # (the eight ways it eases onto)
+
 static func _car_step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World) -> float:
 	var m: Dictionary = MODELS[v.model]
 	var spd: float = v.get("spd", 0.0)
@@ -143,24 +268,44 @@ static func _car_step(p: Player, v: Dictionary, move: Vector2, delta: float, w: 
 	var top: float = m.speed
 	if v.fuel <= 0.0 or v.hp <= 0 or p.grabbed_by >= 0:
 		top = 0.0
-	var want := 0.0
-	var steer := 0.0
-	if move.length() > 0.1:
-		var ang := wrapf(move.angle() - heading, -PI, PI)
-		if absf(ang) < 2.0 or spd > 20.0:
-			want = top  # forward, swinging round toward it
-			steer = clampf(ang, -1.0, 1.0)
-		else:
-			want = -top * CAR_BACK  # it's behind you: back up, the tail swinging toward it
-			steer = clampf(wrapf(move.angle() - (heading + PI), -PI, PI), -1.0, 1.0)
+	var pedal := clampf(-move.y * 1.5, -1.0, 1.0)
+	var steer := clampf(move.x * 1.5, -1.0, 1.0)
+	# A and D are the car's own left and right, whichever way it faces.
+	var want := pedal * (top if pedal > 0.0 else top * CAR_BACK)
+	if pedal < 0.0 and spd > 5.0:
+		want = 0.0  # (braking first: it only backs up once stopped)
 	var rate: float = m.accel if signf(want) == signf(spd) and absf(want) > absf(spd) else m.accel * 2.2
+	if absf(pedal) < 0.1:
+		rate = m.accel * 0.5  # (off the pedals: it rolls to a stop)
 	spd = move_toward(spd, want, rate * delta)
-	heading += steer * absf(spd) / CAR_TURN * delta
+	# The faster it goes the wider it has to turn (a tap at speed is a nudge).
+	var radius := CAR_TURN * (1.0 + CAR_WIDEN * clampf(absf(spd) / maxf(m.speed, 1.0), 0.0, 1.0))
+	var wheel: float = move_toward(v.get("wheel", 0.0), steer, CAR_WHEEL * delta)
+	v.wheel = wheel
+	var turn_spd := signf(spd) * maxf(absf(spd), CAR_CRAWL) if absf(spd) > 3.0 else 0.0
+	heading += wheel * turn_spd / radius * delta
+	if absf(steer) < 0.1 and absf(wheel) < 0.15 and absf(spd) > 5.0:
+		var straight := roundf(heading / CAR_WAYS) * CAR_WAYS
+		heading = move_toward(heading, straight, CAR_SETTLE * minf(1.0, absf(spd) / maxf(m.speed, 1.0)) * delta)
 	var pos: Vector2 = v.pos + Vector2.from_angle(heading) * spd * delta
 	var hit := 0.0
 	if car_blocked(w, pos, heading, CarArt.SEDAN):
-		hit = absf(spd)
-		spd *= -0.25  # (a bump: it bounces back a little)
+		# Grazing a wall: slide along it, losing a little speed, and only a
+		# head-on hit stops it (with a bounce).
+		var slid := false
+		for turn in [0.0, 0.1, -0.1, 0.22, -0.22]:
+			var hd: float = heading + turn
+			var sp: Vector2 = v.pos + Vector2.from_angle(hd) * spd * delta * 0.6
+			if not car_blocked(w, sp, hd, CarArt.SEDAN):
+				v.pos = sp
+				v.dir = hd
+				spd *= 1.0 - 1.4 * delta
+				hit = absf(spd) * 0.3
+				slid = true
+				break
+		if not slid:
+			hit = absf(spd)
+			spd *= -0.25  # (a bump: it bounces back a little)
 	else:
 		v.pos = pos
 		v.dir = heading
@@ -339,8 +484,14 @@ func mount(p: Player, id: int) -> void:
 	v.rider = p.peer_id
 	v.upright = true
 	v.touched = true
+	if is_car(v):
+		free_cells(main.world, v)
+		if v.has("prop"):
+			v.prop.moved = true
 	_place(v)
 	main.fx_sound.rpc("door", v.pos)
+	if is_car(v):
+		main._toast(p, "W เร่ง · S เบรก/ถอย · A D เลี้ยว")
 
 
 ## Get on the back of a bike someone is riding.
@@ -382,6 +533,8 @@ func dismount(p: Player) -> void:
 		main._toast(q, "คนขี่ลงแล้ว")
 	_place(v)
 	_step_off(p, v)
+	if is_car(v):
+		block_parked(main.world, v)
 	_send(v)
 
 
@@ -477,7 +630,25 @@ func send_all(peer: int) -> void:
 
 ## Server (admin menu): a car here, facing `heading`, key in, tank full.
 func spawn_car(pos: Vector2, heading: float) -> void:
-	vehicle_add.rpc(main.world.vehicles.size(), "sedan", pos, heading)
+	# Somewhere it stands clear (not in a wall): here, else a little round about, turned each way.
+	var w: World = main.world
+	var at := pos
+	var head := heading
+	var found := false
+	for r in [0.0, 30.0, 60.0, 90.0]:
+		for k in (1 if r == 0.0 else 8):
+			var p: Vector2 = pos + Vector2.from_angle(k * TAU / 8.0) * r
+			for hd in [heading, heading + PI * 0.5, heading + PI, heading - PI * 0.5]:
+				if not car_blocked(w, p, hd, CarArt.SEDAN):
+					at = p
+					head = hd
+					found = true
+					break
+			if found:
+				break
+		if found:
+			break
+	vehicle_add.rpc(main.world.vehicles.size(), "sedan", at, head)
 
 
 ## Every machine: a vehicle that wasn't in the city when it was built.
@@ -520,4 +691,6 @@ func _apply(v: Dictionary, e: Array) -> void:
 	v.upright = e[5]
 	v.view = e[6] if e.size() > 6 else "side"  # (saves from before bikes had front and back)
 	v.touched = true
+	if is_car(v) and v.rider == 0:
+		block_parked(main.world, v)  # (a car standing where it was left is solid there)
 	_place(v)
