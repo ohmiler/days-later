@@ -53,27 +53,27 @@ const OVERLOAD_SPEED := 0.6
 
 const TYPES := ["weapon", "gun", "ammo", "use", "trap", "material", "wear", "junk"]
 const PLACES := ["store", "med", "food", "tools", "valuables", "clothes", "home", "barber", "phone",
-		"hospital", "office", "market", "mall"]
+		"hospital", "office", "market", "mall", "police"]
 ## The big buildings' own places find what their everyday kind does, and more
 ## of their own: a hospital's cupboards what a pharmacy's do, and scrubs.
-const PLACE_ALSO := {hospital = "med", office = "home", market = "food", mall = "clothes"}
+const PLACE_ALSO := {hospital = "med", office = "home", market = "food", mall = "clothes", police = "office"}
 ## How often searching turns each up, relative to each other.
 const RARITY := {common = 4, uncommon = 2, rare = 1}
 ## How far into danger a place is, for what it still holds: 1 everyday (homes,
 ## corner shops), 2 a trade worth breaking into (hardware, pharmacy, gold shop,
 ## offices, the market), 3 the big buildings with the dead still shut inside
 ## (hospital, mall). The greater of what the shop is and the building it's in.
-const TABLE_TIER := {tools = 2, med = 2, valuables = 2, office = 2, market = 2, hospital = 3, mall = 3}
-const BUILDING_TIER := {hospital = 3, mall = 3, market = 2, office = 2}
-const TIERS := 3
-const TIER_NAMES := ["", "ที่ทั่วไป", "ร้านเฉพาะ", "ที่อันตราย"]
+const TABLE_TIER := {tools = 2, med = 2, valuables = 2, office = 2, market = 2, hospital = 3, mall = 3, police = 4}
+const BUILDING_TIER := {hospital = 3, mall = 3, market = 2, office = 2, police = 4}
+const TIERS := 4
+const TIER_NAMES := ["", "ที่ทั่วไป", "ร้านเฉพาะ", "ที่อันตราย", "ที่อันตรายที่สุด"]
 ## Rarity weights at each tier: the small places were picked over by the people
 ## who fled first, and nobody dared the big ones.
 const TIER_RARITY := [{}, {common = 4, uncommon = 1.5, rare = 0.25}, {common = 4, uncommon = 2, rare = 0.6},
-		{common = 3, uncommon = 3, rare = 2}]
+		{common = 3, uncommon = 3, rare = 2}, {common = 3, uncommon = 2, rare = 1.2}]
 ## Share of furniture already bare, times EMPTY; and how many finds [least, most].
-const TIER_EMPTY := [1.0, 1.0, 1.0, 0.4]
-const TIER_FINDS := [[1, 3], [1, 3], [1, 3], [2, 4]]
+const TIER_EMPTY := [1.0, 1.0, 1.0, 0.4, 0.3]
+const TIER_FINDS := [[1, 3], [1, 3], [1, 3], [2, 4], [3, 5]]
 const RARITY_NAMES := {common = "ธรรมดา", uncommon = "ไม่บ่อย", rare = "หายาก"}
 const RARITY_COLORS := {common = Color("c8c4b8"), uncommon = Color("6ab0e0"), rare = Color("e0b840")}
 ## Icon shapes an item's `icon` can use (drawn in draw_icon).
@@ -398,7 +398,7 @@ static func is_wear(id: String) -> bool:
 ## Where a zombie was when it turned, as far as its clothes go: a zombie's
 ## id carries it (zid % 8, see Main.new_zid), so every machine dresses it the
 ## same with nothing more sent.
-const ZOMBIE_PLACES := ["street", "hospital", "office", "market", "mall", "home", "street", "street"]
+const ZOMBIE_PLACES := ["street", "hospital", "office", "market", "mall", "home", "street", "police"]
 ## What people wore there: [slot, [[item, weight], ...], chance of wearing anything there].
 const DRESS := {
 	street = [["head", [["cap", 3], ["bucket", 2], ["helmet", 3]], 0.25],
@@ -414,6 +414,12 @@ const DRESS := {
 			["face", [["n95", 2], ["mask", 3]], 0.5],
 			["neck", [["neckbrace", 1]], 0.06],
 			["feet", [["sneakers", 2], ["schoolshoes", 1], ["flipflops", 1]], 0.6]],
+	police = [["body", [["guard_shirt", 6], ["shirt_short", 2], ["tshirt", 1]], 0.95],
+			["over", [["vest", 3], ["stabvest", 2]], 0.45],
+			["head", [["helmet", 3], ["cap", 3]], 0.4],
+			["legs", [["cargo", 4], ["slacks", 3]], 0.9],
+			["feet", [["boots", 5], ["sneakers", 1]], 0.85],
+			["neck", [["whistle", 1]], 0.12]],
 	office = [["body", [["office_shirt", 6], ["shirt_long", 2], ["polo", 1], ["guard_shirt", 1]], 0.95],
 			["legs", [["slacks", 6], ["jeans", 1]], 0.9],
 			["feet", [["schoolshoes", 4], ["sneakers", 1]], 0.8],
@@ -486,7 +492,7 @@ static func zombie_place(w: World, pos: Vector2) -> int:
 	var b = w.building_at.get(c)
 	var use := ""
 	if b != null and b.data.get("big", false):
-		use = {hospital = "hospital", flats = "home", office = "office", mall = "mall", market = "market"}.get(b.data.kind, "")
+		use = {hospital = "hospital", flats = "home", office = "office", mall = "mall", market = "market", police = "police"}.get(b.data.kind, "")
 	if use == "":
 		for blk in w.blocks:
 			if blk.rect.has_point(c):
@@ -665,6 +671,16 @@ const FURN_LOOT := {
 	pantry = {food = 5, drink = 2},  # the kitchen's screened food cupboard
 	sink = {junk = 2, material = 1, medicine = 1, drink = 1},
 }
+## A police station's cupboards hold what police keep (the armoury's shelves and
+## crates are where the guns are), not what a shop stocks.
+const FURN_LOOT_POLICE := {
+	shelf = {weapon = 1, clothes = 2, medicine = 2, junk = 2, food = 1},
+	cabinet = {clothes = 3, weapon = 0.5, medicine = 1.5, junk = 1},
+	crate = {weapon = 3, material = 2, clothes = 1},
+	toolchest = {weapon = 3, material = 2},
+	safe = {weapon = 2, junk = 3},
+	table = {junk = 2, food = 2, drink = 2, weapon = 1},
+}
 ## The kind of place tips it: a pharmacy's shelves hold medicine.
 const PLACE_BIAS := {
 	barber = {weapon = 2.0, junk = 2.0, clothes = 1.5},
@@ -676,6 +692,7 @@ const PLACE_BIAS := {
 	clothes = {clothes = 5.0},
 	valuables = {junk = 3.0, weapon = 1.5},
 	hospital = {medicine = 5.0, clothes = 1.5},
+	police = {weapon = 3.0, clothes = 2.0, medicine = 1.5},
 	office = {junk = 2.0, clothes = 1.5, drink = 1.5},
 	market = {food = 3.0, clothes = 2.0, drink = 1.5},
 	mall = {clothes = 6.0},
@@ -710,7 +727,7 @@ static func roll(table: String, kind: String, rng: RandomNumberGenerator, place_
 	var t: int = clampi(place_tier if place_tier > 0 else TABLE_TIER.get(table, 1), 1, TIERS)
 	if rng.randf() < EMPTY.get(kind, EMPTY_DEFAULT) * TIER_EMPTY[t]:
 		return out
-	var cats: Dictionary = FURN_LOOT.get(kind, FURN_LOOT.shelf)
+	var cats: Dictionary = FURN_LOOT_POLICE[kind] if table == "police" and FURN_LOOT_POLICE.has(kind) else FURN_LOOT.get(kind, FURN_LOOT.shelf)
 	var bias: Dictionary = PLACE_BIAS.get(table, {})
 	var weighted := {}
 	for c in cats:

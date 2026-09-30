@@ -14,7 +14,7 @@ func run() -> void:
 			guard_places[Items.ZOMBIE_PLACES[id % Items.ZOMBIE_PLACES.size()]] = true
 	check(["junkie", "faker", "guard", "aerobic"].all(func(k): return count.get(k, 0) > 200), "every new kind turns up (%s)" % count)
 	check(count.normal > count.values().reduce(func(a, b): return a + b) * 0.45, "most are still ordinary")
-	check(guard_places.keys().all(func(pl): return pl in ["office", "mall", "hospital"]), "guards only where there were guards (%s)" % str(guard_places.keys()))
+	check(guard_places.keys().all(func(pl): return pl in ["office", "mall", "hospital", "police"]), "guards only where there were guards (%s)" % str(guard_places.keys()))
 	# Each kind's own sounds when found (audio/WANTED.md), else a zombie's, else the stand-in.
 	check(Sfx.first(["nosuch_alert", "zombie_alert", "groan"]) == "zombie_alert" and Sfx.first(["nosuch", "groan"]) == "groan",
 			"sounds fall back: a kind's own, a zombie's, the old groan")

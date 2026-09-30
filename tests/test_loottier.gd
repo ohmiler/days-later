@@ -35,9 +35,10 @@ func run() -> void:
 
 	# ...and every one of them can be found somewhere dangerous.
 	var top := {}
-	for table in Items.PLACES:
-		for kind in kinds:
-			top.merge(_finds(table, kind, 3, 60, rng))
+	for tt in [3, 4]:
+		for table in Items.PLACES:
+			for kind in kinds:
+				top.merge(_finds(table, kind, tt, 60, rng))
 	var missing := Items.DEFS.keys().filter(func(id): return Items.tier(id) >= 3 and not Items.DEFS[id].get("places", []).is_empty() and not top.has(id))
 	check(missing.is_empty(), "every dangerous-place item can be found in one (missing %s)" % [missing])
 	check(Items.def("fireaxe").dmg > Items.def("axe").dmg and Items.tier("fireaxe") == 3, "the fire axe is the best axe, and only in the big buildings")

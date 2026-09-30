@@ -22,6 +22,7 @@ const KINDS := {
 	# Bosses (data/bosses.cfg): `armour` is the share of a blow below the head
 	# their gear stops; they don't go down to a kick or lose limbs.
 	"sergeant": {speed = 34.0, hp = 250.0, dmg = 16.0, girth = 1.3, door = 3.0, stun = 0.15, armour = 0.85, boss = true},
+	"chief": {speed = 40.0, hp = 340.0, dmg = 18.0, girth = 1.35, door = 3.5, stun = 0.1, armour = 0.8, boss = true},
 }
 const ENRAGE_SPEED := 1.35  # a boss past half its health comes on this much faster
 const CRAWL_SPEED := 0.3  # a crawler (a leg cut off) moves at this much of its speed
@@ -613,7 +614,7 @@ static func kind_for(id: int) -> String:
 	# Some belong to places (the id says where it's from: Main.new_zid).
 	var place: String = Items.ZOMBIE_PLACES[id % Items.ZOMBIE_PLACES.size()]
 	var h2 := (id * 40503 + 7) % 100
-	if place in ["office", "mall", "hospital"] and h2 < 8:
+	if place in ["office", "mall", "hospital", "police"] and h2 < 8:
 		return "guard"
 	if (place == "mall" and h2 >= 8 and h2 < 20) or (place == "street" and h2 >= 8 and h2 < 11):
 		return "aerobic"

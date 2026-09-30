@@ -38,7 +38,7 @@ func run() -> void:
 	if hosp < 0:
 		return
 	var rec: Dictionary = w.buildings[hosp]
-	var marks: Array = main.bosses.map_marks()
+	var marks: Array = main.bosses.map_marks().filter(func(m): return m[1] == "จ่าหน่วยกักกัน")  # (the chief has a mark of its own)
 	check(marks.size() == 1 and marks[0][0] == rec.rect.get_center() and marks[0][2] == 0.0, "the map marks its lair, boss at home (%s)" % [marks])
 
 	# It comes out with the hospital's shut-in dead when someone comes near.

@@ -47,7 +47,7 @@ static func height_of(rec: Dictionary) -> float:
 			return 44.0
 		"store":
 			return GROUND_H + 8.0
-		"hospital", "flats", "office", "mall":
+		"hospital", "flats", "office", "mall", "police":
 			return GROUND_H + (rec.floors - 1) * FLOOR_H + 8.0
 		"market":
 			return GROUND_H + 4.0
@@ -147,7 +147,7 @@ func _paint() -> void:
 			_draw_chedi()
 		"sala":
 			_draw_sala()
-		"hospital", "flats", "office", "mall":
+		"hospital", "flats", "office", "mall", "police":
 			_draw_big()
 		"market":
 			_draw_market()
@@ -627,7 +627,8 @@ func _draw_sala() -> void:
 # --- The big buildings (BigPlans) -------------------------------------------
 
 const BIG_COLORS := {hospital = [Color("ece8de"), Color("e2e4dc")], office = [Color("9aa4ac"), Color("b4b0a4"), Color("a8aeb4")],
-		flats = [Color("d8d4cc"), Color("c4c8cc"), Color("d8ccb8"), Color("e0c8a8")], mall = [Color("e2dccc"), Color("d4d8dc")]}
+		flats = [Color("d8d4cc"), Color("c4c8cc"), Color("d8ccb8"), Color("e0c8a8")], mall = [Color("e2dccc"), Color("d4d8dc")],
+		police = [Color("c6ccd6"), Color("d4d0c2")]}
 const MALL_BANNERS := ["ลดราคา", "SALE", "มหกรรม", "ลด 70%", "NEW"]
 
 
@@ -663,6 +664,14 @@ func _draw_big() -> void:
 					var roll := e.randf()
 					c.draw_rect(wr, Color("0e1216") if roll < 0.08 else (Color("dcd8cc") if roll < 0.3 else Color("4a6a80")))
 					c.draw_rect(wr, col.darkened(0.25), false, 0.6)
+			"police":
+				c.draw_rect(Rect2(0, b.end.y - 2.5, w, 2.5), Color("2a4a8a"))  # the blue band under each floor
+				for x in range(5, int(w) - 8, 10):
+					var wr := Rect2(x, b.position.y + 5, 7, b.size.y - 10)
+					c.draw_rect(wr, Color("0e1216") if e.randf() < 0.08 else Color("4a5a70"))
+					c.draw_rect(wr, col.darkened(0.3), false, 0.6)
+					for gx in [2.0, 4.5]:
+						c.draw_line(wr.position + Vector2(gx, 0), wr.position + Vector2(gx, wr.size.y), Color("2a2c30"), 0.6)  # bars
 			"office":
 				var ribbon := Rect2(1.5, b.position.y + 4, w - 3, b.size.y - 8)
 				c.draw_rect(ribbon, Color("3e5666"))
@@ -802,6 +811,13 @@ func _big_sign(col: Color) -> void:
 			c.draw_rect(Rect2(cross - Vector2(1.5, 4.5), Vector2(3, 9)), Color("2a9a5a"))
 			c.draw_rect(Rect2(cross - Vector2(4.5, 1.5), Vector2(9, 3)), Color("2a9a5a"))
 			_text(Rect2(r.position.x + 12, r.position.y, r.size.x - 14, r.size.y), label, Color("1a5a40"), 8)
+		"police":
+			var sw := minf(w - 10, 30.0 + label.length() * 5.0)
+			var pr := Rect2(w * 0.5 - sw * 0.5, -h + 4, sw, 13)
+			c.draw_rect(pr, Color("1a2e5a"))
+			c.draw_rect(pr, Color("d8b84a"), false, 1.0)
+			c.draw_circle(Vector2(pr.position.x + 7, pr.position.y + 6.5), 4.0, Color("d8b84a"))  # (a badge, not any real one)
+			_text(Rect2(pr.position.x + 14, pr.position.y, pr.size.x - 16, pr.size.y), label, Color("f4f0e0"), 8)
 		"office":
 			_text(Rect2(0, -h + 1, w, 8), label, Color("e8ecf0"), 7)
 		"flats":

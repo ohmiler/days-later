@@ -53,7 +53,7 @@ const SIGN_LOOT := {
 ## Which city generator this is. Saves remember it: a city saved by an older
 ## generator cannot be rebuilt from its seed any more (see SaveGame).
 ## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
-const GEN := 11  # 11: city 2 blocks, shophouses facing every street (docs/city/rules.md); 10: the temple and its refugee camp in Victory Monument (Camp); 9: big buildings (hospitals, flats, offices, the mall, the market); 8: zones drawn by hand (Victory Monument)
+const GEN := 12  # 12: the police station (a big building: armoury, cells, lockers) in Victory Monument; 11: city 2 blocks, shophouses facing every street (docs/city/rules.md); 10: the temple and its refugee camp in Victory Monument (Camp); 9: big buildings (hospitals, flats, offices, the mall, the market); 8: zones drawn by hand (Victory Monument)
 const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
 const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
 const MAX_DEPTH := 15
@@ -715,6 +715,7 @@ const BLOCK_USES := {
 	office = ["office", "flats"],
 	mall = ["mall"],
 	market = ["market"],
+	police = ["police"],
 }
 const SIGN_NAMES := {
 	mall = ["ชัยพลาซ่า", "สมรภูมิ มอลล์", "วิคตอรี่ สแควร์"],
@@ -728,7 +729,7 @@ const SIGN_NAMES := {
 ## hospital's grounds walled, with gates onto the street.
 static func _big_block(w: World, b: Rect2i, use: String, name: String, rng: RandomNumberGenerator) -> void:
 	var kinds: Array = BLOCK_USES[use]
-	var inner := b.grow(-3 if use.ends_with("hospital") else -2)
+	var inner := b.grow(-3 if use.ends_with("hospital") or use == "police" else -2)
 	var placed := []
 	var k := 0
 	var y := inner.position.y
@@ -750,9 +751,9 @@ static func _big_block(w: World, b: Rect2i, use: String, name: String, rng: Rand
 			placed.append(r)
 			k += 1
 			row_d = maxi(row_d, bd)
-			if use == "mall":
+			if use == "mall" or use == "police":
 				break  # (one to a block)
-		if row_d == 0 or use == "mall":
+		if row_d == 0 or use == "mall" or use == "police":
 			break
 		y += row_d + rng.randi_range(7, 10)
 	if placed.is_empty():
@@ -778,8 +779,10 @@ static func _big_block(w: World, b: Rect2i, use: String, name: String, rng: Rand
 			sign = "แฟลตพยาบาล"
 		if kind == "market":
 			sign = "ตลาดสด" + (" " + name if name != "" else "")
+		if kind == "police":
+			sign = name if name != "" else "สถานีตำรวจ"
 		_add_big(w, r, kind, rng, sign)
-	if use.ends_with("hospital"):
+	if use.ends_with("hospital") or use == "police":
 		_wall_round(w, b, rng)
 	# Cars left in the car parks.
 	for i in int(b.size.x * b.size.y / 90):

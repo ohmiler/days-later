@@ -17,13 +17,15 @@ const KINDS := {
 	office = {w = [22, 34], d = [16, 19], storeys = [5, 7], name = "อาคารสำนักงาน"},
 	mall = {w = [20, 56], d = [24, 34], storeys = [3, 3], name = "ห้างสรรพสินค้า"},
 	market = {w = [16, 28], d = [12, 18], storeys = [1, 1], name = "ตลาดสด"},
+	police = {w = [26, 34], d = [17, 19], storeys = [2, 3], name = "สถานีตำรวจ"},
 }
 ## How wide the rooms off a corridor are (inside), by kind.
-const ROOM_W := {hospital = [5, 8], flats = [5, 6], office = [7, 11]}
+const ROOM_W := {hospital = [5, 8], flats = [5, 6], office = [7, 11], police = [5, 7]}
 ## What each kind of room holds when searched (Items tables).
 const TABLES := {ward = "med", exam = "med", pharmacy = "med", nurse = "med", store = "med", toilet = "home",
 		office = "home", plant = "tools", lobby = "med", unit = "home", minimart = "store", desks = "home",
-		pantry = "food", meeting = "home", supermarket = "store", foodcourt = "food"}
+		pantry = "food", meeting = "home", supermarket = "store", foodcourt = "food",
+		armoury = "police", locker = "police", duty = "office", cells = "home", dorm = "home"}
 
 
 ## A plan for a `kind` building `size` cells big with `storeys` floors, in the
@@ -100,7 +102,7 @@ static func _corridor(kind: String, size: Vector2i, storeys: int, rng: RandomNum
 			for x in range(lobby.position.x, lobby.end.x):
 				_put(g, Vector2i(x, D - 1), "D" if absi(x - mid) <= 1 else "w")
 			_furnish_lobby(g, lobby, kind, mid)
-			rooms.append([0, lobby, "lobby" if kind == "hospital" else "unit"])
+			rooms.append([0, lobby, "lobby" if kind == "hospital" else ("duty" if kind == "police" else "unit")])
 			# Fire doors out at both ends of the corridor.
 			_put(g, Vector2i(0, cy + 1), "D")
 			_put(g, Vector2i(W - 1, cy + 1), "D")
@@ -139,6 +141,18 @@ static func _role(kind: String, f: int, side: int, i: int, rm: Array, mid: int, 
 			if side > 0 and near_mid:
 				return "nurse"
 			return ["ward", "ward", "toilet", "ward", "store"][i % 5] if side < 0 else "ward"
+		"police":
+			if f == 0:
+				if side < 0:
+					if i == 0:
+						return "plant"
+					if rm[0] <= mid and rm[1] >= mid:
+						return "armoury"  # (the one at the middle of the back)
+					return ["cells", "cells", "locker", "office"][i % 4]
+				return "duty"
+			if side < 0:
+				return ["dorm", "desks", "locker", "dorm"][i % 4]
+			return ["desks", "meeting", "dorm"][i % 3]
 		"flats":
 			if f == 0 and side < 0 and i == 0:
 				return "plant"
@@ -212,6 +226,31 @@ static func _furnish(g: Array, r: Rect2i, side: Vector2i, role: String, rng: Ran
 			for a in n:
 				put.call(a, 0, "s" if a % 2 == 0 else "x")
 			put.call(0, 2, "o")
+		"armoury":
+			for a in n:
+				put.call(a, 0, "s" if a % 2 == 0 else "X")
+			for a in range(1, n - 1):
+				put.call(a, 2, "x" if a % 2 == 1 else "c")
+			put.call(n - 1, last, "Z")
+		"locker":
+			for a in n:
+				put.call(a, 0, "c")
+			put.call(1, 2, "z")
+		"cells":
+			put.call(0, 0, "z")
+			put.call(n - 1, 0, "z")
+			put.call(n - 1, 1, "q")
+		"duty":
+			put.call(0, 0, "k")
+			put.call(1, 0, "k")
+			put.call(n - 1, 0, "c")
+			put.call(n / 2, 2, "t")
+			put.call(n - 2, 0, "v")
+		"dorm":
+			for a in range(0, n - 1, 2):
+				put.call(a, 0, "b")
+				put.call(a, 1, "b")
+			put.call(n - 1, last, "c")
 		"toilet":
 			for a in range(0, n - 1, 2):
 				put.call(a, 0, "q")
@@ -274,7 +313,7 @@ static func _furnish_lobby(g: Array, r: Rect2i, kind: String, mid: int) -> void:
 	for y in range(r.position.y + 1, r.end.y - 1, 2):
 		for x in range(r.position.x + 1, r.end.x - 1):
 			if absi(x - mid) > 2 and x != r.end.x - 2:
-				_put(g, Vector2i(x, y), "z" if kind == "hospital" else ("O" if (x + y) % 5 == 0 else "."))
+				_put(g, Vector2i(x, y), "z" if kind in ["hospital", "police"] else ("O" if (x + y) % 5 == 0 else "."))
 	# The counter along one side, the Buddha high on the wall, plants by the doors.
 	for y in range(r.position.y, mini(r.position.y + 3, r.end.y - 1)):
 		_put(g, Vector2i(r.end.x - 1, y), "k")

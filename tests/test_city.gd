@@ -5,9 +5,9 @@ extends "res://tests/test_base.gd"
 ## purpose, update the fingerprints below (and think about old saves).
 
 const SEED := 777
-## (Generator 11: city 2 blocks, shophouses facing every street. Changing these means old cities can no longer be rebuilt: bump
+## (Generator 12: the police station in Victory Monument; 11: city 2 blocks, shophouses facing every street. Changing these means old cities can no longer be rebuilt: bump
 ## CityGen.GEN so their saves move to a new city instead of loading wrong.)
-const FINGERPRINT := {tiles = 2688060455, doors = 1461155425, containers = 1869717571, buildings = 1367759965}
+const FINGERPRINT := {tiles = 1660038109, doors = 2264001348, containers = 39358502, buildings = 3167522875}
 
 
 func _fingerprint(w: World) -> Dictionary:

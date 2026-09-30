@@ -803,7 +803,7 @@ func show_toast(text: String) -> void:
 
 
 ## Walking into one of the big dangerous buildings says so, once each time in.
-const DANGER_NAMES := {hospital = "โรงพยาบาล", mall = "ห้าง", market = "ตลาด", office = "ตึกออฟฟิศ"}
+const DANGER_NAMES := {hospital = "โรงพยาบาล", mall = "ห้าง", market = "ตลาด", office = "ตึกออฟฟิศ", police = "สถานีตำรวจ"}
 var _danger_bid := -1
 
 
