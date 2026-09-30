@@ -85,6 +85,7 @@ var circle := {}  # a drawn zone's roundabout: {at (cell), r, island}
 var medians: Array = []  # raised islands down the middle of wide streets (Rect2i)
 var blocks: Array = []  # a drawn zone's blocks: [{rect, use, name}]
 var camps: Array = []  # refugee camps, inside a temple's wall: [{rect (cells), name}] (see Camp)
+var camp_life: Array = []  # people and things that make a camp look lived in: [{kind, cell, seed, ...}] (see CampLife)
 var spawn_cell := Vector2i(W / 2, H / 2)
 
 var chunks := {}
@@ -106,6 +107,7 @@ func generate(seed_val: int, zone_id := "") -> void:
 	rng.seed = seed_val
 	CityGen.build(self, rng)
 	Vehicles.setup(self)
+	CampLife.plan(self)  # (blocks the cells it uses: before the paths are worked out)
 
 	astar.region = Rect2i(0, 0, W, H)
 	astar.cell_size = Vector2(TILE, TILE)
@@ -230,6 +232,13 @@ func _spawn_props() -> void:
 			_on_storey(tp, building_at.get(th.cell), th.storey)
 		_stream(tp, tp.position)
 		thing_nodes.append(tp)
+	for rec in camp_life:
+		var cl := CampLife.new()
+		cl.data = rec
+		cl.world = self
+		cl.position = to_pos(rec.cell) + Vector2(0, TILE * 0.45)
+		cl.z_index = 1
+		_stream(cl, cl.position)
 	for i in street_props.size():
 		street_props[i].id = i  # (a car you stand on is known by this)
 	for rec in street_props:
