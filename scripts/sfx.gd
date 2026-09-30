@@ -250,7 +250,52 @@ static func _build(name: String) -> AudioStreamWAV:
 		"break":
 			samples = _thump(rng, 0.12, 300.0, 150.0, 0.4)
 			_mix(samples, _noise_sweep(rng, 0.12, 0.8, 1.0, 0.6))
+		"jingle":  # an ice-cream truck's tune: plinky, cheerful, a little out of tune
+			for f in [523.0, 659.0, 784.0, 659.0, 523.0, 659.0, 784.0, 1046.0]:
+				samples.append_array(_note(0.24, f * 0.985, 0.3, 0.0))
+		"ring":  # a house phone: two rings, a pause
+			for i in 2:
+				samples.append_array(_ring(0.42))
+				samples.append_array(_silence(0.18))
+		"chime":  # a shop door's two-tone chime
+			samples = _note(0.34, 659.0, 0.4, 0.0)
+			samples.append_array(_note(0.7, 523.0, 0.4, 0.0))
+		"karaoke":  # somebody's tune, badly (wavering, flat)
+			for f in [392.0, 440.0, 494.0, 440.0, 392.0, 330.0, 392.0, 440.0, 392.0]:
+				samples.append_array(_note(0.36, f * 0.96, 0.3, 6.0))
 	return _to_wav(samples)
+
+
+## One note: a soft pluck (a touch of the octave above), `wobble` Hz of vibrato.
+static func _note(length: float, f: float, gain: float, wobble: float) -> PackedFloat32Array:
+	var n := int(length * RATE)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var phase := 0.0
+	for i in n:
+		var t := float(i) / n
+		var fi := f * (1.0 + (0.012 * sin(TAU * wobble * i / RATE) if wobble > 0.0 else 0.0))
+		phase += TAU * fi / RATE
+		out[i] = (sin(phase) + 0.25 * sin(phase * 2.0)) * gain * clampf(t / 0.02, 0.0, 1.0) * pow(1.0 - t, 1.4)
+	return out
+
+
+## A phone's ring: two tones together, shivering.
+static func _ring(length: float) -> PackedFloat32Array:
+	var n := int(length * RATE)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i in n:
+		var t := float(i) / RATE
+		var shiver := 0.6 + 0.4 * sin(TAU * 22.0 * t)
+		out[i] = (sin(TAU * 440.0 * t) + sin(TAU * 480.0 * t)) * 0.18 * shiver * clampf((length - t) / 0.03, 0.0, 1.0)
+	return out
+
+
+static func _silence(length: float) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(int(length * RATE))
+	return out
 
 
 static func _to_wav(samples: PackedFloat32Array) -> AudioStreamWAV:

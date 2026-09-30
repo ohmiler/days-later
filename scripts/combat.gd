@@ -547,6 +547,8 @@ func _kill_zombie(z: Zombie, fall_dir: float, how := "", zone := "body", close :
 		main._spawn_pickup(z.position + Vector2(-6, 4), Items.make("pills"), z.storey)
 	if z.kind == "guard" and z.wear.get("neck", "") == "whistle" and randf() < 0.65:
 		main._spawn_pickup(z.position + Vector2(6, 4), Items.make("whistle"), z.storey)
+	if z.has_meta("lotto"):
+		main.events.lotto_died(z, main.players.get(z.hurt_by.keys()[-1]) if not z.hurt_by.is_empty() else null)
 	if z.is_boss():
 		main.bosses.died(z)
 	main.survival.trapped_died(z)
