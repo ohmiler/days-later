@@ -1195,8 +1195,7 @@ func _update_roof_view(me: Player, delta: float) -> void:
 	shade.color = Color(shade.color.r * dim, shade.color.g * dim, shade.color.b * dim)
 	var lift_col := 1.0 / dim
 	for b: BuildingProp in world.building_nodes:
-		var up: float = lift_col if b.data.kind in ["shop", "store"] else 1.0
-		b.modulate = Color(up, up, up, b.modulate.a)
+		b.modulate = Color(lift_col, lift_col, lift_col, b.modulate.a)  # (every roof stays bright, the big ones too: hospitals, flats, offices, malls)
 	for p: Player in players.values():
 		var up := lift_col if p.on_roof else 1.0
 		p.modulate = Color(up, up, up, p.modulate.a)
