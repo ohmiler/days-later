@@ -15,6 +15,7 @@ const COMPOUND_H := 2.2  # a wall round a compound
 
 var world: World
 var mat: ShaderMaterial  # everything solid: vertex colour x noise
+var glow_mat: StandardMaterial3D  # windows lit at night (shown by View3D after dark)
 
 
 ## Metres up to the floor of storey `f`.
@@ -83,6 +84,11 @@ void fragment() {
 """
 	mat = ShaderMaterial.new()
 	mat.shader = sh
+	glow_mat = StandardMaterial3D.new()
+	glow_mat.albedo_color = Color(1.0, 0.8, 0.5)
+	glow_mat.emission_enabled = true
+	glow_mat.emission = Color(1.0, 0.72, 0.4)
+	glow_mat.emission_energy_multiplier = 2.2
 
 
 # --- Box building -------------------------------------------------------------
@@ -127,9 +133,9 @@ func _commit(st: SurfaceTool, parent: Node3D, name_ := "", shadows := true) -> M
 # --- The ground ---------------------------------------------------------------
 
 const GROUND := {
-	World.GRASS: [0.03, Color("5a6a3c")], World.DIRT: [0.03, Color("7a684c")], World.WATER: [-0.6, Color("3a4a40")],
-	World.TREE: [0.03, Color("56663a")], World.ROAD: [0.0, Color("4a4b4c")], World.SIDEWALK: [0.15, Color("a8a296")],
-	World.SOI: [0.03, Color("7a766e")], World.PLAZA: [0.12, Color("b8b0a0")], World.BUILDING: [0.1, Color("8a847a")],
+	World.GRASS: [0.03, Color("5e7a3a")], World.DIRT: [0.03, Color("7a624a")], World.WATER: [-0.6, Color("34463c")],
+	World.TREE: [0.03, Color("58703a")], World.ROAD: [0.0, Color("3c3d40")], World.SIDEWALK: [0.15, Color("b4a894")],
+	World.SOI: [0.03, Color("6e6a64")], World.PLAZA: [0.12, Color("a8a08e")], World.BUILDING: [0.1, Color("8a847a")],
 	World.FLOOR: [0.1, Color("b0a48c")], World.IWALL: [0.1, Color("b0a48c")], World.DOOR: [0.1, Color("b0a48c")],
 	World.WALL: [0.1, Color("8a847a")],
 }
@@ -197,6 +203,7 @@ func build_chunk(cc: Vector2i, out_buildings: Dictionary) -> Node3D:
 					_stairs(props, f)
 				else:
 					_furniture(props, f)
+	_camp_tents(props, r)
 	_wires(props, r)
 	_skytrain(props, r)
 	_commit(props, root, "props")
@@ -274,6 +281,17 @@ func _wall_cell(st: SurfaceTool, c: Vector2i, y0: float, h: float, col: Color, j
 func _building(b: Dictionary) -> Node3D:
 	var node := Node3D.new()
 	node.name = "b%d" % b.id
+	if b.kind in ["temple", "chedi", "sala"]:
+		var sn := Node3D.new()
+		sn.name = "s0"
+		node.add_child(sn)
+		var st := _begin()
+		match b.kind:
+			"temple": Temple3D.ubosot(st, b.rect)
+			"chedi": Temple3D.chedi(st, b.rect)
+			_: Temple3D.sala(st, b.rect)
+		_commit(st, sn, "walls")
+		return node
 	var r: Rect2i = b.rect
 	var floors: int = maxi(1, b.get("floors", 1))
 	var outside: Color = b.get("color", Color("d8cdb4"))
@@ -317,8 +335,14 @@ func _building(b: Dictionary) -> Node3D:
 			# The floor of this storey (the ground floor's is the ground).
 			if f > 0:
 				box(slab, Vector3(c.x + 0.5, y0 - 0.1, c.y + 0.5), Vector3(1.0, 0.2, 1.0), Color("b8ac94"), true)
-		_facade(walls, b, f, floors)
+		var glow := _begin()
+		var lit := _facade(walls, b, f, floors, glow)
 		_commit(walls, sn, "walls")
+		if lit:
+			var gm := _commit(glow, sn, "glow", false)
+			gm.material_override = glow_mat
+			gm.visible = false
+			gm.add_to_group("night_glow3d")
 		if f > 0:
 			_commit(slab, sn, "floor")
 	# The roof, with a low wall round it.
@@ -365,7 +389,10 @@ const GRILLE := Color("4a4c50")
 ## grilles, an air conditioner hung under one, now and then a balcony; over
 ## the shop, an awning. Big buildings get bands of windows all round.
 ## (Shophouse fronts face south, toward the camera: CityGen lays them so.)
-func _facade(st: SurfaceTool, b: Dictionary, f: int, floors: int) -> void:
+func _facade(st: SurfaceTool, b: Dictionary, f: int, floors: int, glow: SurfaceTool) -> bool:
+	var lit_any := false
+	var lit_rng := RandomNumberGenerator.new()
+	lit_rng.seed = b.get("seed", 0) + 7 + f * 131
 	var r: Rect2i = b.rect
 	var y0 := storey_y(f)
 	var h := storey_h(f)
@@ -379,7 +406,13 @@ func _facade(st: SurfaceTool, b: Dictionary, f: int, floors: int) -> void:
 		box(st, Vector3(r.position.x + r.size.x * 0.5, wy, r.position.y + 0.5 - out), Vector3(r.size.x - 1.4, 1.1, 0.04), GLASS)
 		box(st, Vector3(r.position.x + 0.5 - out, wy, r.position.y + r.size.y * 0.5), Vector3(0.04, 1.1, r.size.y - 1.4), GLASS)
 		box(st, Vector3(r.end.x - 0.5 + out, wy, r.position.y + r.size.y * 0.5), Vector3(0.04, 1.1, r.size.y - 1.4), GLASS)
-		return
+		# Lit only with power (a generator running), as the 2D drawing had it.
+		if f >= 1 and b.get("lit", false):
+			for x in range(r.position.x + 2, r.end.x - 2, 3):
+				if lit_rng.randf() < 0.6:
+					box(glow, Vector3(x + 0.5, wy, r.end.y - 0.5 + out + 0.02), Vector3(2.0, 0.9, 0.02), Color.WHITE)
+					lit_any = true
+		return lit_any
 	var z := r.end.y - 0.5 + WALL_T * 0.5  # the face of the front wall
 	var w := r.size.x
 	if f == 0:
@@ -387,12 +420,16 @@ func _facade(st: SurfaceTool, b: Dictionary, f: int, floors: int) -> void:
 		var awn: Color = [Color("c8b8a0"), Color("3a6aa8"), Color("c83a30"), Color("2a7a4a"), Color("8a8e94")][seed % 5]
 		var xf := Transform3D(Basis(Vector3.RIGHT, -0.28), Vector3(r.position.x + w * 0.5, GROUND_H - 0.55, z + 0.6))
 		Props3D.xbox(st, xf, Vector3.ZERO, Vector3(w - 0.2, 0.05, 1.3), awn)
-		return
+		return false
 	var n := maxi(1, int(w / 2.2))
 	for i in n:
 		var x := r.position.x + (i + 0.5) * w / n
 		var wy := y0 + 1.55
 		box(st, Vector3(x, wy, z + 0.02), Vector3(1.1, 1.25, 0.04), GLASS)
+		# Someone's home: a third of shophouse windows glow at night.
+		if b.kind == "shop" and lit_rng.randf() < 0.3:
+			box(glow, Vector3(x, wy, z + 0.045), Vector3(1.05, 1.2, 0.01), Color.WHITE)
+			lit_any = true
 		box(st, Vector3(x, wy - 0.68, z + 0.06), Vector3(1.3, 0.08, 0.12), col.darkened(0.15))  # the sill
 		for g in 5:
 			box(st, Vector3(x - 0.5 + g * 0.25, wy, z + 0.1), Vector3(0.025, 1.3, 0.025), GRILLE)  # the grille
@@ -409,6 +446,29 @@ func _facade(st: SurfaceTool, b: Dictionary, f: int, floors: int) -> void:
 	# Rain stains down from the roof line.
 	if f == floors - 1:
 		box(st, Vector3(r.position.x + w * 0.5, y0 + h - 0.15, z + 0.03), Vector3(w, 0.3, 0.04), col.darkened(0.25))
+	return lit_any
+
+
+## Rows of tents in a refugee camp's grounds (World.camps), on open paving.
+func _camp_tents(st: SurfaceTool, area: Rect2i) -> void:
+	for camp in world.camps:
+		var cr: Rect2i = camp.rect
+		if not cr.intersects(area):
+			continue
+		var mid := cr.get_center()
+		for y in range(cr.position.y + 3, cr.end.y - 3, 4):
+			for x in range(cr.position.x + 3, cr.end.x - 3, 4):
+				var c := Vector2i(x, y)
+				if not area.has_point(c) or absi(x - mid.x) < 4 or absi(y - mid.y) < 3:
+					continue  # (the paths to the gates stay clear)
+				var clear := true
+				for dy in range(-1, 2):
+					for dx in range(-2, 3):
+						var q := c + Vector2i(dx, dy)
+						if world.get_tile(q) != World.PLAZA or world.building_at.has(q) or world.blocked.has(q):
+							clear = false
+				if clear and World.hash01(x, y, 41) < 0.55:
+					Temple3D.tent(st, Vector3(x + 0.5, ground_h(c), y + 0.5), x * 7 + y)
 
 
 # --- Overhead: power lines and the skytrain ---------------------------------------

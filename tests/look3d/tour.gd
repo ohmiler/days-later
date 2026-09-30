@@ -25,6 +25,23 @@ func run() -> void:
 	main.time = 0.3
 	await wait(4.0)
 	await _shot("t02_spawn.png")
+	# The camp from further out: the temple, the chedi, the salas, the gates.
+	main.play_zoom = Vector2(1.6, 1.6)
+	main.camera.zoom = main.play_zoom
+	await wait(4.0)
+	await _shot("t02b_camp.png")
+	for bb in main.world.buildings:
+		if bb.kind == "temple":
+			var back := me.position
+			me.position = main.world.to_pos(Vector2i(bb.rect.get_center().x, bb.rect.end.y + 7))
+			main.play_zoom = Vector2(2.2, 2.2)
+			main.camera.zoom = main.play_zoom
+			await wait(3.0)
+			await _shot("t02c_temple.png")
+			me.position = back
+			break
+	main.play_zoom = Vector2(4.0, 4.0)
+	main.camera.zoom = main.play_zoom
 	# Out of the camp onto a street, zombies about.
 	var street := _street_spot()
 	me.position = street

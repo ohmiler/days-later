@@ -31,6 +31,7 @@ var bnodes := {}  # building id -> Node3D (its storeys and roof)
 var people := {}  # Player or Zombie -> {holder, sk, kind, phase, last, weapon}
 var doors := {}  # door id -> Node3D
 var bikes := {}  # World.vehicles id -> Node3D (motorbikes and the trial car)
+var camp_people: Array = []  # soldiers at the gates, the volunteer: made once a world (for the look; Camp does the work)
 var pickups := {}  # pickup id -> Node3D
 var corpses := {}  # Corpse node -> Node3D
 var cam_target := Vector3.ZERO
@@ -39,7 +40,8 @@ var hidden_now: Array = []  # storey/roof nodes hidden this frame (put back next
 var overlay: Control  # names, what people say, damage numbers, the search bar: on screen, over the 3D
 var blood_mm: MultiMeshInstance3D  # the blood on the ground (Main.blood)
 var blood_n := -1
-var lamps: Array[OmniLight3D] = []  # the nearest lit spots at night (World.light_spots)
+var lamps: Array[OmniLight3D] = []
+var glow_on := false  # windows lit (after dusk)  # the nearest lit spots at night (World.light_spots)
 const LAMPS := 12
 
 
@@ -54,6 +56,7 @@ func _ready() -> void:
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	env.tonemap_exposure = 0.9
 	env.ssao_enabled = true
 	env.ssao_radius = 0.8
 	env.glow_enabled = true
@@ -61,8 +64,9 @@ func _ready() -> void:
 	env.fog_enabled = true
 	env.fog_density = 0.004
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.08
-	env.adjustment_saturation = 1.12
+	env.adjustment_contrast = 1.14
+	env.adjustment_saturation = 1.18
+	env.ssao_intensity = 2.4
 	we.environment = env
 	for i in LAMPS:
 		var l := OmniLight3D.new()
@@ -198,6 +202,8 @@ func _process(delta: float) -> void:
 	_sync_people(delta)
 	_sync_doors()
 	_sync_vehicles()
+	if camp_people.is_empty() and city != null:
+		_make_camp_people()
 	_sync_pickups()
 	_sync_corpses()
 	_sync_blood()
@@ -224,7 +230,7 @@ func release() -> void:
 
 func _clear() -> void:
 	_exit_tree_wait()
-	for n in chunks.values() + people.values().map(func(e): return e.holder) + doors.values() + pickups.values() + corpses.values() + bikes.values():
+	for n in chunks.values() + people.values().map(func(e): return e.holder) + doors.values() + pickups.values() + corpses.values() + bikes.values() + camp_people:
 		if is_instance_valid(n):
 			n.queue_free()
 	chunks.clear()
@@ -232,6 +238,7 @@ func _clear() -> void:
 	people.clear()
 	doors.clear()
 	bikes.clear()
+	camp_people.clear()
 	pickups.clear()
 	corpses.clear()
 
@@ -256,6 +263,8 @@ func _stream(focus: Vector3) -> void:
 		if job_world == main.world and job_node != null:
 			add_child(job_node)
 			chunks[job_cell] = job_node
+			if glow_on:
+				get_tree().call_group("night_glow3d", "set_visible", true)
 			bnodes.merge(job_out)
 		elif job_node != null:
 			job_node.free()
@@ -300,8 +309,13 @@ func _light() -> void:
 	var night := hour < 5.8 or hour > 19.0
 	sun.rotation = Vector3(-lerpf(0.12, 1.45, up) if not night else -0.9, lerpf(-1.4, 1.4, day), 0.0)
 	sun.light_color = Color("8aa4d8") if night else sky_col.lerp(Color("fff0d8"), up)
-	sun.light_energy = (0.22 if night else lerpf(0.35, 1.25, up)) * (0.55 if main.raining else 1.0)
-	env.ambient_light_energy = 0.3 if night else lerpf(0.4, 0.9, up)
+	# Strong sun, weaker sky light: shadows with some depth to them.
+	sun.light_energy = (0.22 if night else lerpf(0.5, 1.7, up)) * (0.55 if main.raining else 1.0)
+	env.ambient_light_energy = 0.3 if night else lerpf(0.35, 0.62, up) * (1.2 if main.raining else 1.0)
+	var dark := night or hour < 6.3 or hour > 18.4
+	if dark != glow_on:
+		glow_on = dark
+		get_tree().call_group("night_glow3d", "set_visible", dark)
 	sky_mat.sky_top_color = sky_col * Color(0.55, 0.65, 0.85) if not night else Color("0a1020")
 	sky_mat.sky_horizon_color = sky_col if not night else Color("1a2030")
 	sky_mat.ground_horizon_color = sky_col.darkened(0.2)
@@ -506,6 +520,69 @@ func _pose(p, e: Dictionary, delta: float) -> void:
 		Pose.zombie(sk, e.phase, float(z.zid % 7) * 0.08 - 0.24, run)
 		if z.flags & 1:  # lunging: arms right out, leaning in
 			sk.set_bone_pose_rotation(sk.find_bone("spine"), Quaternion.from_euler(Vector3(0.45, 0, 0)))
+
+
+# --- The camp's people --------------------------------------------------------
+
+## Soldiers at a camp's four gates, and the volunteer at the table (the Thing
+## "volunteer"): people standing there, so a new survivor sees who to go to.
+func _make_camp_people() -> void:
+	var w := main.world
+	for camp in w.camps:
+		var r: Rect2i = camp.rect
+		var mid := r.get_center()
+		var gates := [[Vector2i(mid.x, r.position.y), PI], [Vector2i(mid.x, r.end.y - 1), 0.0],
+				[Vector2i(r.position.x, mid.y), -PI * 0.5], [Vector2i(r.end.x - 1, mid.y), PI * 0.5]]
+		for g in gates:
+			var gc: Vector2i = g[0]
+			var across := Vector2i(1, 0) if g[1] == 0.0 or g[1] == PI else Vector2i(0, 1)
+			for side in [-1, 1]:
+				var c: Vector2i = gc + across * (side * 3)
+				_camp_person(Vector3(c.x + 0.5, city.ground_h(c), c.y + 0.5), g[1], {height = 1.72, skin = Color("b8845a"), hair_style = "bald",
+						shirt = {kind = "long", col = Color("5a6a44"), col2 = Color("3a4a30"), pattern = 4}, pants = {kind = "long", col = Color("4a5a3a"), col2 = Color("3a4a30"), pattern = 4},
+						shoes = Color("1a1a1a"), vest = {col = Color("4a5438")}}, "pistol")
+	for t in w.things:
+		if t.kind == "volunteer":
+			var c: Vector2i = t.cell
+			_camp_person(Vector3(c.x + 0.5, city.ground_h(c), c.y + 0.5), 0.0, {female = true, height = 1.58, skin = Color("d8a882"), hair_style = "long",
+					shirt = {kind = "tee", col = Color("e8e4dc")}, pants = {kind = "long", col = Color("2a3a5a")},
+					vest = {col = Color("2a9aa0"), col2 = Color("f0e8d8"), pattern = 5}}, "")
+			# The table in front of her, water bottles and a first-aid box on it.
+			var st := SurfaceTool.new()
+			st.begin(Mesh.PRIMITIVE_TRIANGLES)
+			var xf := Transform3D(Basis(), Vector3(c.x + 0.5, city.ground_h(c), c.y + 1.4))
+			Props3D.xbox(st, xf, Vector3(0, 0.74, 0), Vector3(1.8, 0.04, 0.7), Color("e8e4dc"))
+			for x in [0.8, -0.8]:
+				Props3D.xbox(st, xf, Vector3(x, 0.37, 0), Vector3(0.05, 0.74, 0.6), Color("8a8e94"))
+			for i in 6:
+				Props3D.xcyl(st, xf, Vector3(-0.6 + i * 0.12, 0.88, 0.1), 0.035, 0.24, 1, Color(0.7, 0.85, 0.95), 6)
+			Props3D.xbox(st, xf, Vector3(0.5, 0.84, 0), Vector3(0.35, 0.18, 0.25), Color("e8e4dc"))
+			Props3D.xbox(st, xf, Vector3(0.5, 0.84, 0.13), Vector3(0.12, 0.04, 0.01), Color("c8202c"))
+			var mi := MeshInstance3D.new()
+			mi.mesh = st.commit()
+			mi.material_override = city.mat
+			add_child(mi)
+			camp_people.append(mi)
+
+
+func _camp_person(at: Vector3, yaw: float, body: Dictionary, weapon: String) -> void:
+	var holder := Node3D.new()
+	var sk: Skeleton3D = Person.new().build(body)
+	holder.add_child(sk)
+	holder.position = at
+	holder.rotation.y = yaw
+	add_child(holder)
+	Pose.stand(sk, randf() * 10.0)
+	if weapon != "":
+		var att := BoneAttachment3D.new()
+		sk.add_child(att)
+		att.bone_name = "hand_r"
+		var gun := W.build(weapon)
+		gun.position = W.FIST
+		att.add_child(gun)
+		W.upper(sk, weapon, -1.0, 0.0)
+		W.hands(sk, weapon, 0.0)
+	camp_people.append(holder)
 
 
 # --- Vehicles -----------------------------------------------------------------
