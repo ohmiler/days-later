@@ -155,6 +155,9 @@ func _spawn_props() -> void:
 		# In a wall running up and down the screen (between rooms side by side):
 		# seen from above, edge on (see DoorProp).
 		d.side = d.kind == "door" and get_tile(d.cell + Vector2i.UP) in [IWALL, BUILDING, WALL] 				and get_tile(d.cell + Vector2i.DOWN) in [IWALL, BUILDING, WALL]
+		if d.kind == "shutter":
+			# A shutter across a front facing east or west: the run goes up and down.
+			d.side = get_tile(d.cell + Vector2i.UP) == DOOR or get_tile(d.cell + Vector2i.DOWN) == DOOR
 		# A hair below the building's front wall so it draws on top of the facade.
 		n.position = Vector2(d.cell.x * TILE, (d.cell.y + 1) * TILE + 0.2)
 		if d.side:
