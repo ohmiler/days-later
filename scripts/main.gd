@@ -1377,7 +1377,8 @@ func _fade_trees_near(pos: Vector2) -> void:
 	for b in world.near(pos, 3 if hidden_building else 2):
 		if b is BuildingProp and b != hidden_building and not faded.has(b) and (pos.y < b.position.y and b.visual_rect().intersects(body)
 				or inside.has_area() and b.position.y > inside.end.y and b.visual_rect().intersects(inside)):
-			fade_goal[b] = 0.3
+			# Over the room you're in: gone, not a ghost laid on it. Outside: see-through.
+			fade_goal[b] = 0.0 if inside.has_area() and b.position.y > inside.end.y and b.visual_rect().intersects(inside) else 0.3
 			faded.append(b)
 	# Inside, the front's doors, windows and shutter (as tall as a real shop
 	# front) would stand over the front of the room: see-through. So do the
@@ -1395,7 +1396,7 @@ func _fade_trees_near(pos: Vector2) -> void:
 			if id >= 0 and id < world.door_nodes.size():
 				var dn = world.door_nodes[id]
 				if is_instance_valid(dn) and not faded.has(dn):
-					fade_goal[dn] = 0.25
+					fade_goal[dn] = 0.0
 					faded.append(dn)
 	# Anyone your character can see, standing where a roof or a tree is drawn
 	# over them: that turns see-through too, so what you see is never hidden.
