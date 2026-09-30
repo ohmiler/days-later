@@ -955,10 +955,10 @@ func _draw_sat(hip_y: float, k: float, face: int, floor_sit: bool) -> void:
 		Look.draw(self, {view = [Look.SIDE, face == 1], anchors = {seat = hip, hands = hands, feet = feet}}, look)
 		return
 	if floor_sit:
-		# Cross-legged; from behind the feet tuck in (the legs fold out of sight).
-		var fx := 4.2 if face == 2 else 2.4
-		feet = [Vector2(-1.7, 0).lerp(Vector2(-fx, -0.5), k), Vector2(1.7, 0).lerp(Vector2(fx, -0.5), k)]
-		hands = [Vector2(-3.5, -8).lerp(Vector2(-3.8, hip_y + 0.5), k), Vector2(3.5, -8).lerp(Vector2(3.8, hip_y + 0.5), k)]
+		# Cross-legged: the shins folded in front of the hips (feet near the middle,
+		# the knees out wide), hands resting on the knees. Front and back the same.
+		feet = [Vector2(-1.7, 0).lerp(Vector2(-1.0, -0.3), k), Vector2(1.7, 0).lerp(Vector2(1.0, -0.3), k)]
+		hands = [Vector2(-3.5, -8).lerp(Vector2(-5.5, hip_y - 1.0), k), Vector2(3.5, -8).lerp(Vector2(5.5, hip_y - 1.0), k)]
 	else:
 		# On a seat, from the front or back: knees out, shins down, hands on the thighs.
 		feet = [Vector2(-1.7, 0).lerp(Vector2(-2.8, 0), k), Vector2(1.7, 0).lerp(Vector2(2.8, 0), k)]
