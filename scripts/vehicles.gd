@@ -133,9 +133,15 @@ static func step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World
 	return hit
 
 
-## A car: hold a direction and it drives round toward it (never turning on
-## the spot); hold the way behind it and it brakes, then backs up. It hits
-## walls, trees and parked vehicles with its whole length (CarArt.SEDAN).
+## A car, driven the way cars are: W the accelerator, S the brake and then
+## reverse, A and D the wheel (it turns round its back wheels as it rolls,
+## never on the spot; backing up, the tail swings the way you steer the
+## nose). Let go of the wheel and it runs straight on, easing onto the
+## nearest of the eight compass ways, so a street is driven dead along it.
+## It hits walls, trees and parked vehicles with its whole length (CarArt.SEDAN).
+const CAR_SETTLE := 0.9  # radians a second it eases straight, at full speed
+const CAR_WAYS := PI / 4.0  # (the eight ways it eases onto)
+
 static func _car_step(p: Player, v: Dictionary, move: Vector2, delta: float, w: World) -> float:
 	var m: Dictionary = MODELS[v.model]
 	var spd: float = v.get("spd", 0.0)
@@ -143,19 +149,30 @@ static func _car_step(p: Player, v: Dictionary, move: Vector2, delta: float, w: 
 	var top: float = m.speed
 	if v.fuel <= 0.0 or v.hp <= 0 or p.grabbed_by >= 0:
 		top = 0.0
-	var want := 0.0
-	var steer := 0.0
-	if move.length() > 0.1:
-		var ang := wrapf(move.angle() - heading, -PI, PI)
-		if absf(ang) < 2.0 or spd > 20.0:
-			want = top  # forward, swinging round toward it
-			steer = clampf(ang, -1.0, 1.0)
-		else:
-			want = -top * CAR_BACK  # it's behind you: back up, the tail swinging toward it
-			steer = clampf(wrapf(move.angle() - (heading + PI), -PI, PI), -1.0, 1.0)
+	var pedal := clampf(-move.y * 1.5, -1.0, 1.0)
+	var steer := clampf(move.x * 1.5, -1.0, 1.0)
+	# A and D go by the screen: heading down it toward us, the car's right is
+	# the screen's left, so the wheel turns the other way then (D still takes
+	# it right across the screen). Which way is settled as the key goes down
+	# and kept till it's let go, so a turn carries on round through the bottom.
+	if absf(steer) < 0.1:
+		v.flip = false
+	elif not v.get("steering", false):
+		v.flip = Vector2.from_angle(heading).y > 0.3
+	v.steering = absf(steer) >= 0.1
+	if v.get("flip", false):
+		steer = -steer
+	var want := pedal * (top if pedal > 0.0 else top * CAR_BACK)
+	if pedal < 0.0 and spd > 5.0:
+		want = 0.0  # (braking first: it only backs up once stopped)
 	var rate: float = m.accel if signf(want) == signf(spd) and absf(want) > absf(spd) else m.accel * 2.2
+	if absf(pedal) < 0.1:
+		rate = m.accel * 0.5  # (off the pedals: it rolls to a stop)
 	spd = move_toward(spd, want, rate * delta)
-	heading += steer * absf(spd) / CAR_TURN * delta
+	heading += steer * spd / CAR_TURN * delta
+	if absf(steer) < 0.1 and absf(spd) > 5.0:
+		var straight := roundf(heading / CAR_WAYS) * CAR_WAYS
+		heading = move_toward(heading, straight, CAR_SETTLE * minf(1.0, absf(spd) / maxf(m.speed, 1.0)) * delta)
 	var pos: Vector2 = v.pos + Vector2.from_angle(heading) * spd * delta
 	var hit := 0.0
 	if car_blocked(w, pos, heading, CarArt.SEDAN):
@@ -341,6 +358,8 @@ func mount(p: Player, id: int) -> void:
 	v.touched = true
 	_place(v)
 	main.fx_sound.rpc("door", v.pos)
+	if is_car(v):
+		main._toast(p, "W เร่ง · S เบรก/ถอย · A D เลี้ยว")
 
 
 ## Get on the back of a bike someone is riding.

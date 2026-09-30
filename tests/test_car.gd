@@ -1,7 +1,7 @@
 extends "res://tests/test_base.gd"
-## The trial car (Vehicles, CarArt): the admin menu makes one, E gets you in,
-## it drives round toward where you steer, backs up, stops at walls, and you
-## get out beside a door.
+## The car (Vehicles, CarArt): the admin menu makes one, E gets you in, W/S
+## pedals and A/D the wheel, it settles straight, brakes, backs up, stops at
+## walls, and you get out beside a door.
 
 
 func run() -> void:
@@ -36,27 +36,58 @@ func run() -> void:
 	main.actions.req_act("vehicle", v.id, "ride")
 	check(me.riding == v.id and v.rider == me.peer_id, "and you're in")
 
-	# Drive east: it goes, the way it faces.
-	me.move = Vector2.RIGHT
+	# W: it drives on, the way it faces.
+	me.move = Vector2.UP
 	simulate(1.5)
-	check(v.pos.x > at.x + 60.0 and absf(wrapf(v.dir, -PI, PI)) < 0.1, "holding right, it drives east (%.0f px)" % (v.pos.x - at.x))
-	# Steer down: it swings round, never on the spot.
+	check(v.pos.x > at.x + 60.0 and absf(wrapf(v.dir, -PI, PI)) < 0.1, "W, it drives east the way it faces (%.0f px)" % (v.pos.x - at.x))
+	# D: the wheel to the right, it swings round (never on the spot).
 	var d0: float = v.dir
-	me.move = Vector2.DOWN
-	simulate(0.1)
-	check(v.dir > d0 and v.dir - d0 < PI * 0.5, "steering down, it starts to turn (%.2f rad)" % (v.dir - d0))
-	# Stopped, holding the way behind: it backs up.
+	me.move = Vector2(1, -1).normalized()
+	simulate(0.2)
+	check(v.dir > d0 and v.dir - d0 < PI * 0.5, "W and D, it starts to turn right (%.2f rad)" % (v.dir - d0))
+	# Heading down the screen, D still takes it right across the screen.
 	me.move = Vector2.ZERO
-	simulate(3.0)
-	v.dir = 0.0
-	var x0: float = v.pos.x
-	me.move = Vector2.LEFT
+	simulate(0.2)
+	v.dir = PI * 0.5
+	v.spd = 100.0
+	me.move = Vector2(1, -1).normalized()
+	simulate(0.3)
+	check(v.dir < PI * 0.5 - 0.05, "heading down, D turns it toward the right of the screen (%.2f rad)" % v.dir)
+	# Let go of the wheel: it eases straight onto the nearest of its eight ways.
+	v.dir = 0.15
+	me.move = Vector2.UP
 	simulate(1.0)
-	check(v.pos.x < x0 - 5.0 and absf(wrapf(v.dir, -PI, PI)) < 0.3, "holding the way behind, it backs up (%.0f px)" % (v.pos.x - x0))
+	check(absf(wrapf(v.dir, -PI, PI)) < 0.05, "off the wheel, it settles straight along the street (%.2f rad)" % v.dir)
+	# Standing still, D alone doesn't turn it.
+	me.move = Vector2.ZERO
+	simulate(1.0)
+	v.spd = 0.0  # (stopped)
+	v.dir = 0.0
+	me.move = Vector2.RIGHT
+	simulate(0.5)
+	check(absf(v.dir) < 0.01, "stopped, the wheel alone doesn't turn it (%.2f rad)" % v.dir)
+	# S: the brake, then reverse.
+	var x0: float = v.pos.x
+	me.move = Vector2.DOWN
+	simulate(1.0)
+	check(v.pos.x < x0 - 5.0 and absf(wrapf(v.dir, -PI, PI)) < 0.3, "S, it backs up (%.0f px)" % (v.pos.x - x0))
+	me.move = Vector2.ZERO
+	simulate(2.0)
+	me.move = Vector2.UP
+	simulate(1.0)
+	var fast: float = v.spd
+	me.move = Vector2.DOWN
+	simulate(0.3)
+	check(fast > 50.0 and v.spd < fast and v.spd >= 0.0, "S going forward brakes first (%.0f -> %.0f)" % [fast, v.spd])
 	# Into a wall: it stops there.
 	me.move = Vector2.ZERO
 	simulate(2.0)
+	v.spd = 0.0
 	v.dir = -PI * 0.5
+	for dx in range(0, 300, 6):  # (somewhere along the street it fits facing north)
+		if not Vehicles.car_blocked(w, at + Vector2(dx, 0), v.dir, CarArt.SEDAN):
+			v.pos = at + Vector2(dx, 0)
+			break
 	me.move = Vector2.UP
 	simulate(8.0)
 	check(not Vehicles.car_blocked(w, v.pos, v.dir, CarArt.SEDAN), "driving north it stops at whatever is in the way, not through it")
