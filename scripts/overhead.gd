@@ -21,12 +21,12 @@ func _ready() -> void:
 			groups[key] = []
 		groups[key].append(n)
 	# (The deck first: the wires are strung above it.)
-	if world.bts_row >= 0:
+	if world.bts_row >= 0 and World.SKYTRAIN_SHOWN:
 		var width := World.W * World.TILE
 		for x0 in range(0, width, PIECE):
 			_piece(_draw_deck.bind(float(x0), float(mini(x0 + PIECE, width))))
 	# A drawn zone's skytrain: the line cut into short stretches, one piece each.
-	var path := world.bts_path
+	var path := world.bts_path if World.SKYTRAIN_SHOWN else PackedVector2Array()
 	for i in path.size() - 1:
 		var a: Vector2 = path[i]
 		var b: Vector2 = path[i + 1]
@@ -35,7 +35,7 @@ func _ready() -> void:
 			_piece(_draw_path_deck.bind(a.lerp(b, float(k) / n), a.lerp(b, float(k + 1) / n)))
 	if world.bts_station.x >= 0 and path.size() > 1:
 		_piece(_draw_station)
-	if not world.circle.is_empty():
+	if not world.circle.is_empty() and World.SKYTRAIN_SHOWN:
 		_piece(_draw_skywalk)
 	for key in groups:
 		_piece(_draw_wires.bind(groups[key]))

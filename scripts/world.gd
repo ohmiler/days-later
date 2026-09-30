@@ -78,6 +78,10 @@ var city_seed := 0  # the seed this city was built from
 var vehicles: Array = []  # bikes you can ride (see Vehicles)
 var things: Array = []  # {id, kind, cell, state}: taps, radios, vending machines (see Things)
 var thing_nodes: Array = []
+## The skytrain (deck, station, stairs, the skywalk round the monument) is still
+## laid out, so cities and saves are the same, but it isn't drawn: it floated over
+## the street and hid what was under it. Wires stay.
+const SKYTRAIN_SHOWN := false
 var bts_row := -1
 var bts_path := PackedVector2Array()  # a drawn zone's skytrain: the line it follows, in pixels (see CityGen._skytrain_plan)
 var bts_station := Vector2(-1, -1)  # ...and the rows (pixels, from..to) its station spans
@@ -108,6 +112,8 @@ func generate(seed_val: int, zone_id := "") -> void:
 	CityGen.build(self, rng)
 	Vehicles.setup(self)
 	CampLife.plan(self)  # (blocks the cells it uses: before the paths are worked out)
+	if not SKYTRAIN_SHOWN:
+		_free_pillars()
 
 	astar.region = Rect2i(0, 0, W, H)
 	astar.cell_size = Vector2(TILE, TILE)
@@ -129,6 +135,19 @@ func generate(seed_val: int, zone_id := "") -> void:
 	marks.draw.connect(_draw_markings.bind(marks))
 	add_child(marks)
 	_spawn_props()
+
+
+## No skytrain drawn, so its pillars aren't either: the cells they stood in are
+## walkable again (the props stay in the list, so every prop keeps its number).
+func _free_pillars() -> void:
+	for rec in street_props:
+		if rec.kind != "pillar":
+			continue
+		var cx := roundi(rec.pos.x / TILE)
+		var cy := roundi(rec.pos.y / TILE)
+		blocked.erase(Vector2i(cx, cy - 1))
+		if bts_path.is_empty():
+			blocked.erase(Vector2i(cx, cy - 2))  # (the old layout's pillar takes two cells)
 
 
 func _spawn_props() -> void:
@@ -254,6 +273,8 @@ func _spawn_props() -> void:
 	for i in street_props.size():
 		street_props[i].id = i  # (a car you stand on is known by this)
 	for rec in street_props:
+		if rec.kind == "pillar" and not SKYTRAIN_SHOWN:
+			continue
 		if rec.kind == "pole" and rec.get("lamp", Vector2.ZERO) != Vector2.ZERO:
 			light_spots.append([rec.pos + Vector2(rec.lamp.x, 0), LAMP_LIGHT])  # (the pool it throws on the street below)
 		var p := StreetProp.new()
@@ -1418,8 +1439,8 @@ func _draw_markings(node: Node2D) -> void:
 				ci.draw_rect(Rect2(o.x - 26, o.y + s, 22, 5), white)
 			if east:
 				ci.draw_rect(Rect2(o.x + sz + 4, o.y + s, 22, 5), white)
-	if bts_row >= 0:
+	if bts_row >= 0 and SKYTRAIN_SHOWN:
 		ci.draw_rect(Rect2(0, (bts_row - 1) * TILE, W * TILE, 4 * TILE), Color(0, 0, 0, 0.2))  # skytrain shadow
-	for i in bts_path.size() - 1:
+	for i in bts_path.size() - 1 if SKYTRAIN_SHOWN else 0:
 		ci.draw_line(bts_path[i], bts_path[i + 1], Color(0, 0, 0, 0.18), 4 * TILE)  # (and a drawn zone's)
 	ci.commit(node)

@@ -722,6 +722,8 @@ func _monument() -> void:
 
 ## Stairs up from the pavement to the skytrain station.
 func _bts_stairs() -> void:
+	if not World.SKYTRAIN_SHOWN:
+		return
 	var concrete := Color("a8a49c")
 	_shadow(Vector2(9, 3), Vector2(0, -1))
 	for i in int((World.BTS_H - 16.0) / 5.5):
