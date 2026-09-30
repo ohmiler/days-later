@@ -57,7 +57,7 @@ static func first_id() -> String:
 static func problems() -> Array:
 	var out := []
 	var kinds := ["kill", "kill_head", "silent_kill", "have_tag", "have_item", "hold_weapon", "board", "craft", "search",
-			"cook", "boil", "treat", "eat", "drink", "dawn", "talk"]
+			"cook", "boil", "treat", "eat", "drink", "dawn", "talk", "visit"]
 	for id in DEFS:
 		var d: Dictionary = DEFS[id]
 		for key in ["name", "desc", "objectives"]:
@@ -95,6 +95,8 @@ func start(p: Player, id: String) -> void:
 		counts.append(0)
 	p.quests.active[id] = counts
 	p.quests_dirty = true
+	if DEFS[id].get("story", false):
+		main._toast(p, "วิทยุค่าย: " + DEFS[id].desc)  # (the story comes over the camp's radio)
 	_refresh(p)
 
 
@@ -195,9 +197,23 @@ func server_tick(delta: float) -> void:
 		if not p.quests.has("active"):
 			ensure(p)  # (someone new, or from before there were quests)
 		_refresh(p)
+		_visit(p)
 		if p.quests_dirty:
 			p.quests_dirty = false
 			main._notify(p.peer_id, &"quests_sync", [p.quests])
+
+
+## Being inside a building counts as a visit to its kind ("hospital", "police")
+## and to its sign ("ร้านขายยา"): what the story sends you to.
+func _visit(p: Player) -> void:
+	if not p.alive() or p.on_roof or p.quests.get("active", {}).is_empty():
+		return
+	var b = main.world.building_at.get(main.world.to_cell(p.position))
+	if b == null:
+		return
+	note(p, "visit", {kind = b.data.kind})
+	if b.data.get("sign", "") != "":
+		note(p, "visit", {kind = b.data.sign})
 
 
 ## Once the start is done: two everyday tasks for each real day, from the
@@ -227,7 +243,7 @@ func hand_out_daily(p: Player) -> String:
 
 func _start_done(p: Player) -> bool:
 	for id in DEFS:
-		if not DEFS[id].get("daily", false) and not p.quests.done.has(id):
+		if not DEFS[id].get("daily", false) and not DEFS[id].get("story", false) and not p.quests.done.has(id):
 			return false
 	return true
 
