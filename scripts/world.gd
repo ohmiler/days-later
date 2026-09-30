@@ -177,11 +177,7 @@ func _spawn_props() -> void:
 			n.z_index = 0
 		_stream(n, n.position)
 		door_nodes.append(n)
-		if fronted:
-			_door_cue(d, fronted)
 		astar.set_point_solid(d.cell, d.closed)
-	for grp in cue_groups.values():
-		grp[grp.size() / 2].show_board = true
 	var bnode := {}
 	for b: BuildingProp in building_nodes:
 		bnode[b.data] = b
@@ -393,36 +389,6 @@ func _stream_wide(n: Node2D, area: Rect2) -> void:
 
 
 ## Register a prop; it goes into the scene when the camera comes near.
-## A front turned away or edge on shows no door to the camera: its roof edge
-## gets a doorframe and an open/shut board (see DoorCue).
-func _door_cue(d: Dictionary, b: BuildingProp) -> void:
-	var facing: String = b.data.get("facing", "s")
-	if facing == "s" or not d.kind in ["shutter", "door"]:
-		return
-	var r: Rect2i = b.data.rect
-	var front: bool = (facing == "n" and d.cell.y == r.position.y) or (facing == "e" and d.cell.x == r.end.x - 1) or (facing == "w" and d.cell.x == r.position.x)
-	if not front:
-		return
-	var cue := DoorCue.new()
-	cue.door = d
-	cue.facing = facing
-	var at := to_pos(d.cell)
-	var lift: float = b.h
-	if facing == "n":
-		cue.position = Vector2(at.x, r.position.y * TILE - lift)
-	else:
-		cue.position = Vector2((r.end.x if facing == "e" else r.position.x) * TILE, at.y - lift)
-	_stream(cue, cue.position)
-	door_cues.append(cue)
-	if not cue_groups.has(b):
-		cue_groups[b] = []
-	cue_groups[b].append(cue)
-
-
-var door_cues: Array = []
-var cue_groups := {}  # building -> the cues along its front (one board, in the middle)
-
-
 func _stream(n: Node2D, pos: Vector2) -> void:
 	var k := _chunk_of(pos)
 	if not stream.has(k):
