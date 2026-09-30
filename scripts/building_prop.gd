@@ -362,7 +362,7 @@ func _draw_shop() -> void:
 		_door()
 	if data.sign != "":
 		var sr := _sign_rect()
-		var sc: Color = SIGN_COLORS.get(data.sign, Color.from_hsv(rng.randf(), 0.7, 0.75))
+		var sc: Color = SIGN_COLORS.get(data.sign, Color("2a62a8") if data.kind == "store" else Color.from_hsv(rng.randf(), 0.7, 0.75))
 		c.draw_rect(sr, sc)
 		c.draw_rect(sr, sc.darkened(0.4), false, 0.5)
 		_text(sr, data.sign, SIGN_TEXT.get(data.sign, Color.WHITE if sc.get_luminance() < 0.55 else Color("1a1a1a")), 5)
@@ -497,6 +497,9 @@ func _facade_life(col: Color) -> void:
 
 func _draw_store() -> void:
 	var col := Color("e8e6e0")
+	if data.get("facing", "s") != "s":
+		_draw_shop_turned(col)  # (its glass front is on the wall we can't see: a sign says what it is)
+		return
 	_flat_roof(col)
 	_wall(col)
 	c.draw_rect(Rect2(0, -h + 1, w, 5), Color("2a62a8"))  # brand stripe
