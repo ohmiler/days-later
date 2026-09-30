@@ -215,6 +215,8 @@ func _ready() -> void:
 	ui.admin.command_requested.connect(func(rpc_name: StringName, args: Array): _request(rpc_name, args))
 	ui.gear.drop_requested.connect(func(ref: Array): _request(&"req_move", [ref, ["ground", -1]]))
 	ui.gear.box_closed.connect(func(): _request(&"req_close_box", []))
+	ui.card.take_requested.connect(func(ref: Array): _request(&"req_move", [ref, ["inv", -1]]))
+	ui.card.closed.connect(func(): _request(&"req_close_box", []))
 	ui.chat_sent.connect(func(t: String): _request(&"req_chat", [t]))
 	ui.leave_requested.connect(func(): _leave(false))
 	ui.quit_requested.connect(func(): _leave(true))
@@ -1649,6 +1651,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif k == KEY_C:
 			sneak_toggle = not sneak_toggle
 			ui.push_feed("ย่อง: เงียบ ช้า มองเห็นยาก" if sneak_toggle else "เลิกย่อง")
+		elif k == KEY_E and ui.card.visible:
+			ui.card.take_all()  # (a cupboard's card is open: E takes the lot)
 		elif k == KEY_E:
 			e_down_at = Time.get_ticks_msec() / 1000.0
 		elif k == KEY_R:
