@@ -839,7 +839,7 @@ func slide(pos: Vector2, v: Vector2, r: float, roof := false, road := false, sto
 
 func _solid_corner_cells(p: Vector2, r: float, roof: bool, road := false, storey := 0, swim := false) -> Array:
 	var out := []
-	for o in _feet(r):
+	for o in (_roof_feet(r) if roof else _feet(r)):
 		var c := to_cell(p + o)
 		if swim and storey == 0 and not roof and get_tile(c) == WATER:
 			continue  # (a life jacket: the canal's no wall)
@@ -905,10 +905,21 @@ static func _feet(r: float) -> Array:
 	return [Vector2(-r, -d), Vector2(r, -d), Vector2(-r, d), Vector2(r, d)]
 
 
+## On a roof the front wall is drawn rising from the roof's south edge, with a
+## lip along it, and a body standing right at the edge looks to be standing in
+## the wall. So the feet test reaches this much further south: you stop a step
+## short of the edge (the parapet).
+const ROOF_LIP := 12.0
+
+static func _roof_feet(r: float) -> Array:
+	var d := r * FOOT_DEPTH
+	return [Vector2(-r, -d), Vector2(r, -d), Vector2(-r, d + ROOF_LIP), Vector2(r, d + ROOF_LIP)]
+
+
 ## On the ground, stand anywhere not solid; on the roof, only on shophouse
 ## roofs; upstairs, only on the floor up there.
 func can_stand(p: Vector2, r: float, roof := false, road := false, storey := 0, swim := false) -> bool:
-	for o in _feet(r):
+	for o in (_roof_feet(r) if roof else _feet(r)):
 		var c := to_cell(p + o)
 		if swim and storey == 0 and not roof and get_tile(c) == WATER:
 			continue
