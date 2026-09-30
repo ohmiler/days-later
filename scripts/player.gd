@@ -913,7 +913,7 @@ func _draw_rest() -> void:
 	var on_seat := sitting >= 0 and sitting < world.decor.size()
 	if on_seat:
 		var seat_h: float = SEAT_HEIGHT.get(world.decor[sitting].kind, 6.0)
-		_draw_sat(lerpf(Rig.HIP_Y, -seat_h, k), k, 2, false)
+		_draw_sat(lerpf(Rig.HIP_Y, -seat_h, k), k, rest_face, false)
 	elif rest_face <= 1:
 		var fd := -1.0 if rest_face == 0 else 1.0  # (legs out in front, head going down behind you)
 		var u := 1.0 - k if lying else 1.0 - 0.6 * k
@@ -948,12 +948,21 @@ func _draw_sat(hip_y: float, k: float, face: int, floor_sit: bool) -> void:
 	var hip := Vector2(0, hip_y)
 	var feet: Array
 	var hands: Array
+	if face <= 1 and not floor_sit:
+		# On a seat, side-on: thighs forward, shins down, hands resting on the thighs.
+		feet = [Vector2(0.0, 0.0).lerp(Vector2(6.4, 0), k), Vector2(0.6, 0.0).lerp(Vector2(7.4, 0), k)]
+		hands = [Vector2(-3.5, -8).lerp(Vector2(2.4, hip_y - 2.0), k), Vector2(3.5, -8).lerp(Vector2(3.4, hip_y - 2.0), k)]
+		Look.draw(self, {view = [Look.SIDE, face == 1], anchors = {seat = hip, hands = hands, feet = feet}}, look)
+		return
 	if floor_sit:
-		feet = [Vector2(-1.7, 0).lerp(Vector2(-4.2, -0.5), k), Vector2(1.7, 0).lerp(Vector2(4.2, -0.5), k)]
+		# Cross-legged; from behind the feet tuck in (the legs fold out of sight).
+		var fx := 4.2 if face == 2 else 2.4
+		feet = [Vector2(-1.7, 0).lerp(Vector2(-fx, -0.5), k), Vector2(1.7, 0).lerp(Vector2(fx, -0.5), k)]
 		hands = [Vector2(-3.5, -8).lerp(Vector2(-3.8, hip_y + 0.5), k), Vector2(3.5, -8).lerp(Vector2(3.8, hip_y + 0.5), k)]
 	else:
-		feet = [Vector2(-2.2, 0), Vector2(2.2, 0)]
-		hands = [Vector2(-3.5, -8).lerp(Vector2(-2.5, hip_y - 1.0), k), Vector2(3.5, -8).lerp(Vector2(2.5, hip_y - 1.0), k)]
+		# On a seat, from the front or back: knees out, shins down, hands on the thighs.
+		feet = [Vector2(-1.7, 0).lerp(Vector2(-2.8, 0), k), Vector2(1.7, 0).lerp(Vector2(2.8, 0), k)]
+		hands = [Vector2(-3.5, -8).lerp(Vector2(-3.0, hip_y - 1.5), k), Vector2(3.5, -8).lerp(Vector2(3.0, hip_y - 1.5), k)]
 	Look.draw(self, {view = [Look.FRONT if face == 2 else Look.BACK, false],
 			anchors = {seat = hip, hands = hands, feet = feet}}, look)
 

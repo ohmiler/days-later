@@ -91,6 +91,8 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	if not moving:
 		run = 0.0
 	var bob := absf(s) * lerpf(1.0, RUN.bob, run) * Proportions.L  # running: up off the ground between strides
+	if moving and view != Look.SIDE and not zombie and run < 0.5:
+		bob *= 1.5  # (a clearer bounce walking toward or away from us)
 	if zombie and moving:
 		bob += maxf(0.0, sin(phase * 0.5)) * 0.8 * vary.get("limp", 1.0) * Proportions.L  # limp
 
@@ -138,6 +140,8 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 	if not zombie:
 		tilt += RUN.lean * run  # running: leaning into it
 		crouch += RUN.sink * run * Proportions.L
+	if moving and view != Look.SIDE and not zombie and fall <= 0.0:
+		roll += s * 0.045 * (1.0 - run)  # (walking toward or away: the shoulders rock over the planted foot)
 	var pant: float = st.get("pant", 0.0)  # out of breath: the shoulders heave
 	if pant > 0.0 and fall <= 0.0:
 		bob += (sin(st.get("breath", 0.0) * 4.5) * 0.5 + 0.5) * 0.7 * pant
@@ -451,7 +455,7 @@ static func _legs(view: int, s: float, angle: float, sx: float, attack: int, ext
 			legs.append(_leg(hip, foot, i == 0))
 		return legs
 	# From the front or back: the knee comes up higher with each running stride.
-	var lift := lerpf(2.2, RUN.knee, run) * Proportions.L
+	var lift := lerpf(3.4, RUN.knee, run) * Proportions.L  # (walking toward or away from us: a clear step, not a shuffle)
 	return [_rect_leg(-3.1, 0.0 if drag == 0 else maxf(0.0, s) * lift), _rect_leg(0.3, 0.0 if drag == 1 else maxf(0.0, -s) * lift)]
 
 

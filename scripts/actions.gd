@@ -390,7 +390,7 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			var d: Dictionary = main.world.decor[t.id]
 			p.sleeping = false
 			p.sitting = t.id
-			p.rest_face = 2
+			p.rest_face = Player.face_of(p.aim)  # (sat the way you face: toward us, away, or side-on)
 			p.position = main.world.to_pos(d.cell) + Vector2(0, World.TILE * 0.45 + 0.5)  # (in front of it, so drawn over it)
 		"ride":
 			main.vehicles.mount(p, t.id)
