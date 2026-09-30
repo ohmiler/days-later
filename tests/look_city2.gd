@@ -35,4 +35,23 @@ func run() -> void:
 		await RenderingServer.frame_post_draw
 		root.get_viewport().get_texture().get_image().save_png(out + "/" + shot[0])
 		print("shot ", shot[0])
+	# Inside one facing each way: the thin walls, the rooms, the doors.
+	for facing in ["n", "e", "s"]:
+		for b in main.world.buildings:
+			if b.get("facing", "s") == facing and b.kind == "shop":
+				var spot: Vector2 = main.world.to_pos(b.rect.get_center())
+				for dy in range(-3, 4):
+					for dx in range(-3, 4):
+						var p: Vector2 = main.world.to_pos(b.rect.get_center() + Vector2i(dx, dy))
+						if main.world.can_stand(p, Player.RADIUS):
+							spot = p
+				me.position = spot
+				main.play_zoom = Vector2(3.4, 3.4)
+				main.camera.zoom = main.play_zoom
+				main.cam_pos = Vector2.INF
+				await wait(1.5)
+				await RenderingServer.frame_post_draw
+				root.get_viewport().get_texture().get_image().save_png(out + "/c2_inside_%s.png" % facing)
+				print("shot inside ", facing)
+				break
 	check(main.world.zone == "proto", "the trial zone")

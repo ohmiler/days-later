@@ -415,14 +415,16 @@ func _draw_shop_turned(col: Color) -> void:
 						aw if i % 2 == 0 else Color("e8e2d4"))
 			if data.sign != "":
 				var bx := x0 if facing == "e" else -9.0
-				var br := Rect2(bx, -GROUND_H - FLOOR_H - d * 0.35, 9, 22)
+				var br := Rect2(bx, -GROUND_H - FLOOR_H - d * 0.35, 9, 30)
 				c.draw_rect(br, sc)
 				c.draw_rect(br, sc.darkened(0.4), false, 0.5)
-				var font := Look.thai_font()
 				var tc: Color = SIGN_TEXT.get(data.sign, Color.WHITE if sc.get_luminance() < 0.55 else Color("1a1a1a"))
-				var chars: String = String(data.sign).substr(0, 4)
-				for i in chars.length():
-					c.draw_string(font, br.position + Vector2(1.5, 6 + i * 5), chars[i], HORIZONTAL_ALIGNMENT_CENTER, 6, 5, tc)
+				# The name turned on its side, reading up the board (as blade
+				# signs do: letters stacked one by one would lose the vowels).
+				var size := 6
+				c.draw_set_transform(Vector2(br.get_center().x + size * 0.36, br.end.y - 1), -PI / 2)
+				c.draw_string(Look.thai_font(), Vector2.ZERO, data.sign, HORIZONTAL_ALIGNMENT_CENTER, br.size.y - 2, size, tc)
+				c.draw_set_transform(Vector2.ZERO)
 	_facade_life(col)
 
 

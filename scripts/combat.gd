@@ -249,7 +249,10 @@ func _wall_between(a: Vector2, b: Vector2, storey: int) -> bool:
 	var n := ceili(a.distance_to(b) / 3.0)
 	for i in range(1, n):
 		var c := w.to_cell(a.lerp(b, float(i) / n))
-		if storey > 0:
+		if w.is_thin_wall(c, storey):
+			if w.line_hits_wall(c, a, b, storey):
+				return true
+		elif storey > 0:
 			if w.storey_map(storey).get(c, World.WALL) != World.FLOOR:
 				return true
 		elif w.door_at.has(c):

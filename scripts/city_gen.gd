@@ -53,7 +53,7 @@ const SIGN_LOOT := {
 ## Which city generator this is. Saves remember it: a city saved by an older
 ## generator cannot be rebuilt from its seed any more (see SaveGame).
 ## 1: shallow shophouses laid out in code. 2: deep ones from data/prefabs.
-const GEN := 10  # 10: the temple and its refugee camp in Victory Monument (Camp); 9: big buildings (hospitals, flats, offices, the mall, the market); 8: zones drawn by hand (Victory Monument)
+const GEN := 11  # 11: city 2 blocks, shophouses facing every street (docs/city/rules.md); 10: the temple and its refugee camp in Victory Monument (Camp); 9: big buildings (hospitals, flats, offices, the mall, the market); 8: zones drawn by hand (Victory Monument)
 const PREFAB_DIR := "res://data/prefabs"  # (exports must include *.txt)
 const MIN_DEPTH := 13  # plots are at least this deep; no plan may be deeper
 const MAX_DEPTH := 15
@@ -221,10 +221,8 @@ static func _layout_plan(w: World, plan: Dictionary, rng: RandomNumberGenerator)
 			_camp_block(w, br, w.blocks[-1].name, rng)
 		elif BLOCK_USES.has(w.blocks[-1].use):
 			_big_block(w, br, w.blocks[-1].use, w.blocks[-1].name, rng)
-		elif w.blocks[-1].use == "rows":
-			_rows_block(w, br, rng)
 		else:
-			_shophouse_block(w, br, rng)
+			_city_block(w, br, rng)  # ("shophouses", "rows")
 	if plan.has("bts"):
 		_skytrain_plan(w, plan.bts)
 	_street_furniture(w, rng)
@@ -914,6 +912,24 @@ static func _row(w: World, x0: int, x1: int, y: int, depth: int, rng: RandomNumb
 const SOI_W2 := 5  # a soi a car can get down
 
 
+## A drawn zone's big block of shophouses cut into city blocks by sois a
+## car can get down (about 80 m apart each way), each block built the city 2
+## way (_rows_block): the rows along a soi face it, as along a road.
+static func _city_block(w: World, b: Rect2i, rng: RandomNumberGenerator) -> void:
+	var cols := maxi(1, roundi((b.size.x + SOI_W2) / 80.0))
+	var rows := maxi(1, roundi((b.size.y + SOI_W2) / 80.0))
+	w.fill(b, World.SOI)
+	var bw := (b.size.x - (cols - 1) * SOI_W2) / float(cols)
+	var bh := (b.size.y - (rows - 1) * SOI_W2) / float(rows)
+	for j in rows:
+		for i in cols:
+			var x0 := b.position.x + roundi(i * (bw + SOI_W2))
+			var y0 := b.position.y + roundi(j * (bh + SOI_W2))
+			var x1 := b.end.x if i == cols - 1 else b.position.x + roundi(i * (bw + SOI_W2) + bw)
+			var y1 := b.end.y if j == rows - 1 else b.position.y + roundi(j * (bh + SOI_W2) + bh)
+			_rows_block(w, Rect2i(x0, y0, x1 - x0, y1 - y0), rng)
+
+
 static func _rows_block(w: World, b: Rect2i, rng: RandomNumberGenerator) -> void:
 	var d := rng.randi_range(MIN_DEPTH, MAX_DEPTH)
 	if b.size.x < d * 2 + SOI_W2 + 4 or b.size.y < d * 2 + 4:
@@ -926,8 +942,9 @@ static func _rows_block(w: World, b: Rect2i, rng: RandomNumberGenerator) -> void
 	_strip(w, Rect2i(b.position.x, b.position.y, b.size.x, d), "n", rng)
 	_strip(w, Rect2i(b.position.x, y1, mouth - b.position.x, d), "s", rng)
 	_strip(w, Rect2i(mouth + SOI_W2, y1, b.end.x - mouth - SOI_W2, d), "s", rng)
-	_strip(w, Rect2i(b.position.x, y0, d, y1 - y0), "w", rng)
-	_strip(w, Rect2i(b.end.x - d, y0, d, y1 - y0), "e", rng)
+	# (A side on the edge of the map has no street: that row faces the yards.)
+	_strip(w, Rect2i(b.position.x, y0, d, y1 - y0), "w" if w.in_bounds(Vector2i(b.position.x - 1, y0)) else "e", rng)
+	_strip(w, Rect2i(b.end.x - d, y0, d, y1 - y0), "e" if w.in_bounds(Vector2i(b.end.x, y0)) else "w", rng)
 	# The soi, and the homes along it facing it.
 	var top := y0 + 2
 	w.fill(Rect2i(mouth, top, SOI_W2, b.end.y - top), World.SOI)
@@ -940,8 +957,8 @@ static func _rows_block(w: World, b: Rect2i, rng: RandomNumberGenerator) -> void
 	for y in range(y0, y1):
 		for x in range(b.position.x + d, b.end.x - d):
 			var c := Vector2i(x, y)
-			if w.get_tile(c) == World.DIRT and rng.randf() < 0.05:
-				w.fill(Rect2i(c, Vector2i.ONE), World.TREE)
+			if w.get_tile(c) == World.DIRT and rng.randf() < 0.05 					and not World.DIRS.any(func(dir): return w.get_tile(c + dir) == World.DOOR):
+				w.fill(Rect2i(c, Vector2i.ONE), World.TREE)  # (never in front of a door)
 
 
 ## A strip of shophouses wall to wall along its front: along x for one facing
@@ -967,6 +984,12 @@ static func _strip(w: World, r: Rect2i, facing: String, rng: RandomNumberGenerat
 		if left - bw < SHOP_W[0] - 1:
 			bw = mini(left, STORE_W)
 		var rect := Rect2i(start, r.position.y, bw, depth) if across else Rect2i(r.position.x, start, depth, bw)
+		if _on_circle(w, rect):
+			# (on a drawn zone's roundabout: left open)
+			w.fill(rect, World.SOI)
+			at = start + bw
+			shared = false
+			continue
 		add_building(w, rect, kind, rng, facing)
 		at = start + bw
 		shared = true
