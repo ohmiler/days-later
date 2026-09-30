@@ -109,6 +109,9 @@ var shake := 0.0
 var cam_lead := Vector2.ZERO  # how far ahead the camera looks, riding
 const CAM_LEAD := 0.3  # seconds of travel
 const CAM_LEAD_MAX := 48.0
+const CAR_CAM_LEAD := 0.55  # a car looks further ahead (and widens more): it covers more ground a second
+const CAR_CAM_LEAD_MAX := 110.0
+const CAR_ZOOM_OUT := 0.62
 const RIDE_ZOOM_OUT := 0.75  # at full speed on a bike the view widens to this share of the zoom
 const CAM_AIM := 0.1  # on foot, the camera looks this share of the way toward where you aim
 const CAM_AIM_GUN := 0.28  # ...with a gun raised, further
@@ -1062,11 +1065,11 @@ func _process(delta: float) -> void:
 		if me.riding >= 0 and me.riding < world.vehicles.size() and me.alive():
 			var d: Player = players.get(world.vehicles[me.riding].rider)
 			if d:
-				lead = d.ride_seen * CAM_LEAD
+				lead = d.ride_seen * (CAR_CAM_LEAD if Vehicles.is_car(world.vehicles[me.riding]) else CAM_LEAD)
 		# On foot it looks a little the way you're looking (further with a gun raised).
 		if me.riding < 0 and me.alive() and not ui.gear.visible:
 			lead = me.aim.limit_length(220.0) * (CAM_AIM_GUN if me.aiming else CAM_AIM)
-		cam_lead = cam_lead.lerp(lead.limit_length(CAM_LEAD_MAX), minf(1.0, (2.5 if me.riding >= 0 else 4.0) * delta))
+		cam_lead = cam_lead.lerp(lead.limit_length(CAR_CAM_LEAD_MAX if me.riding >= 0 and me.riding < world.vehicles.size() and Vehicles.is_car(world.vehicles[me.riding]) else CAM_LEAD_MAX), minf(1.0, (2.5 if me.riding >= 0 else 4.0) * delta))
 		# The camera follows a moment behind, easing in, rather than nailed to you;
 		# a jump (the stairs, a new zone, waking up) it just cuts to.
 		var want := me.position + Look.CHEST + Vector2(0, -me.lift) + me.climb_offset() + cam_lead
@@ -1232,7 +1235,8 @@ func _update_death_screen(me: Player, delta: float) -> void:
 	elif me:
 		var want := play_zoom * lerpf(1.0, 0.78, roof_k)
 		if me.riding >= 0:
-			want *= lerpf(1.0, RIDE_ZOOM_OUT, clampf(me.ride_seen.length() / 170.0, 0.0, 1.0))  # (faster: see further ahead)
+			var car_now: bool = me.riding < world.vehicles.size() and Vehicles.is_car(world.vehicles[me.riding])
+			want *= lerpf(1.0, CAR_ZOOM_OUT if car_now else RIDE_ZOOM_OUT, clampf(me.ride_seen.length() / 170.0, 0.0, 1.0))  # (faster: see further ahead)
 		camera.zoom = camera.zoom.lerp(want, delta * (1.5 if me.riding >= 0 else 3.0)) if camera.zoom.distance_to(want) > 0.01 else want
 
 

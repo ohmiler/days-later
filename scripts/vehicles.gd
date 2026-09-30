@@ -19,6 +19,7 @@ const HIT_SPEED := 60.0  # faster than this, a zombie in the way is knocked flat
 const SLOW_GROUND := 0.5  # grass and dirt, for bikes not built for it
 const CAR_REACH := 34.0
 const CAR_TURN := 80.0  # px: a car's tightest turn (its radius), about 5 m
+const CAR_WIDEN := 2.0  # its turning circle is this much wider again at top speed
 const CAR_BACK := 0.35  # a car backs up this much of its top speed
 const KEY_CHANCE := 0.15  # bikes left with the key still in (few: a bike worth keeping is worth looking after)
 ## Steering: a moving bike swings round toward where you steer at so many
@@ -151,17 +152,7 @@ static func _car_step(p: Player, v: Dictionary, move: Vector2, delta: float, w: 
 		top = 0.0
 	var pedal := clampf(-move.y * 1.5, -1.0, 1.0)
 	var steer := clampf(move.x * 1.5, -1.0, 1.0)
-	# A and D go by the screen: heading down it toward us, the car's right is
-	# the screen's left, so the wheel turns the other way then (D still takes
-	# it right across the screen). Which way is settled as the key goes down
-	# and kept till it's let go, so a turn carries on round through the bottom.
-	if absf(steer) < 0.1:
-		v.flip = false
-	elif not v.get("steering", false):
-		v.flip = Vector2.from_angle(heading).y > 0.3
-	v.steering = absf(steer) >= 0.1
-	if v.get("flip", false):
-		steer = -steer
+	# A and D are the car's own left and right, whichever way it faces.
 	var want := pedal * (top if pedal > 0.0 else top * CAR_BACK)
 	if pedal < 0.0 and spd > 5.0:
 		want = 0.0  # (braking first: it only backs up once stopped)
@@ -169,15 +160,31 @@ static func _car_step(p: Player, v: Dictionary, move: Vector2, delta: float, w: 
 	if absf(pedal) < 0.1:
 		rate = m.accel * 0.5  # (off the pedals: it rolls to a stop)
 	spd = move_toward(spd, want, rate * delta)
-	heading += steer * spd / CAR_TURN * delta
+	# The faster it goes the wider it has to turn (a tap at speed is a nudge).
+	var radius := CAR_TURN * (1.0 + CAR_WIDEN * clampf(absf(spd) / maxf(m.speed, 1.0), 0.0, 1.0))
+	heading += steer * spd / radius * delta
 	if absf(steer) < 0.1 and absf(spd) > 5.0:
 		var straight := roundf(heading / CAR_WAYS) * CAR_WAYS
 		heading = move_toward(heading, straight, CAR_SETTLE * minf(1.0, absf(spd) / maxf(m.speed, 1.0)) * delta)
 	var pos: Vector2 = v.pos + Vector2.from_angle(heading) * spd * delta
 	var hit := 0.0
 	if car_blocked(w, pos, heading, CarArt.SEDAN):
-		hit = absf(spd)
-		spd *= -0.25  # (a bump: it bounces back a little)
+		# Grazing a wall: slide along it, losing a little speed, and only a
+		# head-on hit stops it (with a bounce).
+		var slid := false
+		for turn in [0.0, 0.1, -0.1, 0.22, -0.22]:
+			var hd: float = heading + turn
+			var sp: Vector2 = v.pos + Vector2.from_angle(hd) * spd * delta * 0.6
+			if not car_blocked(w, sp, hd, CarArt.SEDAN):
+				v.pos = sp
+				v.dir = hd
+				spd *= 1.0 - 1.4 * delta
+				hit = absf(spd) * 0.3
+				slid = true
+				break
+		if not slid:
+			hit = absf(spd)
+			spd *= -0.25  # (a bump: it bounces back a little)
 	else:
 		v.pos = pos
 		v.dir = heading
@@ -496,7 +503,25 @@ func send_all(peer: int) -> void:
 
 ## Server (admin menu): a car here, facing `heading`, key in, tank full.
 func spawn_car(pos: Vector2, heading: float) -> void:
-	vehicle_add.rpc(main.world.vehicles.size(), "sedan", pos, heading)
+	# Somewhere it stands clear (not in a wall): here, else a little round about, turned each way.
+	var w: World = main.world
+	var at := pos
+	var head := heading
+	var found := false
+	for r in [0.0, 30.0, 60.0, 90.0]:
+		for k in (1 if r == 0.0 else 8):
+			var p: Vector2 = pos + Vector2.from_angle(k * TAU / 8.0) * r
+			for hd in [heading, heading + PI * 0.5, heading + PI, heading - PI * 0.5]:
+				if not car_blocked(w, p, hd, CarArt.SEDAN):
+					at = p
+					head = hd
+					found = true
+					break
+			if found:
+				break
+		if found:
+			break
+	vehicle_add.rpc(main.world.vehicles.size(), "sedan", at, head)
 
 
 ## Every machine: a vehicle that wasn't in the city when it was built.
