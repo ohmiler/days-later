@@ -1083,6 +1083,13 @@ func _process(delta: float) -> void:
 		shake = move_toward(shake, 0.0, delta * 14.0)
 		if not me.on_roof:
 			_fade_trees_near(me.position)
+		elif not faded.is_empty():
+			# Up on a roof nothing is see-through: what was faded on the way up
+			# (the building you climbed, its neighbours) comes back, so the rooms
+			# below never show through the roof you stand on.
+			for t in faded:
+				fade_goal[t] = 1.0
+			faded.clear()
 		_step_fades(delta)
 		if me.muffled() != _muffled:
 			_muffled = me.muffled()
