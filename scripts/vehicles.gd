@@ -18,8 +18,10 @@ const FUEL_CAN := 3.0  # litres in a jerrycan
 const HIT_SPEED := 60.0  # faster than this, a zombie in the way is knocked flat
 const SLOW_GROUND := 0.5  # grass and dirt, for bikes not built for it
 const CAR_REACH := 34.0
-const CAR_TURN := 80.0  # px: a car's tightest turn (its radius), about 5 m
-const CAR_WIDEN := 2.0  # its turning circle is this much wider again at top speed
+const CAR_TURN := 52.0  # px: a car's tightest turn (its radius), about 3.3 m (the streets are squeezed)
+const CAR_WIDEN := 1.0  # its turning circle is this much wider again at top speed
+const CAR_WHEEL := 7.0  # how fast the wheel goes over (full lock in about 0.15 s), so a tap is a small turn
+const CAR_CRAWL := 38.0  # px/s: slower than this it still turns as if at this speed (no dead wheel at a crawl)
 const CAR_BACK := 0.35  # a car backs up this much of its top speed
 const KEY_CHANCE := 0.15  # bikes left with the key still in (few: a bike worth keeping is worth looking after)
 ## Steering: a moving bike swings round toward where you steer at so many
@@ -278,8 +280,11 @@ static func _car_step(p: Player, v: Dictionary, move: Vector2, delta: float, w: 
 	spd = move_toward(spd, want, rate * delta)
 	# The faster it goes the wider it has to turn (a tap at speed is a nudge).
 	var radius := CAR_TURN * (1.0 + CAR_WIDEN * clampf(absf(spd) / maxf(m.speed, 1.0), 0.0, 1.0))
-	heading += steer * spd / radius * delta
-	if absf(steer) < 0.1 and absf(spd) > 5.0:
+	var wheel: float = move_toward(v.get("wheel", 0.0), steer, CAR_WHEEL * delta)
+	v.wheel = wheel
+	var turn_spd := signf(spd) * maxf(absf(spd), CAR_CRAWL) if absf(spd) > 3.0 else 0.0
+	heading += wheel * turn_spd / radius * delta
+	if absf(steer) < 0.1 and absf(wheel) < 0.15 and absf(spd) > 5.0:
 		var straight := roundf(heading / CAR_WAYS) * CAR_WAYS
 		heading = move_toward(heading, straight, CAR_SETTLE * minf(1.0, absf(spd) / maxf(m.speed, 1.0)) * delta)
 	var pos: Vector2 = v.pos + Vector2.from_angle(heading) * spd * delta

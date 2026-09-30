@@ -69,9 +69,13 @@ func run() -> void:
 	v.dir = 0.0
 	v.spd = 185.0
 	simulate(0.25)
-	check(v.dir < 0.3 and v.dir > 0.0, "a quarter-second tap at top speed is a nudge, under 17 degrees (%.2f rad; at a crawl %.2f)" % [v.dir, slow_turn])
+	check(v.dir < 0.6 and v.dir > 0.0, "a quarter-second tap at top speed is a turn of under 34 degrees (%.2f rad; at a crawl %.2f)" % [v.dir, slow_turn])
 	me.move = Vector2.ZERO
 	simulate(1.0)
+	v.spd = 0.0  # (the tap at top speed took it off along the kerb: back to where it began)
+	v.dir = 0.0
+	v.wheel = 0.0
+	v.pos = at
 	# Let go of the wheel: it eases straight onto the nearest of its eight ways.
 	v.dir = 0.15
 	me.move = Vector2.UP
@@ -114,12 +118,19 @@ func run() -> void:
 	me.move = Vector2.ZERO
 	simulate(1.0)
 	var wall_y := INF
-	for dy in range(0, -240, -2):
-		if Vehicles.car_blocked(w, at + Vector2(0, dy), 0.0, CarArt.SEDAN):
-			wall_y = at.y + dy + 6.0
+	var wall_x := at.x
+	for ddx in range(0, 280, 16):  # (along the street, somewhere the wall runs on clear for 100 px)
+		for dy in range(0, -240, -2):
+			if Vehicles.car_blocked(w, Vector2(at.x + ddx, at.y + dy), 0.0, CarArt.SEDAN):
+				var cand := at.y + dy + 6.0
+				if range(0, 110, 10).all(func(ex): return not Vehicles.car_blocked(w, Vector2(at.x + ddx + ex, cand), 0.0, CarArt.SEDAN)):
+					wall_y = cand
+					wall_x = at.x + ddx
+				break
+		if wall_y != INF:
 			break
 	check(wall_y != INF, "a wall north of the street to graze")
-	v.pos = Vector2(at.x, wall_y)
+	v.pos = Vector2(wall_x, wall_y)
 	v.dir = -0.12
 	v.spd = 100.0
 	me.move = Vector2.UP
