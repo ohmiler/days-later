@@ -387,7 +387,7 @@ static func _anchored(r: Dictionary, an: Dictionary, view: int, lean := 0.0) -> 
 	for i in 2:
 		var hip := up + (Vector2(-0.3 + 0.6 * i, HIP_Y) if side else Vector2((-1.7 + 3.4 * i) * Proportions.leg_x, HIP_Y))
 		var foot: Vector2 = feet[i] if i < feet.size() else hip + Vector2(0, -HIP_Y)
-		var pref := Vector2.RIGHT if side else Vector2(-1.0 if i == 0 else 1.0, 0)
+		var pref := Vector2.RIGHT if side else Vector2(-1.0 if i == 0 else 1.0, 0) * (-1.0 if an.get("knees_in", false) else 1.0)  # (knees_in: tucked behind the body, seen from behind)
 		r.legs.append(_leg(hip, foot, side and i == 0, pref, {type = "limb", shoe = "rect", e = 0.0}))
 	r.arms_back = arms.filter(func(a): return a.behind)
 	r.arms_front = arms.filter(func(a): return not a.behind)

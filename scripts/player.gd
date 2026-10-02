@@ -959,12 +959,19 @@ func _draw_sat(hip_y: float, k: float, face: int, floor_sit: bool) -> void:
 		# the knees out wide), hands resting on the knees. Front and back the same.
 		feet = [Vector2(-1.7, 0).lerp(Vector2(-1.0, -0.3), k), Vector2(1.7, 0).lerp(Vector2(1.0, -0.3), k)]
 		hands = [Vector2(-3.5, -8).lerp(Vector2(-5.5, hip_y - 1.0), k), Vector2(3.5, -8).lerp(Vector2(5.5, hip_y - 1.0), k)]
+	elif face == 2:
+		# On a seat, facing us: the shins come down in front of it (nearer us is
+		# lower on screen), hands on the thighs.
+		var down := hip_y + (Rig.THIGH + Rig.SHIN) * 0.97  # (the leg straight out toward us: seen end-on, it hangs down the screen)
+		feet = [Vector2(-1.7, 0).lerp(Vector2(-2.0, down), k), Vector2(1.7, 0).lerp(Vector2(2.0, down), k)]
+		hands = [Vector2(-3.5, -8).lerp(Vector2(-2.6, hip_y - 1.0), k), Vector2(3.5, -8).lerp(Vector2(2.6, hip_y - 1.0), k)]
 	else:
-		# On a seat, from the front or back: knees out, shins down, hands on the thighs.
-		feet = [Vector2(-1.7, 0).lerp(Vector2(-2.8, 0), k), Vector2(1.7, 0).lerp(Vector2(2.8, 0), k)]
-		hands = [Vector2(-3.5, -8).lerp(Vector2(-3.0, hip_y - 1.5), k), Vector2(3.5, -8).lerp(Vector2(3.0, hip_y - 1.5), k)]
+		# On a seat, seen from behind: the legs go away from us, out of sight behind the body.
+		var up := hip_y - (Rig.THIGH + Rig.SHIN) * 0.7  # (out away from us: up the screen, the knees tucked in behind the body)
+		feet = [Vector2(-1.7, 0).lerp(Vector2(-1.0, up), k), Vector2(1.7, 0).lerp(Vector2(1.0, up), k)]
+		hands = [Vector2(-3.5, -8).lerp(Vector2(-2.6, hip_y - 2.0), k), Vector2(3.5, -8).lerp(Vector2(2.6, hip_y - 2.0), k)]
 	Look.draw(self, {view = [Look.FRONT if face == 2 else Look.BACK, false],
-			anchors = {seat = hip, hands = hands, feet = feet}}, look)
+			anchors = {seat = hip, hands = hands, feet = feet, knees_in = face == 3 and not floor_sit}}, look)
 
 
 func _draw() -> void:
