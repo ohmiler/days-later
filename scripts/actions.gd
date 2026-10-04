@@ -368,6 +368,8 @@ func _do_action(p: Player, t: Dictionary, verb: String) -> void:
 			main.fx_sound.rpc("rustle", p.position)
 		"burn":
 			main.burn_corpse(p, t.id)
+		"reclaim":
+			main.remains.take(p, t.id)
 		"travel":
 			var ex: Array = main.world.exits.filter(func(e): return e.id == t.id)
 			if not ex.is_empty():

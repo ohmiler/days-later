@@ -121,7 +121,7 @@ static func save_world(main: Node) -> void:
 		doors = doors, searched = searched, stripped = stripped, boxes = boxes, pickups = items, zombies = zs,
 		state = main.world_state.changed(), rain_total = main.rain_total,
 		vehicles = main.vehicles.changed(), corpses = main.corpse_list(),
-		next_cid = main.next_cid,
+		next_cid = main.next_cid, remains = main.remains.save_list(), next_rid = main.remains.next_rid,
 	})
 
 
@@ -186,6 +186,7 @@ static func load_world_into(main: Node, w: Dictionary) -> bool:
 	for e in w.pickups:
 		main.pickups[e[0]] = {pos = e[1], item = e[2], storey = int(e[3]) if e.size() > 3 else 0}
 	main.next_cid = w.get("next_cid", 1)
+	main.remains.load_list(w.get("remains", []), w.get("next_rid", 1))
 	for e in w.get("corpses", []):
 		main.corpses[e[0]] = {pos = e[1], fall_dir = e[2], body = e[3], style = e[4], age = e[5], burn = e[6], storey = int(e[7])}
 		main.leave_corpse(e[1], e[2], e[3], true, e[5], e[4], e[0], e[6], int(e[7]))
@@ -234,8 +235,15 @@ static func load_player_into(p: Player, name: String) -> bool:
 	var d: Dictionary = r.data
 	var same_city: bool = p.world != null and d.city == p.world.city_seed and d.get("zone", p.world.zone) == p.world.zone
 	p.bed = d.bed if same_city else -1  # kept even after dying: the next survivor wakes there
+	# Theirs whether or not they lived: skills (death already took its share) and quests.
+	p.kills = d.kills
+	p.skills = d.get("skills", {})  # (older saves: every skill from the start)
+	p.quests = d.get("quests", {})  # (older saves: Quests.ensure gives them the start)
+	p.skills_dirty = true
+	if p.get_parent() is Main:
+		p.get_parent().skills.tell_level(p)
 	if not d.get("alive", false):
-		return false  # they were dead when they left: a new survivor
+		return false  # they were dead when they left: a new survivor (what they had is with the body)
 	# Came in from another zone: at the way in they took. Moved to a new
 	# city: they keep what they carry, and start at the spawn corner.
 	p.position = d.pos if same_city else p.world.spawn_point()
@@ -249,12 +257,6 @@ static func load_player_into(p: Player, name: String) -> bool:
 	var storey := int(d.get("storey", 1 if d.get("up", false) else 0))
 	p.storey = storey if same_city and storey > 0 and p.world.storeys.get(storey, {}).has(p.world.to_cell(p.position)) else 0
 	p.hp = d.hp
-	p.kills = d.kills
-	p.skills = d.get("skills", {})  # (older saves: every skill from the start)
-	p.quests = d.get("quests", {})  # (older saves: Quests.ensure gives them the start)
-	p.skills_dirty = true
-	if p.get_parent() is Main:
-		p.get_parent().skills.tell_level(p)
 	p.hunger = d.hunger
 	p.thirst = d.thirst
 	p.infection = d.infection

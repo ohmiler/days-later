@@ -41,7 +41,7 @@ func run() -> void:
 	var moved := 0.0
 	for i in 100:
 		main.events.server_tick(0.1)
-	moved = ev.pos.distance_to(p0)
+		moved = maxf(moved, ev.pos.distance_to(p0))  # (the furthest: it turns back at a dead end)
 	check(moved > 40.0, "and it drives along (%.0f px in 10 s)" % moved)
 	# Along a road that runs down the screen too, not back and forth across it.
 	var down := Vector2.INF

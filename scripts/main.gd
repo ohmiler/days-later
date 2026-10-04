@@ -28,6 +28,7 @@ var admin: Admin
 var skills: Skills
 var quests: Quests
 var bosses: Bosses
+var remains: Remains
 var camp: Camp
 var events: Events
 var vehicles: Vehicles
@@ -157,6 +158,7 @@ func _ready() -> void:
 	bosses = _module(Bosses.new(), "Bosses")
 	camp = _module(Camp.new(), "Camp")
 	events = _module(Events.new(), "Events")
+	remains = _module(Remains.new(), "Remains")
 	vehicles = _module(Vehicles.new(), "Vehicles")
 	world_state = _module(WorldState.new(), "WorldState")
 	phantoms = Phantoms.new()
@@ -430,6 +432,7 @@ func _drop_world() -> void:
 		if is_instance_valid(n):
 			n.queue_free()
 	corpse_nodes.clear()
+	remains.clear()
 	actions.alarms.clear()
 	hidden_building = null
 	world.dispose()
@@ -598,7 +601,7 @@ func _server_tick(delta: float) -> void:
 			_notify(p.peer_id, &"box_open", [-1, []])
 		if not p.alive() and not p.dropped:
 			p.dropped = true
-			inventory._drop_everything(p)
+			remains.leave(p)
 			skills.on_death(p)
 			quests.on_death(p)
 	skills.server_tick(delta)
@@ -606,6 +609,8 @@ func _server_tick(delta: float) -> void:
 	bosses.server_tick(delta)
 	camp.server_tick(delta)
 	events.server_tick(delta)
+	remains.server_tick(delta)
+	net.tick_lingering(delta)
 	var t_ai := Time.get_ticks_usec() if profiling else 0
 	for z: Zombie in zombies.values():
 		if not admin.frozen:
@@ -727,7 +732,7 @@ func _module(m: Node, node_name: String) -> Node:
 func _handler(method: StringName) -> Node:
 	if has_method(method):
 		return self
-	for m in [combat, inventory, doors, survival, net, actions, things, crafting, vehicles, admin, skills, quests, bosses, camp, events]:
+	for m in [combat, inventory, doors, survival, net, actions, things, crafting, vehicles, admin, skills, quests, bosses, camp, events, remains]:
 		if m.has_method(method):
 			return m
 	push_error("No handler for %s" % method)
@@ -996,6 +1001,7 @@ func _process(delta: float) -> void:
 		ui.city_map.me = me
 		ui.city_map.bosses = bosses.map_marks()
 		ui.city_map.camps = camp.map_marks()
+		ui.city_map.remains = remains.map_marks(me.pname)
 		var others := []
 		for p: Player in players.values():
 			if p != me and p.alive():
@@ -1586,6 +1592,10 @@ func _draw_decals() -> void:
 	for pid in pickups:
 		if pickups[pid].get("storey", 0) == 0:
 			_draw_pickup(decals, pickups[pid], 0.0)
+	for rid in remains.seen:
+		var r: Dictionary = remains.seen[rid]
+		if r.storey == 0:
+			Remains.draw(decals, r.pos, r.owner == _my_name())
 
 
 ## Things dropped on the floor you're up on, drawn that many storeys up, only
@@ -1599,6 +1609,16 @@ func _draw_decals_up() -> void:
 		var pu: Dictionary = pickups[pid]
 		if pu.get("storey", 0) == me.storey and world.building_at.get(world.to_cell(pu.pos)) == here:
 			_draw_pickup(decals_up, pu, BuildingProp.storey_lift(me.storey))
+	for rid in remains.seen:
+		var r: Dictionary = remains.seen[rid]
+		if r.storey == me.storey and world.building_at.get(world.to_cell(r.pos)) == here:
+			Remains.draw(decals_up, r.pos + Vector2(0, -BuildingProp.storey_lift(me.storey)), r.owner == me.pname)
+
+
+## This peer's own survivor's name ("" before there is one).
+func _my_name() -> String:
+	var me: Player = players.get(multiplayer.get_unique_id())
+	return me.pname if me else ""
 
 
 func _draw_pickup(ci: Node2D, pu: Dictionary, lift: float) -> void:

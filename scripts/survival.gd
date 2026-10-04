@@ -361,7 +361,7 @@ func _turn(p: Player) -> void:
 	p.infection = 100.0
 	p.take_damage(9999)
 	p.dropped = true
-	main.inventory._drop_everything(p, true)
+	main.remains.leave(p, true)
 	fx_turned.rpc(p.peer_id)
 	var z := main._add_zombie(main.next_zid, p.position)
 	main.next_zid += 1

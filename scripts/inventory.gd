@@ -334,22 +334,6 @@ func _give(p: Player, id: String) -> bool:
 	return false
 
 
-## Everything a dead player had falls to the ground. When they `turned`, their
-## clothes stay on the zombie they became instead (and drop when it dies).
-func _drop_everything(p: Player, turned := false) -> void:
-	var k := 0
-	for slot in p.worn:
-		if not turned:
-			main._spawn_pickup(p.position + Vector2.from_angle(k * 1.7 + 0.5) * 9, p.worn[slot], p.storey)
-		k += 1
-	p.worn.clear()  # still drawn on the body until respawn (see Player.refresh_wear)
-	for i in p.inv.size():
-		if p.inv[i] != null:
-			main._spawn_pickup(p.position + Vector2.from_angle(i * TAU / 8) * 6, p.inv[i], p.storey)
-			p.inv[i] = null
-	_send_inv(p)
-
-
 @rpc("any_peer", "call_remote", "reliable")
 func req_select(slot: int) -> void:
 	var p := main._sender()
