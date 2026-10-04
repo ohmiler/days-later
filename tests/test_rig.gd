@@ -111,6 +111,14 @@ func run() -> void:
 	# Zombies from behind still have arms (reaching away, hands by the shoulders).
 	var zb := Rig.build({view = [Look.BACK, false], angle = -PI / 2, zombie = true}, {})
 	check((zb.arms_back + zb.arms_front).size() == 2, "a zombie seen from behind has both arms")
+	# Walking toward us the living step up clearly; the dead still shuffle.
+	var step := {true: 0.0, false: 0.0}
+	for dead in [true, false]:
+		for t in 16:
+			var r := Rig.build({view = [Look.FRONT, false], angle = PI / 2, zombie = dead, moving = true, phase = t * TAU / 16.0}, {})
+			for leg in r.legs:
+				step[dead] = maxf(step[dead], -(leg.foot as Vector2).y)
+	check(step[true] < step[false], "toward us a zombie's feet lift less than a survivor's (%.1f vs %.1f)" % [step[true], step[false]])
 	# A limping zombie drags one foot: it never leaves the ground, and swings less.
 	var lifted := 0.0
 	var swing := [0.0, 0.0]

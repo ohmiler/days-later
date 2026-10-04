@@ -36,6 +36,19 @@ func run() -> void:
 				elsewhere += 1
 	check(guns > 20 and guns < 400, "now and then a gun or a magazine (%d in 400 searches)" % guns)
 	check(elsewhere == 0, "never in a home")
+	# Found by the handful, and a gun with a few rounds still in it: enough to use one.
+	var rounds := []
+	var loaded := 0
+	for i in 200:
+		rounds.append(Items.make_found("shells", rng).n)
+		if Items.make_found("pistol", rng).get("ammo", 0) > 0:
+			loaded += 1
+	check(rounds.min() >= 3 and rounds.max() <= 7, "shotgun shells turn up 3-7 at a time (%d-%d)" % [rounds.min(), rounds.max()])
+	check(loaded > 100 and loaded < 200, "most pistols found still have a few rounds in them (%d of 200)" % loaded)
+	check(Bosses.DEFS.chief.drops.get("shells", 0) >= 5, "and the chief carries shells for the riot gun")
+	# The warnings walking in, and the item card, for the dangerous places (3 and up), not just the police.
+	check(Items.DANGER_TIER == 3 and Items.BUILDING_TIER.hospital >= Items.DANGER_TIER and Items.tier("fireaxe") >= Items.DANGER_TIER,
+			"a hospital and a fire axe still count as dangerous ground")
 	# Its boss lives here.
 	check(Bosses.lair(w, "chief") >= 0 and w.buildings[Bosses.lair(w, "chief")].kind == "police", "the chief's lair is the police station")
 	var chief: Dictionary = Bosses.DEFS["chief"]

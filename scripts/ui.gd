@@ -548,6 +548,7 @@ func update_hud(delta: float, me: Player, day: int, time: float, online: int) ->
 	clock.online = online
 	# The quests sit a card's gap under whatever the clock is saying.
 	quest_tracker.offset_top = clock.offset_top + clock.used_h + UiTheme.SPACE_4
+	quest_tracker.visible = not city_map.visible  # (the map covers all but its edge)
 	clock.queue_redraw()
 
 	var step := -1

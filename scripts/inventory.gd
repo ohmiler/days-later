@@ -623,7 +623,7 @@ func _tick_search(p: Player, delta: float) -> void:
 	var found := Items.roll(place, f.data.kind, _loot_rng, Items.tier_of(f.data.table, bkind))
 	f.items.resize(FurnitureProp.SIZE)
 	for id in found:
-		var it := Items.make(id, _loot_rng)
+		var it := Items.make_found(id, _loot_rng)
 		if Items.def(id).get("spoil", 0.0) > 0.0:
 			# (left on the stall since it all began: part way to going off already)
 			it.made = main.now() - _loot_rng.randf() * Items.def(id).spoil * 0.5 * Main.HOUR

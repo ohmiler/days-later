@@ -3,6 +3,9 @@ extends "res://tests/test_base.gd"
 ## the camp radio sends you to a pharmacy, then the hospital and its sergeant,
 ## then the police station and its chief; being inside a kind of building (or a
 ## shop with a sign) counts as a visit; the everyday jobs don't wait for it.
+## A survivor who'd passed the first night before the story existed picks it
+## up; a boss brought down together counts for everyone who fought it; a zone
+## without the place says to go elsewhere.
 
 
 func _tick() -> void:
@@ -64,3 +67,45 @@ func run() -> void:
 	me.on_roof = true
 	_tick()
 	check(me.quests.active.story_1[0] == 0, "on the roof is not a visit")
+	me.on_roof = false
+
+	# Someone who'd passed the first night before there was a story: it starts for them.
+	me.quests = {active = {}, done = {intro_night = true}, day = -1}
+	me.remove_meta("quests_zone")
+	_tick()
+	check(me.quests.active.has("story_1"), "an older survivor past the first night is given the story")
+
+	# A boss brought down together: the story counts it for both who fought it.
+	me.quests = {active = {}, done = {}, day = -1}
+	main.quests.start(me, "story_2")
+	var mate: Player = main._add_player(77)
+	mate.quests = {active = {}, done = {}, day = -1}
+	mate.set_meta("quests_zone", main.zone)
+	main.quests.start(mate, "story_2")
+	mate.position = me.position + Vector2(10, 0)
+	var boss := zombie_at(me.position + Vector2(14, 0), "sergeant")
+	check(boss.is_boss(), "a sergeant to fight")
+	main.combat._tally(boss, mate, 300.0)
+	main.combat._tally(boss, me, 20.0)
+	main.combat._note_kill(me, boss)  # (you land the last blow)
+	main.combat._kill_zombie(boss, 1.0)
+	check(me.quests.active.story_2[1] == 1 and mate.quests.active.story_2[1] == 1,
+			"the sergeant down: it counts for both who fought it, not only the last blow (%s / %s)" % [me.quests.active.story_2, mate.quests.active.story_2])
+	main.quests.note(me, "kill", {kind = "normal"})
+	check(me.quests.active.story_2[1] == 1, "and an ordinary kill still isn't it")
+	# A place the zone hasn't got: said so.
+	var real: Array = main.world.buildings
+	main.world.buildings = real.filter(func(b): return b.kind != "hospital")
+	main.quests._hint_elsewhere(me, "story_2")
+	main.world.buildings = real
+	check(_fed("ย่านอื่น"), "a zone with no hospital says to go to another")
+	main.quests.start(me, "story_1")  # (the pharmacy chapter: Victory has pharmacies)
+	check(main.ui.feed.get_children().filter(func(n): return n.get_meta("text", "").contains("ย่านอื่น")).size() == 1,
+			"a zone that has the place says nothing")
+
+
+func _fed(part: String) -> bool:
+	for n in main.ui.feed.get_children():
+		if n.get_meta("text", "").contains(part):
+			return true
+	return false

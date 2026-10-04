@@ -122,6 +122,7 @@ static func build(st: Dictionary, lk: Dictionary) -> Dictionary:
 		walk = {stride = 3.0 * Proportions.L, drag = drag}
 	walk.run = run
 	walk.c = c
+	walk.lift = 2.2 if zombie else 3.4  # (the living step clearly toward or away from us; the dead shuffle)
 	r.legs = _legs(view, s, angle, sx, attack, ext, walk)
 	if fall > 0.0 and sink > 1.0:
 		# Going down: the knees fold forward to take the drop (hips lower, the
@@ -455,7 +456,7 @@ static func _legs(view: int, s: float, angle: float, sx: float, attack: int, ext
 			legs.append(_leg(hip, foot, i == 0))
 		return legs
 	# From the front or back: the knee comes up higher with each running stride.
-	var lift := lerpf(3.4, RUN.knee, run) * Proportions.L  # (walking toward or away from us: a clear step, not a shuffle)
+	var lift := lerpf(walk.get("lift", 3.4), RUN.knee, run) * Proportions.L
 	return [_rect_leg(-3.1, 0.0 if drag == 0 else maxf(0.0, s) * lift), _rect_leg(0.3, 0.0 if drag == 1 else maxf(0.0, -s) * lift)]
 
 

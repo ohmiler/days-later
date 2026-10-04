@@ -317,8 +317,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 			_silent_kill(p, z, wid)
 			continue
 		z.hp -= dmg
-		if z.is_boss():
-			z.hurt_by[p.peer_id] = z.hurt_by.get(p.peer_id, 0.0) + dmg
+		_tally(z, p, dmg)
 		z.stun = stats[3] * Zombie.KINDS[z.kind].get("stun", 1.0)
 		z.push += dir * stats[4]  # (played out over a moment: Zombie.server_tick)
 		fx_hit.rpc(z.zid, z.position, dir, kind == Look.KICK, p.peer_id, Items.def(wid).get("draw", {}).get("kind", ""), dmg, where, z.hp <= 0)
@@ -328,7 +327,7 @@ func _resolve_melee(p: Player, kind: int, stats: Array) -> void:
 			main.skills.gain(p, "combat", "head")
 		if z.hp <= 0:
 			main.skills.gain(p, "combat", "kill")
-			main.quests.note(p, "kill", {kind = z.kind})
+			_note_kill(p, z)
 			if where == "head":
 				main.quests.note(p, "kill_head")
 			_kill_zombie(z, 1.0 if dir.x >= 0 else -1.0, how, where)
@@ -450,6 +449,21 @@ func _backstab_target(p: Player, kind: int, wid: String) -> Zombie:
 	return best
 
 
+## A kill counts toward `p`'s quests; a boss counts for everyone who hurt it
+## (Bosses.died), not just the last blow.
+func _note_kill(p: Player, z: Zombie) -> void:
+	if not z.is_boss():
+		main.quests.note(p, "kill", {kind = z.kind})
+
+
+## Who hurt a boss or the lottery seller, and how much; the latest last.
+func _tally(z: Zombie, p: Player, dmg: float) -> void:
+	if z.is_boss() or z.has_meta("lotto"):
+		var had: float = z.hurt_by.get(p.peer_id, 0.0)
+		z.hurt_by.erase(p.peer_id)
+		z.hurt_by[p.peer_id] = had + dmg
+
+
 ## Played out: you step in behind it (side-on, as it's drawn), a hand over
 ## its mouth, the blade into the back of its head, and lower it face down.
 ## Held there for STAB_TIME; no noise at all.
@@ -460,13 +474,14 @@ func _silent_kill(p: Player, z: Zombie, wid: String) -> void:
 		p.position = at
 		p.net_pos = at
 	z.hp = 0.0
+	_tally(z, p, 1.0)  # (who brought it down: the lottery seller's tickets)
 	fx_stealth.rpc(p.peer_id, p.position, side)
 	main.fx_sound.rpc("blade", z.position)
 	_kill_zombie(z, side, wid, "head", false, "held")
 	main.skills.gain(p, "stealth", "silent_kill")
 	main.skills.gain(p, "combat", "kill")
 	main.quests.note(p, "silent_kill")
-	main.quests.note(p, "kill", {kind = z.kind})
+	_note_kill(p, z)
 	p.kills += 1
 	main._toast(p, "ฆ่าเงียบ")
 
@@ -675,15 +690,14 @@ func fire(p: Player, hand: String) -> void:
 			var dmg: float = d.dmg * (1.0 if length < d.range * 0.5 else 0.6)  # (pellets lose their bite far out)
 			dmg *= (GUN_HEAD if where == "head" else ZONE_DMG[where]) * hit.armour_k(where)
 			hit.hp -= dmg
-			if hit.is_boss():
-				hit.hurt_by[p.peer_id] = hit.hurt_by.get(p.peer_id, 0.0) + dmg
+			_tally(hit, p, dmg)
 			hit.stun = maxf(hit.stun, 0.25)
 			hit.position = main.world.slide(hit.position, dir * 3.0, Zombie.RADIUS, false, false, hit.storey)
 			fx_hit.rpc(hit.zid, hit.position, dir, true, p.peer_id, "", dmg, where, hit.hp <= 0)
 			main.skills.gain(p, "combat", "hit")
 			if hit.hp <= 0:
 				main.skills.gain(p, "combat", "kill")
-				main.quests.note(p, "kill", {kind = hit.kind})
+				_note_kill(p, hit)
 				if where == "head":
 					main.quests.note(p, "kill_head")
 			if hit.hp <= 0 and main.zombies.has(hit.zid):
