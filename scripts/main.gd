@@ -29,6 +29,7 @@ var skills: Skills
 var quests: Quests
 var bosses: Bosses
 var remains: Remains
+var restock: Restock
 var camp: Camp
 var events: Events
 var vehicles: Vehicles
@@ -159,6 +160,7 @@ func _ready() -> void:
 	camp = _module(Camp.new(), "Camp")
 	events = _module(Events.new(), "Events")
 	remains = _module(Remains.new(), "Remains")
+	restock = _module(Restock.new(), "Restock")
 	vehicles = _module(Vehicles.new(), "Vehicles")
 	world_state = _module(WorldState.new(), "WorldState")
 	phantoms = Phantoms.new()
@@ -573,6 +575,7 @@ func _server_tick(delta: float) -> void:
 	if time >= 1.0:
 		time -= 1.0
 		day += 1
+		restock.new_day(day)
 	for p: Player in players.values():
 		p.server_tick(delta)
 		vehicles.server_tick(p, delta)
