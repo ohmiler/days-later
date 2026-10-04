@@ -227,6 +227,7 @@ func req_skip(hours: float) -> void:
 	while main.time >= 1.0:
 		main.time -= 1.0
 		main.day += 1
+		main.restock.new_day(main.day)
 	main._toast(p, "ข้ามเวลา %d ชม." % int(hours))
 
 
