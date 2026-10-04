@@ -26,6 +26,7 @@ var me: Player
 var others: Array = []  # [pos, name]
 var camps: Array = []  # [cell, name]: refugee camps (Camp.map_marks)
 var bosses: Array = []  # [cell, name, game hours till it's back (0: there now)] (Bosses.map_marks)
+var remains: Array = []  # [cell, minutes left]: your own things where you died (Remains.map_marks)
 var seed_key := 0
 var _dirty := false
 var _save_t := 0.0
@@ -237,6 +238,16 @@ func _draw() -> void:
 		draw_string(f, c + Vector2(-5, 5), "!", HORIZONTAL_ALIGNMENT_CENTER, 10, 13, UiTheme.INK)
 		var label: String = "บอส: " + b[1] + ("" if b[2] <= 0.0 else " (ตายแล้ว · กลับมาใน %d ชม.)" % ceili(b[2]))
 		UiTheme.over_world(self, _beside(c, label, f, sz.x - P), label, f, UiTheme.SIZE_LABEL, col)
+	# Where you died, with your things: a bundle, and how long it will keep.
+	for r in remains:
+		var c: Vector2 = origin + (Vector2(r[0]) + Vector2(0.5, 0.5)) * px
+		if not view.has_point(c):
+			continue
+		draw_circle(c, 8.0, UiTheme.WARN)
+		draw_arc(c, 8.0, 0, TAU, 16, UiTheme.INK, 1.5)
+		Remains.draw(self, c + Vector2(0, 4), false)
+		var label := "ของของคุณ · อีก %d นาที" % r[1]
+		UiTheme.over_world(self, _beside(c, label, f, sz.x - P), label, f, UiTheme.SIZE_LABEL, UiTheme.WARN)
 	for i in pins.size():
 		var p := origin + (Vector2(pins[i]) + Vector2(0.5, 0.5)) * px
 		draw_circle(p + Vector2(0, -8), 5.5, UiTheme.DANGER_DEEP)
@@ -266,7 +277,7 @@ func _draw() -> void:
 	draw_line(Vector2(1, ly), Vector2(sz.x - 1, ly), UiTheme.BORDER)
 	var x := P
 	for item in [[Color("b8452a"), "วัด"], [Color("3a72b8"), "มินิมาร์ท"], [Color("8e949a"), "คอนโด"], [Color("1e6a3a"), "ทางไปย่านอื่น"],
-			[UiTheme.ACCENT, "คุณ"], [UiTheme.INFO, "คนอื่น"], [UiTheme.OK, "ค่าย"], [UiTheme.DANGER, "บอส"], [UiTheme.DANGER_DEEP, "หมุด"], [Color(0.03, 0.03, 0.03), "ยังไม่เคยไป"]]:
+			[UiTheme.ACCENT, "คุณ"], [UiTheme.INFO, "คนอื่น"], [UiTheme.OK, "ค่าย"], [UiTheme.DANGER, "บอส"], [UiTheme.WARN, "ของของคุณ"], [UiTheme.DANGER_DEEP, "หมุด"], [Color(0.03, 0.03, 0.03), "ยังไม่เคยไป"]]:
 		var cy := ly + LEGEND / 2
 		draw_style_box(UiTheme.rbox(item[0], 2, UiTheme.BORDER_STRONG), Rect2(x, cy - 5, 10, 10))
 		draw_string(UiTheme.medium(), Vector2(x + 16, cy + 5), item[1], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)

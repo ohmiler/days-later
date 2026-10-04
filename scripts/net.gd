@@ -10,7 +10,7 @@ var main: Main
 ## Bump when the messages between game and server change in a way an older
 ## copy would misread; a client on another number is turned away with a
 ## message instead of breaking in strange ways.
-const PROTOCOL := 43  # 43: city events (Events: an ice-cream truck, a door chime, a ringing phone, karaoke, the lottery seller; item lotto; four new sounds); 42: the police station (tier 4 loot, the chief boss, riotgun, police zombies); 41: parked cars are real (Vehicles._park_cars: the city has cars, ids after the bikes); 40: cars driven W/S pedals A/D wheel (the move means pedals and wheel in a car); 39: trial car (Vehicles.vehicle_add, sedan model, car steering); 38: the refugee camp (Camp rpcs none new; things volunteer, board; GEN 10; dailies from the board); 37: skill unlocks do things (Skills.has; treat_other, stitched wounds, recipe unlocks, fishrice); 36: army knife 80 hp, mended with scrap at craft Lv 20 (repair_lv); 35: bosses (Bosses rpcs fx_enrage, boss_down; boss zids; army_shirt, armyknife); 34: loot by how dangerous a place is (Items tier, 3 new items); 33: body proportions V5 and a height in the appearance code (Look.HEIGHTS first); 32: round 0 (shutter 300 hp + scrap repair, safe = the shell, no spawns indoors); 31: search_started says what the work is (what, recipe); 30: quests (Quests rpcs: quests_sync, quest_done); 29: skills (Skills rpcs: skills_sync, survivor_level, fx_level_up); 28: no crawling (P_PRONE gone, req_prone gone); 27: silent kill played out (fx_stealth); 26: crawlers (missing 4 bits, storey 4 bits), silent kills; 25: hit zones (fx_hit zone, kill), new death styles; 24: four new zombie kinds, flag 16, pills/whistle; 23: place items (round B), shut-in zombies; 22: big buildings (CityGen.GEN 9), generators, power; 21: WorldState (things, buildings), rain in every snapshot; 20: storeys
+const PROTOCOL := 44  # 44: remains (Remains rpcs add, gone: what you had stays with your body), lingering on leaving mid-danger; 43: city events (Events: an ice-cream truck, a door chime, a ringing phone, karaoke, the lottery seller; item lotto; four new sounds); 42: the police station (tier 4 loot, the chief boss, riotgun, police zombies); 41: parked cars are real (Vehicles._park_cars: the city has cars, ids after the bikes); 40: cars driven W/S pedals A/D wheel (the move means pedals and wheel in a car); 39: trial car (Vehicles.vehicle_add, sedan model, car steering); 38: the refugee camp (Camp rpcs none new; things volunteer, board; GEN 10; dailies from the board); 37: skill unlocks do things (Skills.has; treat_other, stitched wounds, recipe unlocks, fishrice); 36: army knife 80 hp, mended with scrap at craft Lv 20 (repair_lv); 35: bosses (Bosses rpcs fx_enrage, boss_down; boss zids; army_shirt, armyknife); 34: loot by how dangerous a place is (Items tier, 3 new items); 33: body proportions V5 and a height in the appearance code (Look.HEIGHTS first); 32: round 0 (shutter 300 hp + scrap repair, safe = the shell, no spawns indoors); 31: search_started says what the work is (what, recipe); 30: quests (Quests rpcs: quests_sync, quest_done); 29: skills (Skills rpcs: skills_sync, survivor_level, fx_level_up); 28: no crawling (P_PRONE gone, req_prone gone); 27: silent kill played out (fx_stealth); 26: crawlers (missing 4 bits, storey 4 bits), silent kills; 25: hit zones (fx_hit zone, kill), new death styles; 24: four new zombie kinds, flag 16, pills/whistle; 23: place items (round B), shut-in zombies; 22: big buildings (CityGen.GEN 9), generators, power; 21: WorldState (things, buildings), rain in every snapshot; 20: storeys
 const HELLO_TIMEOUT := 10.0  # seconds a new connection has to say who it is
 var protocol := PROTOCOL  # what this copy says it speaks (tests set it wrong on purpose)
 var pending := {}  # server: peer id -> seconds since it connected, until it says hello
@@ -75,6 +75,10 @@ func _claim_name(p: Player, wanted: String, secret: String) -> void:
 	if wanted == "":
 		wanted = "ผู้รอดชีวิต"
 	var mine := secret.sha256_text()
+	# Back while their body is still standing where they left it: they take it up again.
+	for q: Player in main.players.values():
+		if q != p and q.linger >= 0.0 and q.pname == wanted and q.secret_hash == mine:
+			_remove(q)  # (saved: loaded straight back below)
 	var asked := wanted
 	for attempt in 50:
 		var online := main.players.values().any(func(q): return q != p and q.pname == wanted)
@@ -123,18 +127,66 @@ func send_world(id: int) -> void:
 	main.world_state.send_all(id)
 	main.vehicles.send_all(id)
 	main.corpses_sync.rpc_id(id, main.corpse_list())
+	main.remains.send_all(id)
 
 
 func _on_peer_disconnected(id: int) -> void:
 	pending.erase(id)
 	reset_peer(id)
 	if main.players.has(id):
-		main.vehicles.dismount(main.players[id])
-		if main.players[id].travel_to == "":  # (on their way to another zone's server: saved already)
-			SaveGame.save_player(main.players[id])
-		main.players[id].queue_free()
-		main.players.erase(id)
+		var p: Player = main.players[id]
+		main.vehicles.dismount(p)
+		if p.travel_to == "" and in_danger(p):
+			# Left in the middle of it: the body stays a while (no escaping a
+			# fight by closing the game). Back in time, they carry on in it.
+			p.linger = LINGER
+			p.move = Vector2.ZERO
+			p.sprint = false
+			p.sneak = false
+			p.aiming = false
+			p.set_attack_input(false, false)
+			print("Player %d left mid-danger: stays %.0f s" % [id, LINGER])
+			return
+		_remove(p)
 	print("Player %d left (%d online)" % [id, main.players.size()])
+
+
+const LINGER := 30.0  # seconds a survivor who left mid-danger stays in the world
+const DANGER_NEAR := 160.0  # a zombie this close (or after them) is danger
+const DANGER_HURT := 10.0  # hurt this recently is danger
+
+
+## Whether leaving now would be running out of a fight: something after them
+## or close by, or just hurt. (Not in the camp: it's safe there.)
+func in_danger(p: Player) -> bool:
+	if not p.alive() or main.world == null or main.world.in_camp(p.position):
+		return false
+	if Time.get_ticks_msec() / 1000.0 - p.hurt_at < DANGER_HURT:
+		return true
+	for z: Zombie in main.zombies.values():
+		if z.target == p or (z.storey == p.storey and z.position.distance_to(p.position) < DANGER_NEAR and z.hp > 0.0):
+			return true
+	return false
+
+
+## Gone from this world: saved as they are, and taken out.
+func _remove(p: Player) -> void:
+	if p.travel_to == "":  # (on their way to another zone's server: saved already)
+		SaveGame.save_player(p)
+	main.players.erase(p.peer_id)
+	p.queue_free()
+
+
+## Server, every tick: those staying on after leaving. Their time runs out, or
+## they die (what they had stays with the body: Remains), and they're gone.
+func tick_lingering(delta: float) -> void:
+	for p: Player in main.players.values():
+		if p.linger < 0.0:
+			continue
+		p.linger -= delta
+		if p.linger <= 0.0 or (not p.alive() and p.dropped):
+			print("Player %d's body is gone from the world" % p.peer_id)
+			_remove(p)
 
 
 @rpc("authority", "call_remote", "reliable")

@@ -43,6 +43,8 @@ var search_id := -1  # server only: container being searched
 var search_t := 0.0
 var craft := {}  # server: the making/mending job under way ({kind, t, ...}; see Crafting)
 var dropped := false  # server only: death bag already dropped this life
+var linger := -1.0  # server: seconds left standing in the world after their player left mid-danger (-1: not lingering; Net)
+var hurt_at := -1e9  # server: when they were last hurt (seconds, ticks clock)
 var death_t := 0.0  # seconds since dying (every peer, drives the fall)
 var pname := ""  # shown above the head
 # Survival needs, 0..100. Server-authoritative, sent to everyone in snapshots.
@@ -224,6 +226,7 @@ func take_damage(amount: float) -> void:
 	if not alive() or god:
 		return
 	hp -= amount
+	hurt_at = Time.get_ticks_msec() / 1000.0
 	if sleeping or sitting != -1:
 		stand_up()  # pain wakes you (and gets you up)
 	if hp <= 0:

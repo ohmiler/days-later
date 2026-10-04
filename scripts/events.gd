@@ -176,8 +176,12 @@ func _place(where: String, near: Player) -> Vector2:
 		"street":
 			for attempt in 40:
 				var pos: Vector2 = near.position + Vector2.from_angle(randf() * TAU) * randf_range(280.0, 480.0)
+				if w.get_tile(w.to_cell(pos)) != World.ROAD:
+					continue
+				pos = _road_middle(pos, _road_axis(pos))  # (down the middle, clear of the cars parked at the kerb)
 				var c := w.to_cell(pos)
-				if w.in_bounds(c) and w.get_tile(c) == World.ROAD and not w.blocked.has(c) and not w.in_camp(pos, 4):
+				var dist := pos.distance_to(near.position)
+				if w.in_bounds(c) and not w.blocked.has(c) and not w.in_camp(pos, 4) and dist > 260.0 and dist < 520.0:
 					return pos
 		"store", "home":
 			var list := []
@@ -198,6 +202,20 @@ func _place(where: String, near: Player) -> Vector2:
 ## the road goes on further from here; across it, it soon ends).
 func _road_axis(at: Vector2) -> Vector2:
 	return Vector2.RIGHT if _road_run(at, Vector2i.RIGHT) >= _road_run(at, Vector2i.DOWN) else Vector2.DOWN
+
+
+## The middle of the road `at` is on, across the way it runs.
+func _road_middle(at: Vector2, along: Vector2) -> Vector2:
+	var w: World = main.world
+	var c := w.to_cell(at)
+	var across := Vector2i(0, 1) if along == Vector2.RIGHT else Vector2i(1, 0)
+	var lo := 0
+	var hi := 0
+	while lo < 40 and w.get_tile(c - across * (lo + 1)) == World.ROAD:
+		lo += 1
+	while hi < 40 and w.get_tile(c + across * (hi + 1)) == World.ROAD:
+		hi += 1
+	return w.to_pos(c + across * ((hi - lo) / 2))
 
 
 ## Road cells in a line through `at`, both ways along `step` (up to 40 each).

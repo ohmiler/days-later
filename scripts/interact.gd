@@ -62,6 +62,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 				out.append({kind = "container", id = f.data.id, pos = f.position, title = container_title(f.data.kind)})
 		_things(w, p, out)
 		_corpses(main, p, out)
+		_remains(main, p, out)
 		_seats(w, p, w.building_at.get(w.to_cell(p.position)), out)
 		return out
 	if p.on_roof:
@@ -96,6 +97,7 @@ static func _candidates(main: Node, p: Player) -> Array:
 	var here: BuildingProp = w.building_at.get(w.to_cell(p.position))
 	_things(w, p, out)
 	_corpses(main, p, out)
+	_remains(main, p, out)
 	# At the edge of a canal (or any water): scoop some up, or drink it as it is.
 	var wc := water_near(w, p.position)
 	if wc != NONE:
@@ -135,6 +137,14 @@ static func _corpses(main: Node, p: Player, out: Array) -> void:
 		var cn: Corpse = main.corpse_nodes[cid]
 		if is_instance_valid(cn) and cn.storey == p.storey and cn.burn < 0.0 and p.position.distance_to(cn.position) < CORPSE_REACH:
 			out.append({kind = "corpse", id = cid, pos = cn.position + Vector2(cn.fall_dir * 8.0, -4), title = cn.title()})
+
+
+## A dead survivor's things where they fell (Remains), on your floor.
+static func _remains(main: Node, p: Player, out: Array) -> void:
+	for rid in main.remains.seen:
+		var r: Dictionary = main.remains.seen[rid]
+		if r.storey == p.storey and p.position.distance_to(r.pos) < Remains.REACH:
+			out.append({kind = "remains", id = rid, pos = r.pos, title = main.remains.title(rid)})
 
 
 ## Sofas, benches and chairs on your floor, in the building you are in.
@@ -226,6 +236,8 @@ static func actions(main: Node, p: Player, t: Dictionary) -> Array:
 			var ex: Array = w.exits.filter(func(e): return e.id == t.id)
 			if not ex.is_empty():
 				out.append(_act("travel", "เดินทางไป%s" % Zones.name_of(ex[0].to), Zones.open(ex[0].to), "ยังไปไม่ได้ (ย่านนี้ยังไม่เปิด)"))
+		"remains":
+			out.append(_act("reclaim", "เก็บของคืนทั้งหมด", main.remains.can_take(p, t.id), "ของของคนอื่น · เจ้าของเท่านั้นที่เก็บได้"))
 		"corpse":
 			var fire := p.inv.any(func(it): return it != null and Items.has_tag(it.id, "fire"))
 			out.append(_act("burn", "จุดไฟเผาศพ", fire, "ต้องมีไฟแช็กหรือไม้ขีดไฟ"))
