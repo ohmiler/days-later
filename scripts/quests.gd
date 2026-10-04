@@ -85,6 +85,12 @@ func ensure(p: Player) -> void:
 		p.quests = {active = {}, done = {}, day = -1}
 	if p.quests.active.is_empty() and not p.quests.done.has(first_id()) and first_id() != "":
 		start(p, first_id())
+	# A chain added after they'd passed its link (the story, after the first
+	# night was done): picked up where it now goes on from.
+	for id in p.quests.done.keys():
+		var nxt: String = DEFS.get(id, {}).get("next", "")
+		if nxt != "" and not p.quests.done.has(nxt):
+			start(p, nxt)
 
 
 func start(p: Player, id: String) -> void:
@@ -98,6 +104,27 @@ func start(p: Player, id: String) -> void:
 	if DEFS[id].get("story", false):
 		main._toast(p, "วิทยุค่าย: " + DEFS[id].desc)  # (the story comes over the camp's radio)
 	_refresh(p)
+	_hint_elsewhere(p, id)
+
+
+## A place the quest sends you to that this zone hasn't got (Pratunam has no
+## hospital): say so, rather than leave them searching.
+func _hint_elsewhere(p: Player, id: String) -> void:
+	if main.world == null:
+		return
+	var counts: Array = p.quests.active.get(id, [])
+	var objs: Array = DEFS[id].objectives
+	for i in objs.size():
+		var o: Dictionary = objs[i]
+		if o.do != "visit" or i >= counts.size() or counts[i] >= o.n:
+			continue
+		var here := false
+		for rec in main.world.buildings:
+			if rec.get("kind", "") == o.kind or rec.get("sign", "") == o.kind:
+				here = true
+				break
+		if not here:
+			main._toast(p, "\"%s\" ทำในย่านนี้ไม่ได้ · ต้องไปย่านอื่น (ทางออกอยู่ปลายถนนใหญ่)" % o.text)
 
 
 ## `p` did `what` (an objective's "do"); `info` says more (kind, item).
@@ -194,8 +221,12 @@ func server_tick(delta: float) -> void:
 		return
 	_t = SYNC_EVERY
 	for p: Player in main.players.values():
-		if not p.quests.has("active"):
-			ensure(p)  # (someone new, or from before there were quests)
+		if not p.quests.has("active") or not p.has_meta("quests_zone") or p.get_meta("quests_zone") != main.zone:
+			var had: Array = p.quests.get("active", {}).keys()
+			ensure(p)  # (someone new, from before there were quests, just back, or just arrived)
+			p.set_meta("quests_zone", main.zone)
+			for id in had:
+				_hint_elsewhere(p, id)  # (new ones said so as they started)
 		_refresh(p)
 		_visit(p)
 		if p.quests_dirty:

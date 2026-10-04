@@ -66,6 +66,7 @@ const RARITY := {common = 4, uncommon = 2, rare = 1}
 const TABLE_TIER := {tools = 2, med = 2, valuables = 2, office = 2, market = 2, hospital = 3, mall = 3, police = 4}
 const BUILDING_TIER := {hospital = 3, mall = 3, market = 2, office = 2, police = 4}
 const TIERS := 4
+const DANGER_TIER := 3  # from here up: big buildings with the dead shut inside
 const TIER_NAMES := ["", "ที่ทั่วไป", "ร้านเฉพาะ", "ที่อันตราย", "ที่อันตรายที่สุด"]
 ## Rarity weights at each tier: the small places were picked over by the people
 ## who fled first, and nobody dared the big ones.
@@ -202,6 +203,8 @@ static func problems() -> Array:
 			out.append("%s: cooks into unknown item %s" % [id, d.cooks.get("into")])
 		if d.get("holds", 0) > 0 and d.get("stack", 1) > 1:
 			out.append("%s: something that holds water can't stack (each has its own)" % id)
+		if d.has("find") and (not d.find is Array or d.find.size() != 2 or d.find[0] < 1 or d.find[1] < d.find[0]):
+			out.append("%s: find should be [least, most]" % id)
 		match d.get("type"):
 			"weapon":
 				for key in ["range", "dmg", "cd", "dur", "hp", "draw"]:
@@ -286,6 +289,19 @@ static func make(id: String, rng: RandomNumberGenerator = null) -> Dictionary:
 	var it := {id = id, n = 1, hp = def(id).get("hp", 0)}
 	if def(id).has("looks"):
 		it.v = (rng.randi() if rng else randi()) % 100000
+	return it
+
+
+## An item as it turns up in a search: ammo by the handful (`find`), a gun
+## with a few rounds still in it.
+static func make_found(id: String, rng: RandomNumberGenerator) -> Dictionary:
+	var it := make(id, rng)
+	var d := def(id)
+	var find: Array = d.get("find", [])
+	if find.size() == 2:
+		it.n = mini(rng.randi_range(int(find[0]), int(find[1])), int(d.get("stack", 1)))
+	if d.get("type", "") == "gun":
+		it.ammo = rng.randi_range(0, int(d.mag) / 2)  # (left in it by whoever dropped it)
 	return it
 
 
@@ -496,7 +512,7 @@ static func zombie_place(w: World, pos: Vector2) -> int:
 	if use == "":
 		for blk in w.blocks:
 			if blk.rect.has_point(c):
-				use = {hospital = "hospital", military_hospital = "hospital", office = "office", mall = "mall", market = "market"}.get(blk.use, "")
+				use = {hospital = "hospital", military_hospital = "hospital", office = "office", mall = "mall", market = "market", police = "police"}.get(blk.use, "")
 				break
 	return maxi(0, ZOMBIE_PLACES.find(use)) if use != "" else 0
 

@@ -2,7 +2,8 @@ extends "res://tests/test_base.gd"
 ## The city's now-and-then events (data/events.cfg, Events): the table is
 ## sound; one starts near a survivor, calls the dead with its sound, the nearest
 ## survivor is told; a ringing phone ends when someone gets to it and leaves
-## what was beside it; the lottery seller's tickets, and now and then gold.
+## what was beside it; the lottery seller (the same kind on every screen), its
+## tickets, and now and then gold; the truck follows roads either way.
 
 
 func run() -> void:
@@ -42,6 +43,22 @@ func run() -> void:
 		main.events.server_tick(0.1)
 	moved = ev.pos.distance_to(p0)
 	check(moved > 40.0, "and it drives along (%.0f px in 10 s)" % moved)
+	# Along a road that runs down the screen too, not back and forth across it.
+	var down := Vector2.INF
+	var across := Vector2.INF
+	for y in range(20, World.H - 20, 3):
+		for x in range(20, World.W - 20, 3):
+			var c := Vector2i(x, y)
+			if w.get_tile(c) != World.ROAD:
+				continue
+			var v: int = main.events._road_run(w.to_pos(c), Vector2i.DOWN)
+			var h: int = main.events._road_run(w.to_pos(c), Vector2i.RIGHT)
+			if down == Vector2.INF and v >= 40 and h <= 12:
+				down = w.to_pos(c)
+			if across == Vector2.INF and h >= 40 and v <= 12 and w.get_tile(c + Vector2i(0, -1)) != World.ROAD:
+				across = w.to_pos(c)  # (the kerb row of a road across)
+	check(down != Vector2.INF and main.events._road_axis(down) == Vector2.DOWN, "on a road down the screen it drives down it")
+	check(across != Vector2.INF and main.events._road_axis(across) == Vector2.RIGHT, "on the edge row of a road across, along it")
 	# Night only at night.
 	main.events.active.clear()
 	main.world.is_night = false
@@ -69,7 +86,11 @@ func run() -> void:
 	main.events.start_one("lotto")
 	check(main.zombies.size() == n0 + 1, "a lottery seller shambles up")
 	var seller: Zombie = main.zombies.values().filter(func(q): return q.has_meta("lotto"))[0]
-	seller.hurt_by[1] = 50.0
+	check(Zombie.kind_for(seller.zid) == "normal" and seller.kind == "normal", "an ordinary-looking one on every screen (its id says %s)" % Zombie.kind_for(seller.zid))
+	main.combat._tally(seller, me, 20.0)
+	main.combat._tally(seller, main._add_player(78), 20.0)
+	main.combat._tally(seller, me, 30.0)
+	check(seller.hurt_by.keys()[-1] == 1, "the last to hit it is the one who brought it down (for the winning ticket)")
 	main.combat._kill_zombie(seller, 1.0)
 	var tickets := 0
 	for pu in main.pickups.values():

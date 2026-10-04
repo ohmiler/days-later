@@ -113,7 +113,7 @@ var missing := 0  # Look.LOST_* bits; arms can be cut off in a fight
 var flags := 0  # 1 = lunging, 2 = down, 8 = holding someone; from the server fields, or from snapshots
 var storey := 0  # 0 on the ground, else the floor upstairs it's on (World.storey_map): it followed someone up the stairs
 var dummy := false  # server: an admin's practice dummy (Admin): stands still, thinks nothing, can still be hit and killed
-var hurt_by := {}  # server, bosses: peer_id -> damage they did (each gets the boss's drops)
+var hurt_by := {}  # server, bosses and the lottery seller: peer_id -> damage they did (each gets a boss's drops; the last one, the seller's win)
 var enraged := false  # server, bosses: past half its health (Bosses)
 var home := -1  # a big building it was shut in (Survival._tick_trapped): its death counts there
 var lift := 0.0  # drawn this far up (eases to its storey while upstairs)

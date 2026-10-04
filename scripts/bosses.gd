@@ -157,6 +157,7 @@ func died(z: Zombie) -> void:
 					main._spawn_pickup(p.position + Vector2(randf_range(-6, 6), 6), Items.make(it), p.storey)
 		for sk in d.get("xp", {}):
 			main.skills.add(p, sk, float(d.xp[sk]))
+		main.quests.note(p, "kill", {kind = z.kind})  # (the story's "bring it down": all who fought it)
 		main.inventory._send_inv(p)
 		main._notify(p.peer_id, &"boss_down", [z.kind, z.hurt_by.size()])
 

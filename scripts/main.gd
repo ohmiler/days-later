@@ -821,7 +821,7 @@ func _note_danger(me: Player) -> void:
 	_danger_bid = bid
 	var tier: int = Items.BUILDING_TIER[kind]
 	show_toast("%s · %s: %s" % [DANGER_NAMES.get(kind, kind), Items.TIER_NAMES[tier],
-			"ของดีกว่าที่อื่น แต่ซอมบี้ยังติดอยู่ข้างใน" if tier >= Items.TIERS else "ของดีกว่าบ้านทั่วไป"])
+			"ของดีกว่าที่อื่น แต่ซอมบี้ยังติดอยู่ข้างใน" if tier >= Items.DANGER_TIER else "ของดีกว่าบ้านทั่วไป"])
 
 
 @rpc("authority", "call_local", "reliable")

@@ -200,45 +200,43 @@ func _draw() -> void:
 	draw_texture_rect(tex, Rect2(origin, span), false)
 	# Unexplored parts: dark, with just the street grid showing through faintly.
 	draw_texture_rect(fog_tex, Rect2(origin, span), false)
-	# A bar along the top: where, and how to use it.
-	draw_style_box(UiTheme.rbox(Color(UiTheme.SURFACE_100, 0.92), 0), Rect2(1, 1, sz.x - 2, BAR))
-	draw_line(Vector2(1, BAR + 1), Vector2(sz.x - 1, BAR + 1), UiTheme.BORDER)
 	var P := UiTheme.SPACE_4
-	draw_string(UiTheme.heading(), Vector2(P, 30), "แผนที่", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_TITLE, UiTheme.TEXT)
-	var tw := UiTheme.heading().get_string_size("แผนที่", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_TITLE).x
-	draw_string(UiTheme.medium(), Vector2(P + tw + 10, 29), Zones.name_of(world.zone), HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_BODY, UiTheme.TEXT_MUTED)
-	var hint := "ลูกกลิ้ง ซูม · คลิกขวา ปักหมุด · คลิกหมุด เอาออก · [M] ปิด"
-	var hw := UiTheme.draw_rich(self, Vector2.ZERO, hint, UiTheme.body(), UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED, true, true)
-	UiTheme.draw_rich(self, Vector2(sz.x - P - hw, 29), hint, UiTheme.body(), UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED, false, true)
+	var view := Rect2(0, BAR, sz.x, sz.y - BAR - LEGEND)  # (marks beyond it aren't drawn: they'd show past the panel)
 	var f := UiTheme.body_bold()
 	# The ways out to other zones.
 	for e in world.exits:
 		var c: Vector2 = origin + Vector2(e.rect.get_center()) * px
-		draw_circle(c, 6.0, Color("1e6a3a"))
-		draw_arc(c, 6.0, 0, TAU, 16, Color("e8e8e0"), 1.2)
+		if view.has_point(c):
+			draw_circle(c, 6.0, Color("1e6a3a"))
+			draw_arc(c, 6.0, 0, TAU, 16, Color("e8e8e0"), 1.2)
 		var label: String = "ไป" + Zones.name_of(e.to)
 		var w := f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
 		var at := c + Vector2(-w - 10.0 if e.id == "east" else 10.0, 4.0)
+		at = at.clamp(Vector2(P, BAR + 18.0), Vector2(sz.x - P - w, sz.y - LEGEND - 8.0))  # (an exit off the edge of the view: its name still reads)
 		draw_string_outline(f, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, 3, Color(0, 0, 0, 0.8))
 		draw_string(f, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("e8f0e0"))
 	# The refugee camps: a green cross, known to everyone.
 	for cp in camps:
 		var c: Vector2 = origin + (Vector2(cp[0]) + Vector2(0.5, 0.5)) * px
+		if not view.has_point(c):
+			continue
 		draw_circle(c, 9.0, UiTheme.OK)
 		draw_arc(c, 9.0, 0, TAU, 20, UiTheme.INK, 1.5)
 		draw_rect(Rect2(c - Vector2(1.5, 5.5), Vector2(3, 11)), UiTheme.INK)
 		draw_rect(Rect2(c - Vector2(5.5, 1.5), Vector2(11, 3)), UiTheme.INK)
-		UiTheme.over_world(self, c + Vector2(13, 5), "ค่ายผู้อพยพ · " + cp[1], f, UiTheme.SIZE_LABEL, UiTheme.OK)
+		UiTheme.over_world(self, _beside(c, "ค่ายผู้อพยพ · " + cp[1], f, sz.x - P), "ค่ายผู้อพยพ · " + cp[1], f, UiTheme.SIZE_LABEL, UiTheme.OK)
 	# The bosses' lairs: known by word of mouth, seen or not.
 	for b in bosses:
 		var c: Vector2 = origin + (Vector2(b[0]) + Vector2(0.5, 0.5)) * px
+		if not view.has_point(c):
+			continue
 		var col: Color = UiTheme.DANGER if b[2] <= 0.0 else UiTheme.TEXT_FAINT
 		var pulse := 1.0 + (0.15 * sin(Time.get_ticks_msec() / 250.0) if b[2] <= 0.0 else 0.0)
 		draw_colored_polygon(PackedVector2Array([c + Vector2(0, -9) * pulse, c + Vector2(9, 0) * pulse, c + Vector2(0, 9) * pulse, c + Vector2(-9, 0) * pulse]), col)
 		draw_polyline(PackedVector2Array([c + Vector2(0, -9) * pulse, c + Vector2(9, 0) * pulse, c + Vector2(0, 9) * pulse, c + Vector2(-9, 0) * pulse, c + Vector2(0, -9) * pulse]), UiTheme.INK, 1.5)
 		draw_string(f, c + Vector2(-5, 5), "!", HORIZONTAL_ALIGNMENT_CENTER, 10, 13, UiTheme.INK)
 		var label: String = "บอส: " + b[1] + ("" if b[2] <= 0.0 else " (ตายแล้ว · กลับมาใน %d ชม.)" % ceili(b[2]))
-		UiTheme.over_world(self, c + Vector2(13, 5), label, f, UiTheme.SIZE_LABEL, col)
+		UiTheme.over_world(self, _beside(c, label, f, sz.x - P), label, f, UiTheme.SIZE_LABEL, col)
 	for i in pins.size():
 		var p := origin + (Vector2(pins[i]) + Vector2(0.5, 0.5)) * px
 		draw_circle(p + Vector2(0, -8), 5.5, UiTheme.DANGER_DEEP)
@@ -253,6 +251,15 @@ func _draw() -> void:
 		var d := me.aim.normalized() if me.aim.length() > 0.1 else Vector2.DOWN
 		draw_colored_polygon(PackedVector2Array([p + d * 9, p + d.orthogonal() * 5 - d * 4, p - d.orthogonal() * 5 - d * 4]), UiTheme.ACCENT)
 		draw_arc(p, 11, 0, TAU, 20, Color(UiTheme.ACCENT, 0.5 + 0.3 * sin(Time.get_ticks_msec() / 200.0)), 1.5)
+	# A bar along the top (over any mark under it): where, and how to use it.
+	draw_style_box(UiTheme.rbox(Color(UiTheme.SURFACE_100, 0.92), 0), Rect2(1, 1, sz.x - 2, BAR))
+	draw_line(Vector2(1, BAR + 1), Vector2(sz.x - 1, BAR + 1), UiTheme.BORDER)
+	draw_string(UiTheme.heading(), Vector2(P, 30), "แผนที่", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_TITLE, UiTheme.TEXT)
+	var tw := UiTheme.heading().get_string_size("แผนที่", HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_TITLE).x
+	draw_string(UiTheme.medium(), Vector2(P + tw + 10, 29), Zones.name_of(world.zone), HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_BODY, UiTheme.TEXT_MUTED)
+	var hint := "ลูกกลิ้ง ซูม · คลิกขวา ปักหมุด · คลิกหมุด เอาออก · [M] ปิด"
+	var hw := UiTheme.draw_rich(self, Vector2.ZERO, hint, UiTheme.body(), UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED, true, true)
+	UiTheme.draw_rich(self, Vector2(sz.x - P - hw, 29), hint, UiTheme.body(), UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED, false, true)
 	# The legend along the bottom: a swatch for each thing, then its name.
 	var ly := sz.y - LEGEND
 	draw_style_box(UiTheme.rbox(Color(UiTheme.SURFACE_100, 0.92), 0), Rect2(1, ly, sz.x - 2, LEGEND - 1))
@@ -264,3 +271,9 @@ func _draw() -> void:
 		draw_style_box(UiTheme.rbox(item[0], 2, UiTheme.BORDER_STRONG), Rect2(x, cy - 5, 10, 10))
 		draw_string(UiTheme.medium(), Vector2(x + 16, cy + 5), item[1], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL, UiTheme.TEXT_MUTED)
 		x += 16 + UiTheme.medium().get_string_size(item[1], HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL).x + UiTheme.SPACE_4
+
+
+## Where a mark's name goes: to its right, or to its left near the map's right edge.
+func _beside(c: Vector2, label: String, f: Font, right: float) -> Vector2:
+	var w := f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, UiTheme.SIZE_LABEL).x
+	return c + Vector2(13, 5) if c.x + 13.0 + w <= right else c + Vector2(-13.0 - w, 5)

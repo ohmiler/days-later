@@ -104,8 +104,16 @@ func _begin(id: String, at: Vector2, near: Player) -> void:
 			if p.alive() and p.position.distance_to(at) < HEAR:
 				main._toast(p, d.hear)
 	if d.type == "spawn":
-		var z: Zombie = main._add_zombie(main.new_zid(at), at)
-		z.set_kind(d.get("kind", "normal"))
+		# An id whose kind is the one wanted: everyone's game works the kind out
+		# from the id (Zombie.kind_for), so the seller looks the same to all.
+		var kind: String = d.get("kind", "normal")
+		var zid := main.new_zid(at)
+		for attempt in 64:
+			if Zombie.kind_for(zid) == kind:
+				break
+			zid = main.new_zid(at)
+		var z: Zombie = main._add_zombie(zid, at)
+		z.set_kind(kind)
 		z.set_meta("lotto", true)
 		z.sense(near.position, 4.0)  # (shambling the way of the nearest survivor)
 		return
@@ -186,12 +194,21 @@ func _place(where: String, near: Player) -> Vector2:
 	return Vector2.INF
 
 
-## Which way the road a truck is on runs: along it, east or south.
+## Which way the road a truck is on runs: along it, east or south (the way
+## the road goes on further from here; across it, it soon ends).
 func _road_axis(at: Vector2) -> Vector2:
+	return Vector2.RIGHT if _road_run(at, Vector2i.RIGHT) >= _road_run(at, Vector2i.DOWN) else Vector2.DOWN
+
+
+## Road cells in a line through `at`, both ways along `step` (up to 40 each).
+func _road_run(at: Vector2, step: Vector2i) -> int:
 	var w: World = main.world
 	var c := w.to_cell(at)
-	var across := 0
-	for d in [Vector2i(0, 1), Vector2i(0, -1)]:
-		if w.get_tile(c + d) == World.ROAD:
-			across += 1
-	return Vector2.RIGHT if across == 2 else Vector2.DOWN
+	var n := 0
+	for s in [step, -step]:
+		for i in range(1, 41):
+			var cc: Vector2i = c + s * i
+			if not w.in_bounds(cc) or w.get_tile(cc) != World.ROAD:
+				break
+			n += 1
+	return n
