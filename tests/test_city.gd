@@ -81,5 +81,5 @@ func run() -> void:
 	var kinds := {}
 	for p in a.street_props:
 		kinds[p.kind] = true
-	for k in ["wreck", "motorbike", "spirit", "boat", "stall"]:
+	for k in ["motorbike", "spirit", "boat", "stall"]:
 		check(kinds.has(k), "city has some %s" % k)

@@ -36,7 +36,7 @@ func run() -> void:
 
 	SaveGame.wipe()
 	seed(11)
-	await host(9400)
+	await host(9400, false, true, 11)  # (a known city: a random one now and then has few kinds of bike)
 	main.spawn_timer = 1e9  # no stray zombies wandering into the road
 	var w: World = main.world
 	check(w.vehicles.size() > 20, "the city has bikes to ride (%d)" % w.vehicles.size())

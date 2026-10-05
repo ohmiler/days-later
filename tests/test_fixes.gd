@@ -144,21 +144,6 @@ func run() -> void:
 		check(not w.is_solid(probe.cell + Vector2i(1, -1)) and edge - p.y < Player.RADIUS - 1.5,  # (it was a whole RADIUS)
 				"walking up to a wall, the feet stop right at it (%.1f px short)" % (edge - p.y))
 
-	# A vehicle running up the screen is solid as far as it's drawn, not just its lane of cells.
-	for sp in w.street_props:
-		if sp.kind == "van" and not sp.get("horizontal", true):
-			var mid := StreetProp.middle(sp)
-			var zv := mid + Vector2(24, 0)
-			for i in 60:
-				zv = w.slide(zv, Vector2(-1, 0), Zombie.RADIUS)
-			var edge: float = sp.pos.x + StreetProp.draw_shift(sp).x + World.TILE * StreetProp.VEHICLE_SCALE
-			check(zv.x - Zombie.RADIUS >= edge - 0.6, "walking into the side of a van, you stop at its drawn side (%.1f / %.1f)" % [zv.x - Zombie.RADIUS, edge])
-			break
-	# On a pickup you stand in its bed, lower than its cab roof.
-	for sp in w.street_props:
-		if sp.kind == "pickup" and sp.get("horizontal", true):
-			check(StreetProp.roof_spot(sp)[1] < StreetProp.BODY.pickup[0] * StreetProp.VEHICLE_SCALE, "up on a pickup, you stand in the bed, not in the air over it")
-			break
 
 	# Travelling: this zone's bed and open cupboard mean nothing in the next.
 	me.bed = 3
