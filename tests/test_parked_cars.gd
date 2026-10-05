@@ -1,6 +1,8 @@
 extends "res://tests/test_base.gd"
 ## The cars the city is left with (Vehicles._park_cars): real cars along the
-## kerb, one in five running, solid where they stand, none left in the lanes.
+## kerb, one in five running, solid where they stand, none left in the lanes;
+## nothing else on wheels but what can be driven (no buses, vans, pickups,
+## songthaews, tuk-tuks, army truck or wrecks), and their road is clear.
 
 
 func run() -> void:
@@ -21,6 +23,14 @@ func run() -> void:
 		if Vehicles._kerb(w, strip[0], rec.get("horizontal", true))[0] > 2:
 			in_lane += 1
 	check(in_lane == 0, "no car stands out in a lane (%d)" % in_lane)
+	# Only what can be driven: the rest of the traffic is gone, and its road is clear.
+	var laid := w.street_props.filter(func(r): return r.kind in Vehicles.PROP_ONLY)
+	var shown := laid.filter(func(r): return not r.get("culled", false))
+	check(not laid.is_empty() and shown.is_empty(), "no bus, van, pickup, songthaew, tuk-tuk, army truck or wreck stands in the street (%d laid out, %d left)" % [laid.size(), shown.size()])
+	var bus: Array = laid.filter(func(r): return r.kind == "bus")
+	if not bus.is_empty():
+		var at := Vector2i((bus[0].pos / World.TILE).floor()) + Vector2i(1, -1)
+		check(not w.blocked.has(at), "where a bus stood, the road is clear to walk")
 	# Solid where it stands.
 	var v: Dictionary = running[0]
 	check(not w.can_stand(v.pos, Player.RADIUS), "a parked car is solid to walkers")

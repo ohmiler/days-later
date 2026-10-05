@@ -76,6 +76,7 @@ static func setup(w: World) -> void:
 				key = World.hash01(rec.seed, 5, 23) < KEY_CHANCE, upright = rec.seed % 7 != 3, rider = 0, pillion = 0, rec = rec})
 		rec.vehicle = w.vehicles.size() - 1
 	_park_cars(w)
+	_clear_props(w)
 
 
 ## Cars parked in the city. The street's cars and taxis are real cars (CarArt,
@@ -152,6 +153,38 @@ static func _park_cars(w: World) -> void:
 		w.vehicles.append(v)
 		free_cells(w, v)
 		block_parked(w, v)
+
+
+## Only what can be driven stays on the streets (2026-10-05): the buses, vans,
+## pickups, songthaews, tuk-tuks, the army truck and the wrecks were drawn
+## things you couldn't use, at sizes that never sat right beside the real cars.
+## They are still laid out (the city's random draws stay the same, so saved
+## cities do too) but taken away here, and the road they stood on is clear.
+const PROP_ONLY := ["tuktuk", "van", "pickup", "songthaew", "bus", "army", "wreck"]
+const PROP_CELLS := {tuktuk = 3, van = 5, pickup = 5, songthaew = 5, bus = 12, army = 8, wreck = 5}  # (CityGen._size_vehicles)
+
+
+static func _clear_props(w: World) -> void:
+	# Cells something else stands on (a bin, sandbags, a parked car) stay solid.
+	var kept := {}
+	for rec in w.street_props:
+		if rec.kind not in PROP_ONLY and not rec.get("culled", false):
+			kept[w.to_cell(rec.pos - Vector2(0, 5))] = true
+	for v in w.vehicles:
+		for c in v.get("cells", []):
+			kept[c] = true
+	for rec in w.street_props:
+		if rec.kind not in PROP_ONLY or rec.get("culled", false):
+			continue
+		rec.culled = true
+		var base := Vector2i((rec.pos / World.TILE).floor())
+		var side: bool = rec.get("horizontal", true) or rec.kind in ["tuktuk", "army"]
+		for i in PROP_CELLS[rec.kind]:
+			var c := Vector2i(base.x + i, base.y - 1) if side else Vector2i(base.x, base.y - 1 - i)
+			if w.blocked.has(c) and not kept.has(c):
+				w.blocked.erase(c)
+				if w.astar.region.has_point(c):
+					w.astar.set_point_solid(c, w.is_solid(c))
 
 
 static func _near_intersection(w: World, c: Vector2i, r: int) -> bool:
